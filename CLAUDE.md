@@ -18,10 +18,11 @@ Builds a 7-stage automated pipeline to produce **5M high-quality prompt–respon
 
 ## Project Status
 
-As of 2026-03-14: **Stages 1–6 fully implemented. All 39 tests passing.**
+As of 2026-03-25: **Stages 1–6 fully implemented. All 39 tests passing** (flash-kmeans tests skip when GPU/library unavailable).
 
 ```
 tests/unit/          — 37 tests (config, checkpoint, storage, parser, filters)
+tests/unit/clustering/ — flash-kmeans tests (skip without CUDA + flash-kmeans)
 tests/integration/   — 2 tests (end-to-end smoke + checkpoint resume)
 ```
 
@@ -40,7 +41,8 @@ sft-pipeline/
 ├── config/
 │   ├── default.yaml             ← master config (all defaults documented here)
 │   ├── dev.yaml                 ← laptop overrides (CPU/CUDA, small scale)
-│   └── prod.yaml                ← cluster overrides (ROCm, 7M prompts, 64 replicas)
+│   ├── prod.yaml                ← cluster overrides (ROCm, 7M prompts, 64 replicas)
+│   └── stage1_research.yaml    ← Stage 1 only; 45 public HF research datasets
 ├── sft_pipeline/
 │   ├── config.py                ← Pydantic v2 models + YAML loader
 │   ├── checkpoint.py            ← DuckDB checkpoint tracker
@@ -62,9 +64,9 @@ sft-pipeline/
 │   │   ├── code_verifier.py     ← subprocess / E2B sandbox execution
 │   │   └── llm_judge.py         ← 10%-sample LLM quality scoring (Qwen2.5-7B)
 │   ├── clustering/
-│   │   ├── embedder.py          ← batched sentence-transformer → float16 Parquet
+│   │   ├── embedder.py          ← batched sentence-transformer → sharded float16 Parquet
 │   │   ├── faiss_index.py       ← IVFFlat build/save/load (CPU only)
-│   │   └── clusterer.py         ← HDBSCAN on centroids + difficulty heuristics
+│   │   └── clusterer.py         ← HDBSCAN/K-Means/flash-kmeans + difficulty heuristics
 │   ├── inference/
 │   │   ├── vllm_batch.py        ← offline vLLM batch loop + Ray actor class
 │   │   ├── prompt_formatter.py  ← chat template application
@@ -87,9 +89,11 @@ sft-pipeline/
 │   │   ├── test_checkpoint.py
 │   │   ├── test_storage.py
 │   │   ├── test_output_parser.py
-│   │   └── filters/
-│   │       ├── test_structural.py
-│   │       └── test_math_verifier.py
+│   │   ├── filters/
+│   │   │   ├── test_structural.py
+│   │   │   └── test_math_verifier.py
+│   │   └── clustering/
+│   │       └── test_clusterer_flash_kmeans.py  ← skip without CUDA + flash-kmeans
 │   └── integration/
 │       └── test_end_to_end.py   ← Stages 4 + mock-5 + 6 smoke test + resume test
 ├── docker/
@@ -133,6 +137,21 @@ Config is loaded via `sft_pipeline.config.load_config(path, overrides=None)`.
 - `{run_id}` and `{base_path}` placeholders are resolved in string fields after merge
 - Pydantic v2 validation runs at load time — type errors surface before any compute starts
 - `domain_quotas` and `difficulty_quotas` must each sum to 1.0 (validated)
+
+**Two-pass placeholder resolution**: Pydantic applies model defaults only after `model_validate()`, so fields not present in the YAML (i.e. using defaults) would miss placeholder substitution in a single pass. `load_config()` therefore does:
+1. Pass 1: resolve placeholders in the raw YAML dict
+2. `model_validate()` to get Pydantic defaults applied
+3. Pass 2: `model_dump(by_alias=True)` → resolve again → `model_validate()` again
+
+Both `{base_path}` and `{global.base_path}` are registered as context keys so either syntax works in YAML.
+
+**Notable `GlobalConfig` fields:**
+- `hf_home: str | None` — if set, `HF_HOME` env var is set before any HF downloads (useful to avoid filling up the default `~/.cache/huggingface` on small partitions)
+- `device: "cuda" | "rocm" | "cpu"` — controls GPU backend; `"rocm"` is mapped to `"cuda"` internally where PyTorch uses it
+
+**Notable `DatasetSource` fields:**
+- `max_examples: int | None` — cap rows loaded from this source (`None` = all); applied via `itertools.islice` before normalization/dedup
+- `prompt_field` supports **dot notation** for nested fields: `"responses_create_params.input"` → `row["responses_create_params"]["input"]`
 
 **To use prod config on cluster:**
 ```bash
@@ -188,6 +207,22 @@ FAISS-GPU requires CUDA and won't build on ROCm. `faiss-cpu` works on both lapto
 ### HDBSCAN on centroids, not all vectors (`clusterer.py`)
 Direct HDBSCAN on 7M vectors is O(n²) — infeasible. Strategy: extract IVF centroids (~1000 points) from the FAISS index, run HDBSCAN on those, then assign each prompt to its nearest centroid's cluster label. Fast and scales to any dataset size.
 
+### flash-kmeans clustering (`clusterer.py`, `stage3_cluster.py`)
+Set `clustering_algorithm: "flash_kmeans"` in `Stage3Config` to use GPU-accelerated K-Means via Triton kernels (`pip install flash-kmeans`). Requires CUDA. The flash-kmeans path bypasses the FAISS centroid extraction entirely — it works directly on the full embedding matrix. The FAISS index is still built (needed by Stage 4 for cosine dedup), just not used for clustering in this mode.
+
+API: `batch_kmeans_Euclid(x, n_clusters, tol, verbose)` where `x` is `(1, N, D)` float16 CUDA tensor. Returns `(cluster_ids, centers, _)` with a batch dimension that is squeezed after the call.
+
+Tests in `tests/unit/clustering/test_clusterer_flash_kmeans.py` skip automatically when CUDA or flash-kmeans is unavailable (`@pytest.mark.skipif` markers: `needs_cuda`, `needs_flash`, `needs_cuda_and_flash`).
+
+### Sharded embeddings (`embedder.py`)
+Embeddings are saved as sharded float16 Parquet files under `embeddings_dir/`, not a single file. Each shard is `~200MB`. Stage 3 checks for existing shards at startup and skips re-embedding if any shards are found (idempotent on crash). Stage 4 loads shards lazily via Polars `scan_parquet`.
+
+### `get_centroids()` implementation (`faiss_index.py`)
+`index.quantizer.xb` (a SWIG-internal attribute) is not available in newer `faiss-cpu` versions. Use `index.quantizer.reconstruct(i)` for each centroid `i` instead — this is the stable public API:
+```python
+centroids = np.stack([index.quantizer.reconstruct(i) for i in range(nlist)])
+```
+
 ### ROCm/CUDA abstraction (`embedder.py`, `vllm_batch.py`)
 PyTorch uses `"cuda"` as the device string for both CUDA and ROCm. Config uses `device: "rocm"` for clarity; code maps `"rocm"` → `"cuda"` internally when passing to PyTorch. vLLM ROCm build is a separate wheel — install separately on cluster.
 
@@ -210,10 +245,16 @@ SymPy can fail to parse valid LaTeX (e.g., custom macros, non-standard notation)
 
 ## Adding a New Dataset Source (Stage 1)
 
-1. Open `sft_pipeline/stages/stage1_collect.py`
-2. Add a new branch in `_load_dataset_source(ds_cfg)` — check `ds_cfg.source`
-3. Yield `dict(prompt=..., source=..., domain=...)` records
-4. Add the new source to `config.py`'s `DatasetSourceConfig` if it needs new fields
+Add a new entry under `stage1_collect.datasets` in the YAML config. No code change needed for standard HF datasets — just specify:
+- `source: hf_dataset`, `hf_repo_id`, `hf_split`, and optionally `hf_config`
+- `prompt_field`: the field containing the prompt. Use dot notation for nested fields (e.g. `outer_field.inner_field`). If the field holds an OpenAI or ShareGPT conversation list, the first user turn is extracted automatically.
+- `domain_hint`: optional manual domain override (otherwise inferred from keywords)
+- `max_examples`: optional cap on rows loaded from this source
+
+For a new source type (not `hf_dataset` or `local_jsonl`):
+1. Add a new `Literal` value to `DatasetSource.source` in `config.py`
+2. Add a new loader function `_load_<type>(src)` in `stage1_collect.py`
+3. Add a dispatch branch in `run_stage1()`
 
 ## Adding a New Filter (Stage 6)
 
@@ -233,6 +274,10 @@ SymPy can fail to parse valid LaTeX (e.g., custom macros, non-standard notation)
 
 ## Gotchas / Non-Obvious Things
 
+- **flash-kmeans CUDA check ordering**: In `_cluster_with_flash_kmeans()`, the `torch.cuda.is_available()` check must come **before** `from flash_kmeans import batch_kmeans_Euclid`. If the import happens first and CUDA is unavailable, the import itself may fail with an unhelpful error rather than the intended RuntimeError.
+
+- **`get_centroids()` and newer faiss-cpu**: `index.quantizer.xb` is not available in recent `faiss-cpu` versions. Always use `index.quantizer.reconstruct(i)` per centroid. The `downcast_index()` approach is also fragile — avoid it.
+
 - **Windows paths in YAML**: Always use `.as_posix()` when embedding `Path` objects into YAML strings in tests. Windows backslashes in double-quoted YAML strings are treated as escape sequences, causing `yaml.scanner.ScannerError`.
 
 - **`make_response_record` reasoning length**: The structural filter requires `min_response_tokens=50` (default). Test fixtures must produce reasoning above this threshold. `conftest.py`'s `make_response_record` is calibrated to ~80 tokens — don't shorten it.
@@ -244,6 +289,10 @@ SymPy can fail to parse valid LaTeX (e.g., custom macros, non-standard notation)
 - **DuckDB concurrent access**: DuckDB in WAL mode supports one writer + multiple readers. Don't run two pipeline instances pointing to the same checkpoint DB simultaneously.
 
 - **Stage 3 is idempotent on embeddings**: If `embeddings_dir` already contains any `embeddings_*.parquet` shards, Stage 3 skips re-embedding and goes straight to indexing. Safe to re-run after a crash during FAISS index building.
+
+- **`{global.base_path}` vs `{base_path}`**: Both resolve to the same value. Prefer `{base_path}` in YAML files — it's shorter and guaranteed to work with both pass 1 and pass 2 of placeholder resolution. `{global.base_path}` also works but is only needed if you have a value that needs to match config YAML key paths exactly.
+
+- **`stage1_research.yaml` and `lmsys/lmsys-chat-1m`**: This dataset requires accepting a licence on HuggingFace. Set `HF_TOKEN` env var before running if you haven't accepted it, otherwise the dataset download will fail with an authorization error.
 
 ---
 

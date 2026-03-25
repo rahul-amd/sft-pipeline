@@ -1,0 +1,106 @@
+# SFT Pipeline — Production Overrides
+# For the 32-node AMD MI250X cluster (512 GCDs, ROCm).
+# Inherits structure from default.yaml.
+#
+# Usage: sft-pipeline run --config config/prod.yaml
+
+global:
+  run_id: "prod_run_001"
+  base_path: "/data/sft-pipeline/runs/{run_id}"
+  log_level: "INFO"
+  device: "rocm"
+
+stage1_collect:
+  datasets:
+    - source: "hf_dataset"
+      hf_repo_id: "openai/gsm8k"
+      hf_split: "train"
+      hf_config: "main"
+      prompt_field: "question"
+      domain_hint: "math"
+    - source: "hf_dataset"
+      hf_repo_id: "cais/mmlu"
+      hf_split: "test"
+      hf_config: "all"
+      prompt_field: "question"
+    - source: "hf_dataset"
+      hf_repo_id: "openai/openai_humaneval"
+      hf_split: "test"
+      prompt_field: "prompt"
+      domain_hint: "code"
+    - source: "hf_dataset"
+      hf_repo_id: "allenai/ai2_arc"
+      hf_split: "train"
+      hf_config: "ARC-Challenge"
+      prompt_field: "question"
+      domain_hint: "science"
+    - source: "hf_dataset"
+      hf_repo_id: "lighteval/MATH"
+      hf_split: "train"
+      prompt_field: "problem"
+      domain_hint: "math"
+    - source: "hf_dataset"
+      hf_repo_id: "allenai/WizardLM_evol_instruct_V2_196k"
+      hf_split: "train"
+      prompt_field: "instruction"
+    - source: "local_jsonl"
+      path: "/data/datasets/extra_prompts.jsonl"
+      prompt_field: "prompt"
+
+stage2_generate:
+  enabled: false
+  corpora:
+    - source: "local"
+      path: "/data/corpora/arxiv/"
+      domain_hint: "science"
+    - source: "local"
+      path: "/data/corpora/wikipedia/"
+    - source: "local"
+      path: "/data/corpora/textbooks/"
+    - source: "local"
+      path: "/data/corpora/stackexchange/"
+      domain_hint: "code"
+  prompts_per_chunk: 4
+  max_workers: 32
+  generator_endpoint: "http://localhost:8001/v1"
+
+stage3_cluster:
+  embedding_batch_size: 1024   # larger batches on cluster GPUs
+  faiss_nlist: 2000
+  faiss_training_sample: 1000000
+
+stage4_sample:
+  total_prompts: 7000000
+
+stage5_inference:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  n_replicas: 64
+  vllm_engine:
+    tensor_parallel_size: 8
+    gpu_memory_utilization: 0.90
+    max_model_len: 8192
+    dtype: "bfloat16"
+    enable_chunked_prefill: true
+  generation:
+    temperature: 0.7
+    top_p: 0.95
+    max_tokens: 4096
+    n_candidates: 2
+  batch_size: 256
+  checkpoint_every: 5000
+
+stage6_filter:
+  llm_judge:
+    enabled: true
+    model_endpoint: "http://localhost:8001/v1"
+    model: "Qwen/Qwen2.5-7B-Instruct"
+    score_threshold: 6.0
+    sample_rate: 0.10
+  code:
+    sandbox: "subprocess"  # change to "e2b" if preferred
+    timeout_seconds: 10
+
+export:
+  final_jsonl_path: "{base_path}/final/dataset.jsonl"
+  shard_size_mb: 500
+  push_to_hub: false

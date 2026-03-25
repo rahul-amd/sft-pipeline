@@ -1,0 +1,163 @@
+"""
+Batched sentence embedding using sentence-transformers.
+
+Streams JSONL prompt records, embeds in batches, and writes
+(prompt_id, embedding) pairs to sharded Parquet files in float16.
+
+Memory: each shard holds `rows_per_shard` rows. Default 500K rows at
+1024 dims × 2 bytes = ~1GB float16 per shard. At 7M prompts → ~14 shards.
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Iterator
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+_SHARD_GLOB = "embeddings_*.parquet"
+
+
+def embed_prompts(
+    prompt_iter: Iterator[dict],
+    model_name: str,
+    batch_size: int,
+    device: str,
+    output_dir: str | Path,
+    rows_per_shard: int = 500_000,
+) -> int:
+    """
+    Embed all prompts and save to sharded Parquet files under `output_dir`.
+
+    Shards are named embeddings_0000.parquet, embeddings_0001.parquet, …
+    Each shard holds at most `rows_per_shard` rows, so peak RAM stays bounded
+    regardless of total dataset size.
+
+    Args:
+        prompt_iter: Iterator of dicts with at least 'prompt_id' and 'prompt'.
+        model_name: HuggingFace model name for sentence-transformers.
+        batch_size: Number of prompts per embedding batch.
+        device: 'cuda', 'rocm' (maps to 'cuda' in PyTorch), or 'cpu'.
+        output_dir: Directory to write sharded Parquet files.
+        rows_per_shard: Flush a new shard file after this many rows.
+
+    Returns:
+        Total number of prompts embedded.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from sentence_transformers import SentenceTransformer
+
+    # ROCm uses 'cuda' device string in PyTorch
+    pt_device = "cuda" if device in ("cuda", "rocm") else "cpu"
+
+    logger.info("Loading embedding model %s on device=%s", model_name, pt_device)
+    model = SentenceTransformer(model_name, device=pt_device)
+    logger.info("Embedding dim: %d", model.get_sentence_embedding_dimension())
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    shard_idx = 0
+    shard_ids: list[str] = []
+    shard_vecs: list[np.ndarray] = []
+    shard_rows = 0
+
+    batch_ids: list[str] = []
+    batch_texts: list[str] = []
+    total = 0
+
+    def _write_shard() -> None:
+        nonlocal shard_idx, shard_rows
+        if not shard_ids:
+            return
+        vecs = np.vstack(shard_vecs)  # (rows, dim)
+        shard_path = out_dir / f"embeddings_{shard_idx:04d}.parquet"
+        table = pa.table({
+            "prompt_id": pa.array(shard_ids, type=pa.string()),
+            "embedding": pa.array(
+                [row.tolist() for row in vecs],
+                type=pa.list_(pa.float16()),
+            ),
+        })
+        pq.write_table(table, str(shard_path), compression="zstd")
+        logger.info(
+            "Wrote shard %d → %s (%d rows)", shard_idx, shard_path.name, len(shard_ids)
+        )
+        shard_idx += 1
+        shard_ids.clear()
+        shard_vecs.clear()
+        shard_rows = 0
+
+    def _flush_batch() -> None:
+        nonlocal shard_rows
+        if not batch_texts:
+            return
+        vecs = model.encode(
+            batch_texts,
+            batch_size=len(batch_texts),
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        ).astype(np.float16)
+        shard_ids.extend(batch_ids)
+        shard_vecs.append(vecs)
+        shard_rows += len(batch_texts)
+        batch_ids.clear()
+        batch_texts.clear()
+
+        if shard_rows >= rows_per_shard:
+            _write_shard()
+
+    for record in prompt_iter:
+        batch_ids.append(record["prompt_id"])
+        batch_texts.append(record["prompt"])
+        total += 1
+
+        if len(batch_texts) >= batch_size:
+            _flush_batch()
+            if total % 100_000 == 0:
+                logger.info("Embedded %d prompts so far...", total)
+
+    _flush_batch()   # remaining batch
+    _write_shard()   # remaining shard
+
+    if total == 0:
+        logger.warning("No prompts to embed.")
+    else:
+        logger.info("Embedding complete: %d prompts → %d shards in %s", total, shard_idx, out_dir)
+
+    return total
+
+
+def load_embeddings(parquet_path: str | Path) -> tuple[list[str], np.ndarray]:
+    """
+    Load (prompt_ids, embeddings_float32) from a Parquet file or directory of shards.
+
+    Accepts:
+      - A single .parquet file (legacy / test usage)
+      - A directory containing embeddings_*.parquet shards (production)
+
+    Returns float32 for FAISS compatibility.
+    """
+    import pyarrow.parquet as pq
+
+    path = Path(parquet_path)
+
+    if path.is_dir():
+        shard_files = sorted(path.glob(_SHARD_GLOB))
+        if not shard_files:
+            raise FileNotFoundError(f"No embedding shards found in {path}")
+        tables = [pq.read_table(str(f)) for f in shard_files]
+        import pyarrow as pa
+        table = pa.concat_tables(tables)
+        logger.info("Loaded %d shards from %s", len(shard_files), path)
+    else:
+        table = pq.read_table(str(path))
+
+    ids = table["prompt_id"].to_pylist()
+    vecs = np.array(table["embedding"].to_pylist(), dtype=np.float32)
+    logger.info("Loaded %d embeddings, shape=%s", len(ids), vecs.shape)
+    return ids, vecs

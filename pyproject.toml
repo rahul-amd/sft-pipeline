@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sft-pipeline"
+version = "0.1.0"
+description = "Scalable high-quality SFT dataset construction pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    # Config & CLI
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "rich>=13.0",
+
+    # Data loading
+    "datasets>=2.19",
+    "huggingface-hub>=0.23",
+
+    # Deduplication
+    "datasketch>=1.6",
+
+    # Text chunking
+    "langchain-text-splitters>=0.2",
+    "tiktoken>=0.7",
+
+    # Embeddings & ANN
+    "sentence-transformers>=3.0",
+    "faiss-cpu>=1.8",
+
+    # Clustering & dataframes
+    "hdbscan>=0.8",
+    "polars>=0.20",
+    "pyarrow>=16.0",
+
+    # Checkpointing
+    "duckdb>=0.10",
+
+    # Quality filtering
+    "sympy>=1.12",
+    "json-repair>=0.25",
+
+    # HTTP / async
+    "httpx>=0.27",
+    "tenacity>=8.3",
+
+    # Export
+    "orjson>=3.10",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "torch>=2.3",
+    "vllm>=0.5",
+]
+code-sandbox = [
+    "e2b-code-interpreter>=0.0.8",
+]
+translate = [
+    "deepl>=1.18",
+    "google-cloud-translate>=3.15",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "numpy>=1.26",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+sft-pipeline = "sft_pipeline.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sft_pipeline"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -1,0 +1,59 @@
+# SFT Pipeline — Dev/Laptop Overrides
+# Inherits all defaults from default.yaml, overrides for local dev
+# on a Windows laptop with NVIDIA RTX 5060 (CUDA).
+#
+# Usage: sft-pipeline run --config config/default.yaml
+#        (then selectively run stages with small data)
+
+global:
+  run_id: "dev_run_001"
+  base_path: "C:/Users/rahul/data/sft-pipeline/runs/{run_id}"
+  log_level: "DEBUG"
+  device: "cuda"   # RTX 5060
+
+stage1_collect:
+  datasets:
+    - source: "hf_dataset"
+      hf_repo_id: "openai/gsm8k"
+      hf_split: "train"
+      hf_config: "main"
+      prompt_field: "question"
+      domain_hint: "math"
+  # Keep small for dev
+  output_path: "{base_path}/stage1/prompts.jsonl"
+
+stage2_generate:
+  enabled: false   # skip corpus generation locally (no large corpora on laptop)
+
+stage3_cluster:
+  embedding_batch_size: 128   # smaller batch for RTX 5060
+  faiss_nlist: 100            # fewer centroids for small dev dataset
+  faiss_training_sample: 5000
+
+stage4_sample:
+  total_prompts: 1000          # tiny sample for dev
+
+stage5_inference:
+  # Use a small 7B model on the RTX 5060 for dev testing
+  model: "Qwen/Qwen2.5-7B-Instruct"
+  n_replicas: 1
+  vllm_engine:
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    max_model_len: 4096
+    dtype: "float16"
+  generation:
+    max_tokens: 1024
+    n_candidates: 1
+  batch_size: 16
+  checkpoint_every: 100
+
+stage6_filter:
+  llm_judge:
+    enabled: false   # skip judge for dev
+  code:
+    sandbox: "subprocess"
+
+export:
+  final_jsonl_path: "{base_path}/final/dataset.jsonl"
+  shard_size_mb: 100

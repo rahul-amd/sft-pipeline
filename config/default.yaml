@@ -1,0 +1,197 @@
+# SFT Pipeline — Default Configuration
+# All parameters are documented here. Override in dev.yaml or prod.yaml.
+# Placeholders {run_id} and {base_path} are resolved at startup.
+
+global:
+  seed: 42
+  dry_run: false
+  run_id: "run_001"
+  base_path: "/data/sft-pipeline/runs/{run_id}"
+  checkpoint_db: "{base_path}/checkpoints.duckdb"
+  log_level: "INFO"
+  # "cuda" for NVIDIA (laptop dev), "rocm" for AMD cluster, "cpu" for CPU-only
+  device: "cpu"
+
+# ---------------------------------------------------------------------------
+# Stage 1 — Prompt Collection from Existing Datasets
+# ---------------------------------------------------------------------------
+stage1_collect:
+  enabled: true
+  datasets:
+    - source: "hf_dataset"
+      hf_repo_id: "openai/gsm8k"
+      hf_split: "train"
+      hf_config: "main"
+      prompt_field: "question"
+      domain_hint: "math"
+
+    - source: "hf_dataset"
+      hf_repo_id: "cais/mmlu"
+      hf_split: "test"
+      hf_config: "all"
+      prompt_field: "question"
+
+    - source: "hf_dataset"
+      hf_repo_id: "openai/openai_humaneval"
+      hf_split: "test"
+      prompt_field: "prompt"
+      domain_hint: "code"
+
+    - source: "hf_dataset"
+      hf_repo_id: "allenai/ai2_arc"
+      hf_split: "train"
+      hf_config: "ARC-Challenge"
+      prompt_field: "question"
+      domain_hint: "science"
+
+    - source: "hf_dataset"
+      hf_repo_id: "lighteval/MATH"
+      hf_split: "train"
+      prompt_field: "problem"
+      domain_hint: "math"
+
+  dedup_threshold: 0.95
+  minhash_num_perm: 128
+  batch_size: 10000
+  output_path: "{base_path}/stage1/prompts.jsonl"
+
+# ---------------------------------------------------------------------------
+# Stage 2 — Prompt Generation from Knowledge-Rich Corpora
+# ---------------------------------------------------------------------------
+stage2_generate:
+  enabled: true
+  corpora:
+    - source: "local"
+      path: "/data/corpora/arxiv/"
+      domain_hint: "science"
+
+    - source: "local"
+      path: "/data/corpora/wikipedia/"
+
+    - source: "local"
+      path: "/data/corpora/textbooks/"
+
+  chunk_size_tokens: 1024
+  chunk_overlap_tokens: 128
+  prompts_per_chunk: 4
+  # Lightweight generator model served via vLLM HTTP on a spare GPU
+  generator_model: "Qwen/Qwen2.5-7B-Instruct"
+  generator_endpoint: "http://localhost:8001/v1"
+  generator_temperature: 0.8
+  generator_max_tokens: 512
+  max_workers: 16
+  output_path: "{base_path}/stage2/prompts.jsonl"
+
+# ---------------------------------------------------------------------------
+# Stage 3 — Clustering by Domain and Difficulty
+# ---------------------------------------------------------------------------
+stage3_cluster:
+  enabled: true
+  embedding_model: "BAAI/bge-m3"
+  embedding_batch_size: 512
+  # FAISS CPU (works on both NVIDIA laptop and AMD cluster)
+  faiss_index_type: "IVFFlat"
+  faiss_nlist: 1000
+  faiss_nprobe: 50
+  faiss_training_sample: 500000
+  # HDBSCAN on centroids (not all vectors)
+  clustering_algorithm: "hdbscan"
+  hdbscan_min_cluster_size: 100
+  n_clusters: 50
+  # Difficulty heuristics
+  difficulty_easy_max_tokens: 50
+  difficulty_hard_min_tokens: 200
+  # Output
+  embeddings_dir: "{base_path}/stage3/embeddings"
+  faiss_index_path: "{base_path}/stage3/faiss.index"
+  output_path: "{base_path}/stage3/clustered_prompts.jsonl"
+
+# ---------------------------------------------------------------------------
+# Stage 4 — Prompt Sampling
+# ---------------------------------------------------------------------------
+stage4_sample:
+  enabled: true
+  # ~7M for inference → ~5M final after ~30% filtering
+  total_prompts: 7000000
+  domain_quotas:
+    math: 0.25
+    code: 0.20
+    science: 0.20
+    general: 0.20
+    language: 0.15
+  difficulty_quotas:
+    easy: 0.20
+    medium: 0.50
+    hard: 0.30
+  dedup_cosine_threshold: 0.92
+  output_path: "{base_path}/stage4/sampled_prompts.jsonl"
+
+# ---------------------------------------------------------------------------
+# Stage 5 — Teacher Model Inference
+# ---------------------------------------------------------------------------
+stage5_inference:
+  enabled: true
+  # AMD cluster: Qwen3.5-122B-A10B (MoE, ~10B active params)
+  model: "Qwen/Qwen3.5-122B-A10B"
+  # 512 GCDs / TP=8 = 64 Ray replicas
+  n_replicas: 64
+  vllm_engine:
+    tensor_parallel_size: 8
+    pipeline_parallel_size: 1
+    gpu_memory_utilization: 0.90
+    max_model_len: 8192
+    dtype: "bfloat16"
+    enable_chunked_prefill: true
+  generation:
+    temperature: 0.7
+    top_p: 0.95
+    max_tokens: 4096
+    n_candidates: 2
+  delimiters:
+    think_start: "<think>"
+    think_end: "</think>"
+    answer_start: "<answer>"
+    answer_end: "</answer>"
+  batch_size: 256
+  checkpoint_every: 5000
+  max_retries: 3
+  output_path: "{base_path}/stage5/responses.jsonl"
+
+# ---------------------------------------------------------------------------
+# Stage 6 — Quality Filtering
+# ---------------------------------------------------------------------------
+stage6_filter:
+  enabled: true
+  structural:
+    min_response_tokens: 50
+    max_response_tokens: 8000
+    max_repetition_ngram: 5
+    max_repetition_count: 3
+  heuristic:
+    min_info_density: 0.30
+    flag_self_contradiction: true
+  math:
+    enabled: true
+    domains: ["math", "science"]
+  code:
+    enabled: true
+    sandbox: "subprocess"   # change to "e2b" for stronger isolation
+    timeout_seconds: 10
+    domains: ["code"]
+  llm_judge:
+    enabled: true
+    model_endpoint: "http://localhost:8001/v1"
+    model: "Qwen/Qwen2.5-7B-Instruct"
+    score_threshold: 6.0
+    sample_rate: 0.10
+  output_path: "{base_path}/stage6/filtered.jsonl"
+  report_path: "{base_path}/stage6/filter_report.json"
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+export:
+  final_jsonl_path: "{base_path}/final/dataset.jsonl"
+  shard_size_mb: 500
+  hf_repo_id: null
+  push_to_hub: false

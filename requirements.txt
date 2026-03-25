@@ -1,0 +1,63 @@
+# Core dependencies
+pydantic>=2.0
+pyyaml>=6.0
+typer>=0.12
+rich>=13.0
+
+# Data loading
+datasets>=2.19
+huggingface-hub>=0.23
+
+# Deduplication
+datasketch>=1.6
+
+# Text chunking
+langchain-text-splitters>=0.2
+tiktoken>=0.7
+
+# Embeddings & ANN
+sentence-transformers>=3.0
+faiss-cpu>=1.8
+
+# Clustering & dataframes
+hdbscan>=0.8
+polars>=0.20
+pyarrow>=16.0
+
+# Checkpointing
+duckdb>=0.10
+
+# Quality filtering
+sympy>=1.12
+json-repair>=0.25
+
+# HTTP / async
+httpx>=0.27
+tenacity>=8.3
+
+# Export
+orjson>=3.10
+
+# ── Optional extras ──────────────────────────────────────────────────────────
+# GPU inference (CUDA — laptop dev):
+#   pip install torch>=2.3 vllm>=0.5
+#
+# Fast GPU clustering (requires CUDA/ROCm + Triton):
+#   pip install flash-kmeans
+#
+# GPU inference (ROCm — cluster):
+#   pip install torch --index-url https://download.pytorch.org/whl/rocm6.1
+#   pip install vllm  # use the ROCm-specific wheel from vllm releases
+#
+# Code sandbox (production):
+#   pip install e2b-code-interpreter>=0.0.8
+#
+# Translation (v2):
+#   pip install deepl>=1.18 google-cloud-translate>=3.15
+
+# ── Dev / test ────────────────────────────────────────────────────────────────
+# pytest>=8.0
+# pytest-asyncio>=0.23
+# numpy>=1.26
+# ruff>=0.4
+# mypy>=1.10

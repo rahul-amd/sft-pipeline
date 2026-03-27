@@ -32,6 +32,9 @@ def _setup_logging(level: str) -> None:
         format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    # Suppress noisy HTTP-level logs from libraries used by HF datasets streaming
+    for noisy in ("httpx", "httpcore", "urllib3", "filelock", "fsspec"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def _load(config_path: str):

@@ -356,7 +356,8 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     n_workers = min(n_sources, _MAX_WORKER_THREADS)
     out_q: queue.Queue = queue.Queue(maxsize=_QUEUE_MAXSIZE)
 
-    total_written = 0
+    total_processed = 0   # items received from workers (passed is_processed check)
+    total_written = 0     # items that survived dedup and were written
     # Pending checkpoint entries flushed in batches
     pending: list[tuple[str, ItemStatus, str | None]] = []
 
@@ -374,6 +375,7 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     continue
 
                 pid, normalized, mh, source_name, domain_hint = item
+                total_processed += 1
 
                 # Exact duplicate within this run — already written, skip
                 if pid in seen_in_lsh:
@@ -398,8 +400,12 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     pending.append((pid, ItemStatus.SUCCESS, shard))
                     total_written += 1
 
-                    if total_written % 10_000 == 0:
-                        logger.info("Stage1: written %d prompts", total_written)
+                if total_processed % 10_000 == 0:
+                    dedup_rate = 100.0 * (1 - total_written / total_processed) if total_processed else 0.0
+                    logger.info(
+                        "Stage1: processed %d  |  written %d  |  dedup rate %.1f%%",
+                        total_processed, total_written, dedup_rate,
+                    )
 
                 # Flush checkpoint batch
                 if len(pending) >= _CHECKPOINT_BATCH_SIZE:

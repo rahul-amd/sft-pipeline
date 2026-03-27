@@ -103,7 +103,18 @@ class ShardedJSONLWriter:
         self._shard_max_bytes = shard_size_mb * 1024 * 1024
         self._on_shard_complete = on_shard_complete
 
-        self._shard_idx = 0
+        # Resume-safe: start after the highest-numbered shard already on disk.
+        existing = sorted(self._dir.glob("part-*.jsonl"))
+        if existing:
+            last_idx = int(existing[-1].stem.split("-")[1])
+            self._shard_idx = last_idx + 1
+            logger.info(
+                "ShardedJSONLWriter: found %d existing shard(s) in %s, resuming at part-%06d",
+                len(existing), self._dir, self._shard_idx,
+            )
+        else:
+            self._shard_idx = 0
+
         self._current_file = None
         self._current_path: Path | None = None
         self._current_bytes = 0

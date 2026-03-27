@@ -20,6 +20,7 @@ import polars as pl
 
 from sft_pipeline.checkpoint import CheckpointManager
 from sft_pipeline.clustering.embedder import load_embeddings
+from sft_pipeline.clustering.faiss_index import make_flat_index
 from sft_pipeline.config import PipelineConfig
 from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl_dir
 
@@ -122,6 +123,8 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     logger.info("Stage4: sampled %d prompts before dedup", len(sampled_ids))
 
+    device = cfg.global_.device
+
     # ------------------------------------------------------------------
     # Step D: Near-duplicate removal via cosine similarity
     # ------------------------------------------------------------------
@@ -131,6 +134,7 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             emb_vectors,
             id_to_emb_idx,
             threshold=s4.dedup_cosine_threshold,
+            device=device,
         )
         logger.info("Stage4: %d prompts after cosine dedup", len(sampled_ids))
 
@@ -138,7 +142,7 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     # Step E: Sort by embedding similarity (KV-cache optimization)
     # ------------------------------------------------------------------
     if emb_vectors is not None and len(sampled_ids) > 0:
-        sampled_ids = _sort_by_similarity(sampled_ids, emb_vectors, id_to_emb_idx)
+        sampled_ids = _sort_by_similarity(sampled_ids, emb_vectors, id_to_emb_idx, device=device)
         logger.info("Stage4: prompts sorted by embedding similarity")
 
     # ------------------------------------------------------------------
@@ -175,13 +179,12 @@ def _remove_near_duplicates(
     id_to_idx: dict[str, int],
     threshold: float,
     batch_size: int = 50_000,
+    device: str = "cpu",
 ) -> list[str]:
     """
     Remove near-duplicates from prompt_ids using cosine similarity.
     Returns a deduplicated list preserving order.
     """
-    import faiss
-
     # Extract embeddings for the sampled set
     valid_ids = [pid for pid in prompt_ids if pid in id_to_idx]
     if not valid_ids:
@@ -191,10 +194,9 @@ def _remove_near_duplicates(
         [all_embeddings[id_to_idx[pid]] for pid in valid_ids], dtype=np.float32
     )
     N, D = vecs.shape
-    logger.info("Stage4 dedup: building temp FAISS index for %d vectors", N)
+    logger.info("Stage4 dedup: building temp FAISS index for %d vectors (device=%s)", N, device)
 
-    index = faiss.IndexFlatIP(D)
-    index.add(vecs)
+    index = make_flat_index(vecs, device=device)
 
     keep_mask = np.ones(N, dtype=bool)
     for i in range(0, N, batch_size):
@@ -223,6 +225,7 @@ def _sort_by_similarity(
     prompt_ids: list[str],
     all_embeddings: np.ndarray,
     id_to_idx: dict[str, int],
+    device: str = "cpu",
 ) -> list[str]:
     """
     Greedy nearest-neighbour traversal to sort prompts by similarity.
@@ -232,8 +235,6 @@ def _sort_by_similarity(
     valid_ids = [pid for pid in prompt_ids if pid in id_to_idx]
     if len(valid_ids) < 2:
         return valid_ids
-
-    import faiss
 
     vecs = np.array(
         [all_embeddings[id_to_idx[pid]] for pid in valid_ids], dtype=np.float32
@@ -245,10 +246,11 @@ def _sort_by_similarity(
         logger.info("Stage4: skipping similarity sort for N=%d (too large, >500K)", N)
         return valid_ids
 
-    D = vecs.shape[1]
-    logger.info("Stage4: running greedy similarity sort on %d prompts (dim=%d)", N, D)
-    index = faiss.IndexFlatIP(D)
-    index.add(vecs)
+    logger.info(
+        "Stage4: running greedy similarity sort on %d prompts (dim=%d, device=%s)",
+        N, vecs.shape[1], device,
+    )
+    index = make_flat_index(vecs, device=device)
 
     visited = np.zeros(N, dtype=bool)
     order = []

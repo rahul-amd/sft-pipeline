@@ -205,7 +205,7 @@ def _load_hf_dataset(src: DatasetSource):
         kwargs["name"] = src.hf_config
 
     logger.info("Loading HF dataset %s (split=%s, config=%s)", src.hf_repo_id, src.hf_split, src.hf_config)
-    ds = load_dataset(src.hf_repo_id, **kwargs, trust_remote_code=False)
+    ds = load_dataset(src.hf_repo_id, **kwargs, streaming=True, trust_remote_code=False)
 
     field = src.prompt_field
     for row in ds:

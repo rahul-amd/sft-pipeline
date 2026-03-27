@@ -84,10 +84,13 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             nlist=s3.faiss_nlist,
             nprobe=s3.faiss_nprobe,
             training_sample=s3.faiss_training_sample,
+            device=cfg.global_.device,
         )
     else:
         logger.info("Stage3: FAISS index found, skipping rebuild")
 
+    # Load on GPU if available — get_centroids() needs a CPU index, so we
+    # load CPU here; Stage 4 handles its own GPU indexes for search.
     faiss_index = load_index(idx_path)
 
     # ------------------------------------------------------------------

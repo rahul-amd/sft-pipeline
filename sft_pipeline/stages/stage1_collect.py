@@ -36,8 +36,10 @@ import itertools
 import json
 import logging
 import os
+import queue
 import re
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +50,14 @@ from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl
 logger = logging.getLogger(__name__)
 
 STAGE = "stage1_collect"
+
+# Tuning constants
+_CHECKPOINT_BATCH_SIZE = 1_000   # DuckDB rows flushed per batch
+_QUEUE_MAXSIZE = 20_000          # max items buffered between producers and consumer
+_MAX_WORKER_THREADS = 8          # cap concurrent source-loader threads
+
+# Sentinel object used to signal a worker thread has finished
+_SENTINEL = object()
 
 # Heuristic domain keywords for labelling when no domain_hint is given
 _DOMAIN_KEYWORDS: dict[str, list[str]] = {
@@ -70,14 +80,22 @@ _DOMAIN_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
+# Pre-compiled regex patterns — compiled once at import time, reused for every prompt
+_DOMAIN_PATTERNS: dict[str, re.Pattern] = {
+    domain: re.compile("|".join(re.escape(kw) for kw in keywords), re.IGNORECASE)
+    for domain, keywords in _DOMAIN_KEYWORDS.items()
+}
+
 
 def _infer_domain(text: str) -> str:
-    lower = text.lower()
-    scores: dict[str, int] = {domain: 0 for domain in _DOMAIN_KEYWORDS}
-    for domain, keywords in _DOMAIN_KEYWORDS.items():
-        scores[domain] = sum(1 for kw in keywords if kw in lower)
-    best = max(scores, key=lambda d: scores[d])
-    return best if scores[best] > 0 else "general"
+    best_domain = "general"
+    best_count = 0
+    for domain, pattern in _DOMAIN_PATTERNS.items():
+        count = len(pattern.findall(text))
+        if count > best_count:
+            best_count = count
+            best_domain = domain
+    return best_domain
 
 
 def _normalize(text: str) -> str:
@@ -267,13 +285,60 @@ def _make_minhash(text: str, num_perm: int):
     return m
 
 
+def _source_worker(
+    src: DatasetSource,
+    num_perm: int,
+    cm: CheckpointManager,
+    out_q: queue.Queue,
+) -> None:
+    """
+    Producer thread: load one dataset source, normalize rows, compute MinHash,
+    and enqueue (pid, text, minhash, source_name, domain_hint) tuples.
+
+    Puts _SENTINEL on the queue when done (even on error) so the consumer
+    always knows this worker has finished.
+    """
+    source_name = src.hf_repo_id or Path(src.path).name
+    seen = 0
+    enqueued = 0
+    try:
+        if src.source == "hf_dataset":
+            raw_iter = _load_hf_dataset(src)
+        else:
+            raw_iter = _load_local_jsonl(src)
+
+        if src.max_examples is not None:
+            raw_iter = itertools.islice(raw_iter, src.max_examples)
+            logger.info("Stage1: capping %s at %d examples", source_name, src.max_examples)
+
+        for raw_text in raw_iter:
+            seen += 1
+            normalized = _normalize(raw_text)
+            if len(normalized) < 10:
+                continue
+            pid = prompt_id(normalized)
+            # Read-only cache lookup — safe to call from multiple threads
+            if cm.is_processed(pid, STAGE):
+                continue
+            mh = _make_minhash(normalized, num_perm)
+            out_q.put((pid, normalized, mh, source_name, src.domain_hint))
+            enqueued += 1
+    except Exception as exc:
+        logger.error("Source %s failed after %d rows: %s", source_name, seen, exc)
+    finally:
+        logger.info(
+            "Source %s worker done: %d rows seen, %d items enqueued.",
+            source_name, seen, enqueued,
+        )
+        out_q.put(_SENTINEL)
+
+
 def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     s1 = cfg.stage1_collect
     if not s1.datasets:
         logger.warning("stage1_collect: no datasets configured — skipping")
         return
 
-    # Set HuggingFace cache directory before any HF calls if configured.
     if cfg.global_.hf_home:
         os.environ["HF_HOME"] = cfg.global_.hf_home
         logger.info("Stage1: HF_HOME set to %s", cfg.global_.hf_home)
@@ -287,78 +352,63 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     lsh = _make_lsh(s1.minhash_num_perm, s1.dedup_threshold)
     seen_in_lsh: set[str] = set()
 
-    total_seen = 0
+    n_sources = len(s1.datasets)
+    n_workers = min(n_sources, _MAX_WORKER_THREADS)
+    out_q: queue.Queue = queue.Queue(maxsize=_QUEUE_MAXSIZE)
+
     total_written = 0
+    # Pending checkpoint entries flushed in batches
+    pending: list[tuple[str, ItemStatus, str | None]] = []
 
-    with ShardedJSONLWriter(output_dir, shard_size_mb=200) as writer:
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
         for src in s1.datasets:
-            source_name = src.hf_repo_id or Path(src.path).name
-            domain_hint = src.domain_hint
+            executor.submit(_source_worker, src, s1.minhash_num_perm, cm, out_q)
 
-            if src.source == "hf_dataset":
-                raw_iter = _load_hf_dataset(src)
-            else:
-                raw_iter = _load_local_jsonl(src)
+        active = n_sources
+        with ShardedJSONLWriter(output_dir, shard_size_mb=200) as writer:
+            while active > 0:
+                item = out_q.get()
 
-            if src.max_examples is not None:
-                raw_iter = itertools.islice(raw_iter, src.max_examples)
-                logger.info("Stage1: capping %s at %d examples", source_name, src.max_examples)
+                if item is _SENTINEL:
+                    active -= 1
+                    continue
 
-            source_written = 0
-            try:
-                for raw_text in raw_iter:
-                    total_seen += 1
-                    normalized = _normalize(raw_text)
-                    if len(normalized) < 10:
-                        continue
+                pid, normalized, mh, source_name, domain_hint = item
 
-                    pid = prompt_id(normalized)
+                # Exact duplicate within this run — already written, skip
+                if pid in seen_in_lsh:
+                    continue
 
-                    # Skip if already written in a prior run
-                    if cm.is_processed(pid, STAGE):
-                        continue
-
-                    # Near-duplicate check via MinHash LSH
-                    if pid not in seen_in_lsh:
-                        mh = _make_minhash(normalized, s1.minhash_num_perm)
-                        duplicates = lsh.query(mh)
-                        if duplicates:
-                            # Near-duplicate found — skip
-                            cm.mark_processed(pid, STAGE, status=ItemStatus.SKIPPED)
-                            continue
-                        lsh.insert(pid, mh)
-                        seen_in_lsh.add(pid)
+                # Near-duplicate check via MinHash LSH
+                if lsh.query(mh):
+                    pending.append((pid, ItemStatus.SKIPPED, None))
+                else:
+                    lsh.insert(pid, mh)
+                    seen_in_lsh.add(pid)
 
                     domain = domain_hint or _infer_domain(normalized)
-
-                    record = {
+                    writer.write({
                         "prompt_id": pid,
                         "prompt": normalized,
                         "source": source_name,
                         "domain": domain,
                         "stage": "stage1",
-                    }
-                    writer.write(record)
-                    cm.mark_processed(pid, STAGE, shard=writer.written_shards[-1] if writer.written_shards else None)
+                    })
+                    shard = writer.written_shards[-1] if writer.written_shards else None
+                    pending.append((pid, ItemStatus.SUCCESS, shard))
                     total_written += 1
-                    source_written += 1
 
                     if total_written % 10_000 == 0:
-                        logger.info(
-                            "Stage1: written %d total (%d this source, %d seen)",
-                            total_written, source_written, total_seen,
-                        )
-            except Exception as exc:
-                logger.error(
-                    "Source %s failed during iteration after %d rows — skipping remainder. Error: %s",
-                    source_name, source_written, exc,
-                )
-            else:
-                logger.info("Source %s complete: wrote %d prompts.", source_name, source_written)
+                        logger.info("Stage1: written %d prompts", total_written)
+
+                # Flush checkpoint batch
+                if len(pending) >= _CHECKPOINT_BATCH_SIZE:
+                    cm.mark_processed_batch(pending, STAGE)
+                    pending.clear()
+
+    # Final checkpoint flush
+    if pending:
+        cm.mark_processed_batch(pending, STAGE)
 
     cm.mark_stage_complete(STAGE, output_count=total_written)
-    logger.info(
-        "Stage1 complete: seen=%d, written=%d, dedup_rate=%.1f%%",
-        total_seen, total_written,
-        100.0 * (1 - total_written / max(total_seen, 1)),
-    )
+    logger.info("Stage1 complete: written=%d prompts", total_written)

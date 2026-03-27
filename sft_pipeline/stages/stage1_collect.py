@@ -205,16 +205,38 @@ def _load_hf_dataset(src: DatasetSource):
         kwargs["name"] = src.hf_config
 
     logger.info("Loading HF dataset %s (split=%s, config=%s)", src.hf_repo_id, src.hf_split, src.hf_config)
-    ds = load_dataset(src.hf_repo_id, **kwargs, streaming=True, trust_remote_code=False)
+    try:
+        ds = load_dataset(src.hf_repo_id, **kwargs, streaming=True, trust_remote_code=False)
+    except Exception as exc:
+        logger.error(
+            "Failed to load HF dataset %s — skipping source. Error: %s",
+            src.hf_repo_id, exc,
+        )
+        return
 
     field = src.prompt_field
+    row_errors = 0
     for row in ds:
-        val = _get_field(row, field)
-        if val is None:
-            continue
-        text = _extract_prompt(val)
-        if text:
-            yield text
+        try:
+            val = _get_field(row, field)
+            if val is None:
+                continue
+            text = _extract_prompt(val)
+            if text:
+                yield text
+        except Exception as exc:
+            row_errors += 1
+            if row_errors <= 5:
+                logger.warning(
+                    "Skipping malformed row from %s (field=%s): %s",
+                    src.hf_repo_id, field, exc,
+                )
+            elif row_errors == 6:
+                logger.warning(
+                    "Further row errors from %s will be suppressed.", src.hf_repo_id
+                )
+    if row_errors:
+        logger.info("Skipped %d malformed rows from %s.", row_errors, src.hf_repo_id)
 
 
 def _load_local_jsonl(src: DatasetSource):
@@ -281,47 +303,57 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                 raw_iter = itertools.islice(raw_iter, src.max_examples)
                 logger.info("Stage1: capping %s at %d examples", source_name, src.max_examples)
 
-            for raw_text in raw_iter:
-                total_seen += 1
-                normalized = _normalize(raw_text)
-                if len(normalized) < 10:
-                    continue
-
-                pid = prompt_id(normalized)
-
-                # Skip if already written in a prior run
-                if cm.is_processed(pid, STAGE):
-                    continue
-
-                # Near-duplicate check via MinHash LSH
-                mh = _make_minhash(normalized, s1.minhash_num_perm)
-                if pid not in seen_in_lsh:
-                    duplicates = lsh.query(mh)
-                    if duplicates:
-                        # Near-duplicate found — skip
-                        cm.mark_processed(pid, STAGE, status=ItemStatus.SKIPPED)
+            source_written = 0
+            try:
+                for raw_text in raw_iter:
+                    total_seen += 1
+                    normalized = _normalize(raw_text)
+                    if len(normalized) < 10:
                         continue
-                    lsh.insert(pid, mh)
-                    seen_in_lsh.add(pid)
 
-                domain = domain_hint or _infer_domain(normalized)
+                    pid = prompt_id(normalized)
 
-                record = {
-                    "prompt_id": pid,
-                    "prompt": normalized,
-                    "source": source_name,
-                    "domain": domain,
-                    "stage": "stage1",
-                }
-                writer.write(record)
-                cm.mark_processed(pid, STAGE, shard=writer.written_shards[-1] if writer.written_shards else None)
-                total_written += 1
+                    # Skip if already written in a prior run
+                    if cm.is_processed(pid, STAGE):
+                        continue
 
-                if total_written % 10_000 == 0:
-                    logger.info(
-                        "Stage1: processed %d / seen %d / written %d",
-                        total_seen, total_seen, total_written,
-                    )
+                    # Near-duplicate check via MinHash LSH
+                    mh = _make_minhash(normalized, s1.minhash_num_perm)
+                    if pid not in seen_in_lsh:
+                        duplicates = lsh.query(mh)
+                        if duplicates:
+                            # Near-duplicate found — skip
+                            cm.mark_processed(pid, STAGE, status=ItemStatus.SKIPPED)
+                            continue
+                        lsh.insert(pid, mh)
+                        seen_in_lsh.add(pid)
+
+                    domain = domain_hint or _infer_domain(normalized)
+
+                    record = {
+                        "prompt_id": pid,
+                        "prompt": normalized,
+                        "source": source_name,
+                        "domain": domain,
+                        "stage": "stage1",
+                    }
+                    writer.write(record)
+                    cm.mark_processed(pid, STAGE, shard=writer.written_shards[-1] if writer.written_shards else None)
+                    total_written += 1
+                    source_written += 1
+
+                    if total_written % 10_000 == 0:
+                        logger.info(
+                            "Stage1: written %d total (%d this source, %d seen)",
+                            total_written, source_written, total_seen,
+                        )
+            except Exception as exc:
+                logger.error(
+                    "Source %s failed during iteration after %d rows — skipping remainder. Error: %s",
+                    source_name, source_written, exc,
+                )
+            else:
+                logger.info("Source %s complete: wrote %d prompts.", source_name, source_written)
 
     cm.mark_stage_complete(STAGE, output_count=total_written)
     logger.info(

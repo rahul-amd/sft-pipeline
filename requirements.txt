@@ -10,6 +10,7 @@ huggingface-hub>=0.23
 
 # Deduplication
 datasketch>=1.6
+xxhash>=3.0
 
 # Text chunking
 langchain-text-splitters>=0.2

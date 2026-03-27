@@ -259,8 +259,9 @@ def _make_lsh(num_perm: int, threshold: float):
 
 
 def _make_minhash(text: str, num_perm: int):
+    import xxhash
     from datasketch import MinHash
-    m = MinHash(num_perm=num_perm)
+    m = MinHash(num_perm=num_perm, hashfunc=xxhash.xxh32_intdigest)
     for token in text.lower().split():
         m.update(token.encode())
     return m
@@ -318,8 +319,8 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                         continue
 
                     # Near-duplicate check via MinHash LSH
-                    mh = _make_minhash(normalized, s1.minhash_num_perm)
                     if pid not in seen_in_lsh:
+                        mh = _make_minhash(normalized, s1.minhash_num_perm)
                         duplicates = lsh.query(mh)
                         if duplicates:
                             # Near-duplicate found — skip

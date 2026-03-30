@@ -1,0 +1,6 @@
+streamlit>=1.35
+plotly>=5.20
+umap-learn>=0.5
+polars>=0.20
+pyarrow>=14.0
+pandas>=2.0

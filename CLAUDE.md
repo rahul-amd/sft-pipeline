@@ -96,6 +96,20 @@ sft-pipeline/
 │   │       └── test_clusterer_flash_kmeans.py  ← skip without CUDA + flash-kmeans
 │   └── integration/
 │       └── test_end_to_end.py   ← Stages 4 + mock-5 + 6 smoke test + resume test
+├── viz/
+│   ├── README.md
+│   ├── export.py            ← snapshot export CLI (run after each stage completes)
+│   ├── app.py               ← Streamlit entry point
+│   ├── pages/
+│   │   ├── 1_Stats.py       ← domain/source/difficulty charts
+│   │   ├── 2_Prompts.py     ← searchable prompt table
+│   │   ├── 3_Clusters.py    ← UMAP scatter plot
+│   │   └── 4_Answers.py     ← prompt+reasoning+answer viewer
+│   ├── components/
+│   │   ├── data_loader.py   ← st.cache_data snapshot loader (mtime-busted)
+│   │   └── filters.py       ← shared sidebar filter widgets
+│   ├── data/                ← snapshot.parquet + meta.json (gitignored)
+│   └── requirements.txt     ← viz-only deps (separate from pipeline)
 ├── docker/
 │   ├── Dockerfile.pipeline
 │   └── Dockerfile.vllm
@@ -325,6 +339,38 @@ sft-pipeline run --config config/dev.yaml
 # dev.yaml already sets device: cuda, model: Qwen2.5-7B-Instruct, n_replicas: 1
 sft-pipeline run-stage stage5_inference --config config/dev.yaml
 ```
+
+---
+
+## Visualization App (`viz/`)
+
+See `viz/README.md` for full usage. Quick reference:
+
+```bash
+# 1. Install viz deps (separate from pipeline)
+pip install -r viz/requirements.txt
+
+# 2. Export snapshot after any stage completes
+python viz/export.py --run-dir /path/to/run          # default: 50k sample
+python viz/export.py --run-dir /path/to/run --sample 100000
+
+# 3. Launch
+streamlit run viz/app.py
+
+# 4. Share
+cloudflared tunnel --url http://localhost:8501
+```
+
+**How export.py discovers data:**
+- Looks for `{run_dir}/stage3/part-*.jsonl` first (enriched prompts with domain/difficulty/cluster_id)
+- Falls back to `{run_dir}/stage1/part-*.jsonl` if Stage 3 not done
+- Loads `{run_dir}/stage3/embeddings/embeddings_*.parquet` and runs UMAP if present
+- Joins Stage 5 responses and Stage 6 filter results if present
+- Writes `viz/data/snapshot.parquet` + `viz/data/meta.json`
+
+**Cache invalidation**: `data_loader.py` passes `snapshot.parquet`'s mtime as an argument to `@st.cache_data`, so re-running export automatically invalidates the cache on next app load. No restart needed.
+
+**`viz/data/` is gitignored** — snapshots are not committed.
 
 ---
 

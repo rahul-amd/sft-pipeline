@@ -334,6 +334,10 @@ def _source_worker(
 
 
 def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
+    if cfg.stage1_collect.distributed:
+        run_stage1_distributed(cfg, cm)
+        return
+
     s1 = cfg.stage1_collect
     if not s1.datasets:
         logger.warning("stage1_collect: no datasets configured — skipping")
@@ -418,3 +422,260 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     cm.mark_stage_complete(STAGE, output_count=total_written)
     logger.info("Stage1 complete: written=%d prompts", total_written)
+
+
+# ---------------------------------------------------------------------------
+# Distributed Stage 1 — Ray-based multi-node collection
+# ---------------------------------------------------------------------------
+
+def _source_slug(src: DatasetSource) -> str:
+    """Return a short filesystem-safe identifier for a dataset source."""
+    name = (src.hf_repo_id or src.path or "unknown").replace("/", "_").replace(":", "_")
+    return f"{name}__{src.hf_split}"[:120]
+
+
+def _collect_source(
+    src_dict: dict,
+    hf_home: str | None,
+    out_path: str,
+    num_perm: int,
+) -> dict:
+    """
+    Collect one dataset source and write SHA256-deduplicated records to out_path.
+
+    This is the body of the Ray remote task — it runs on a worker node.
+    All imports are local so Ray can serialise and ship this function cleanly.
+
+    Returns {"source": str, "written": int, "output": str}
+    """
+    import itertools
+    import logging
+    import os
+    import orjson
+    from pathlib import Path
+
+    from sft_pipeline.checkpoint import prompt_id
+    from sft_pipeline.config import DatasetSource as _DS
+    from sft_pipeline.stages.stage1_collect import (
+        _infer_domain,
+        _load_hf_dataset,
+        _load_local_jsonl,
+        _normalize,
+    )
+
+    _log = logging.getLogger(__name__)
+    src = _DS(**src_dict)
+    source_name = src.hf_repo_id or Path(src.path).name
+
+    if hf_home:
+        os.environ["HF_HOME"] = hf_home
+
+    if src.source == "hf_dataset":
+        raw_iter = _load_hf_dataset(src)
+    else:
+        raw_iter = _load_local_jsonl(src)
+
+    if src.max_examples is not None:
+        raw_iter = itertools.islice(raw_iter, src.max_examples)
+
+    seen_ids: set[str] = set()
+    written = 0
+    tmp_path = out_path + ".tmp"
+
+    try:
+        with open(tmp_path, "wb") as f:
+            for raw_text in raw_iter:
+                try:
+                    normalized = _normalize(raw_text)
+                    if len(normalized) < 10:
+                        continue
+                    pid = prompt_id(normalized)
+                    if pid in seen_ids:
+                        continue
+                    seen_ids.add(pid)
+                    record = {
+                        "prompt_id": pid,
+                        "prompt": normalized,
+                        "source": source_name,
+                        "domain": src.domain_hint or _infer_domain(normalized),
+                        "stage": "stage1",
+                    }
+                    f.write(orjson.dumps(record) + b"\n")
+                    written += 1
+                except Exception as exc:
+                    _log.warning("Skipping row from %s: %s", source_name, exc)
+        # Atomic rename — only exists as a complete file after success
+        Path(tmp_path).rename(out_path)
+    except Exception as exc:
+        if Path(tmp_path).exists():
+            Path(tmp_path).unlink()
+        raise RuntimeError(f"Source {source_name} failed: {exc}") from exc
+
+    _log.info("Source %s: wrote %d prompts → %s", source_name, written, Path(out_path).name)
+    return {"source": source_name, "written": written, "output": out_path}
+
+
+def _merge_and_dedup(
+    phase1_dir: Path,
+    output_dir: Path,
+    s1,             # Stage1Config
+    cm: CheckpointManager,
+) -> int:
+    """
+    Read all phase1 JSONL files, apply MinHash LSH dedup across the full
+    corpus, and write the final sharded output. Returns total prompts written.
+    """
+    from sft_pipeline.storage import iter_jsonl_dir
+
+    shards = sorted(phase1_dir.glob("*.jsonl"))
+    logger.info("Merge: reading %d phase1 shard(s) from %s …", len(shards), phase1_dir)
+
+    lsh = _make_lsh(s1.minhash_num_perm, s1.dedup_threshold)
+    seen_in_lsh: set[str] = set()
+    pending: list[tuple[str, ItemStatus, str | None]] = []
+    total_written = 0
+    total_seen = 0
+
+    with ShardedJSONLWriter(output_dir, shard_size_mb=200) as writer:
+        for rec in iter_jsonl_dir(phase1_dir):
+            total_seen += 1
+            pid = rec["prompt_id"]
+
+            if cm.is_processed(pid, STAGE):
+                continue
+
+            if pid not in seen_in_lsh:
+                mh = _make_minhash(rec["prompt"], s1.minhash_num_perm)
+                if lsh.query(mh):
+                    pending.append((pid, ItemStatus.SKIPPED, None))
+                    continue
+                lsh.insert(mh, pid)
+                seen_in_lsh.add(pid)
+
+            writer.write(rec)
+            shard = writer.written_shards[-1] if writer.written_shards else None
+            pending.append((pid, ItemStatus.SUCCESS, shard))
+            total_written += 1
+
+            if total_written % 50_000 == 0:
+                logger.info(
+                    "Merge: written %d / %d seen  (dedup rate %.1f%%)",
+                    total_written, total_seen,
+                    100.0 * (1 - total_written / total_seen),
+                )
+
+            if len(pending) >= _CHECKPOINT_BATCH_SIZE:
+                cm.mark_processed_batch(pending, STAGE)
+                pending.clear()
+
+    if pending:
+        cm.mark_processed_batch(pending, STAGE)
+
+    logger.info(
+        "Merge complete: written=%d / seen=%d  (dedup rate %.1f%%)",
+        total_written, total_seen,
+        100.0 * (1 - total_written / max(total_seen, 1)),
+    )
+    return total_written
+
+
+def run_stage1_distributed(cfg: PipelineConfig, cm: CheckpointManager) -> None:
+    """
+    Multi-node Stage 1 using Ray.
+
+    Phase 1 (parallel, all nodes):
+        One Ray task per dataset source. Each task streams its source,
+        normalises, SHA256-deduplicates within the source, and writes to
+        {output_dir}/_phase1/{source_slug}.jsonl on the shared filesystem.
+        Tasks are idempotent — if the output file already exists, the source
+        is skipped, making the whole phase crash-resumable.
+
+    Phase 2 (single node, head):
+        Reads all phase1 files, runs MinHash LSH dedup across the full
+        combined corpus, writes the final sharded output, and updates
+        the DuckDB checkpoint.
+
+    Config:
+        stage1_collect.distributed: true
+        global.ray_address: "auto"   # or "ray://<head-ip>:10001"
+    """
+    import ray
+
+    s1 = cfg.stage1_collect
+    if not s1.datasets:
+        logger.warning("stage1_collect (distributed): no datasets configured — skipping")
+        return
+
+    if cfg.global_.hf_home:
+        os.environ["HF_HOME"] = cfg.global_.hf_home
+
+    output_dir = Path(s1.output_path).parent
+    phase1_dir = output_dir / "_phase1"
+    ensure_dir(output_dir)
+    ensure_dir(phase1_dir)
+
+    cm.mark_stage_started(STAGE)
+    cm.preload_processed(STAGE)
+
+    # ── Phase 1: parallel source collection ──────────────────────────────────
+    ray.init(address=cfg.global_.ray_address, ignore_reinit_error=True)
+
+    # Wrap the plain function as a Ray remote task (num_cpus=2 to avoid
+    # over-subscribing nodes — each task is I/O-bound, not CPU-bound).
+    collect_remote = ray.remote(num_cpus=2)(_collect_source)
+
+    futures = {}
+    skipped = 0
+    for src in s1.datasets:
+        slug = _source_slug(src)
+        out_path = phase1_dir / f"{slug}.jsonl"
+        if out_path.exists():
+            logger.info("Phase1: %s already complete, skipping.", slug)
+            skipped += 1
+            continue
+        future = collect_remote.remote(
+            src.model_dump(),
+            cfg.global_.hf_home,
+            str(out_path),
+            s1.minhash_num_perm,
+        )
+        futures[future] = src.hf_repo_id or src.path
+
+    total = len(futures) + skipped
+    logger.info(
+        "Phase1: %d sources total — %d submitted to Ray, %d already done.",
+        total, len(futures), skipped,
+    )
+
+    done = skipped
+    failed = 0
+    # Process results as they complete rather than waiting for all at once
+    remaining = list(futures.keys())
+    while remaining:
+        ready, remaining = ray.wait(remaining, num_returns=1, timeout=None)
+        future = ready[0]
+        source_name = futures[future]
+        try:
+            result = ray.get(future)
+            done += 1
+            logger.info(
+                "Phase1 [%d/%d] ✓  %s — %d prompts",
+                done, total, result["source"], result["written"],
+            )
+        except Exception as exc:
+            failed += 1
+            done += 1
+            logger.error("Phase1 [%d/%d] ✗  %s — %s", done, total, source_name, exc)
+
+    if failed:
+        logger.warning(
+            "Phase1: %d/%d sources failed. Proceeding with successful outputs.",
+            failed, len(futures),
+        )
+
+    # ── Phase 2: merge + LSH dedup on head node ───────────────────────────────
+    logger.info("Phase2: merging phase1 outputs with LSH dedup …")
+    total_written = _merge_and_dedup(phase1_dir, output_dir, s1, cm)
+
+    cm.mark_stage_complete(STAGE, output_count=total_written)
+    logger.info("Stage1 distributed complete: %d prompts written.", total_written)

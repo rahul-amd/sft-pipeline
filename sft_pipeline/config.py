@@ -47,6 +47,8 @@ class GlobalConfig(BaseModel):
     # Override the HuggingFace cache directory (sets HF_HOME env var at runtime).
     # Useful when the default ~/.cache/huggingface would fill up a small home partition.
     hf_home: str | None = None
+    # Ray cluster address for distributed stages ("auto" connects to a running cluster).
+    ray_address: str = "auto"
 
 
 class DatasetSource(BaseModel):
@@ -78,6 +80,10 @@ class Stage1Config(BaseModel):
     minhash_num_perm: int = 128
     batch_size: int = 10_000
     output_path: str = "{base_path}/stage1/prompts.jsonl"
+    # Set to true to distribute source collection across a Ray cluster.
+    # Each dataset source becomes a Ray task; LSH dedup runs on the head node
+    # after all tasks complete. Requires ray_address in global config.
+    distributed: bool = False
 
 
 class CorpusSource(BaseModel):

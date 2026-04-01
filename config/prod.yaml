@@ -9,8 +9,10 @@ global:
   base_path: "/data/sft-pipeline/runs/{run_id}"
   log_level: "INFO"
   device: "rocm"
+  ray_address: "auto"   # connects to the running Ray cluster
 
 stage1_collect:
+  distributed: true     # use Ray to collect sources in parallel across 32 nodes
   datasets:
     - source: "hf_dataset"
       hf_repo_id: "openai/gsm8k"

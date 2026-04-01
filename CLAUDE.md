@@ -314,20 +314,40 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
 
 ```bash
 # 1. Start Ray cluster (on head node)
-ray start --head --num-gpus=16
+#    --num-cpus controls how many concurrent Ray tasks can run on this node.
+#    Stage 1 tasks use num_cpus=2 each, so 16 CPUs → 8 concurrent tasks/node.
+ray start --head --num-cpus=32 --num-gpus=16
 
 # 2. Start workers (on each of the other 31 nodes)
-ray start --address=<head-node-ip>:6379 --num-gpus=16
+ray start --address=<head-node-ip>:6379 --num-cpus=32 --num-gpus=16
 
 # 3. Start vLLM HTTP server for Stage 2 generator + Stage 6 judge
 bash scripts/serve_vllm.sh
 
-# 4. Run pipeline (connects to Ray automatically via address="auto")
+# 4. Run pipeline (Stage 1 will distribute sources across all 32 nodes)
 sft-pipeline run --config config/prod.yaml
 
 # 5. Monitor
 sft-pipeline status --config config/prod.yaml
 ```
+
+### Stage 1 Distributed Mode
+
+When `stage1_collect.distributed: true` in config (set in `prod.yaml`), Stage 1 runs in two phases:
+
+**Phase 1 — parallel collection (all nodes)**
+Each dataset source becomes a Ray remote task (`num_cpus=2`). Ray distributes tasks across all nodes. Each task streams its source, normalises, SHA256-deduplicates within the source, and writes to `{output_dir}/_phase1/{source_slug}.jsonl` on the shared filesystem. Tasks are idempotent — if the output file exists, the source is skipped on resume.
+
+**Phase 2 — merge + LSH dedup (head node)**
+After all tasks complete, the head node reads all phase1 files and runs MinHash LSH dedup across the full combined corpus, writing the final sharded output and updating DuckDB.
+
+**Speedup**: `sum(source stream times)` → `max(source stream times)` + ~15 min LSH merge.
+
+**Resume**: If Phase 1 crashes, re-run the command. Completed sources (`.jsonl` file exists in `_phase1/`) are skipped automatically. If Phase 2 crashes, re-run — phase1 files are still there.
+
+**Cross-source near-dedup**: Phase 1 only SHA256-deduplicates within each source. Cross-source near-duplicates are caught in Phase 2's LSH pass and also in Stage 4's cosine-similarity dedup.
+
+**Laptop / single-node**: Leave `distributed: false` (default). `dev.yaml` does not set it.
 
 ## Running on Laptop (dev)
 

@@ -13,7 +13,7 @@
 # Requirements:
 #   - stage1_collect.distributed must be true in the config
 #   - sft-pipeline installed via:
-#       singularity exec $SIF pip install --user -e /scratch/project_462000963/aralikatte/sft-pipeline/
+#       singularity exec $SIF pip install --user -e /scratch/project_462000963/users/aralikatte/sft-pipeline/
 #   - Shared filesystem mounted at /scratch/project_462000963 on all nodes
 # =============================================================================
 
@@ -24,16 +24,23 @@
 #SBATCH --mem=128G
 #SBATCH --time=12:00:00
 #SBATCH --account=project_462000963
-#SBATCH --partition=standard
-#SBATCH --output=/scratch/project_462000963/aralikatte/sft-pipeline/logs/slurm-%j-stage1.out
-#SBATCH --error=/scratch/project_462000963/aralikatte/sft-pipeline/logs/slurm-%j-stage1.err
+#SBATCH --partition=standard-g
+#SBATCH --output=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-stage1.out
+#SBATCH --error=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-stage1.err
 
 set -euo pipefail
+
+# ── Guard: must be submitted via sbatch, not run directly ────────────────────
+if [ -z "${SLURM_JOB_ID:-}" ]; then
+    echo "ERROR: This script must be submitted via sbatch, not run directly."
+    echo "       Usage: sbatch scripts/slurm_stage1.sh [config/path.yaml]"
+    exit 1
+fi
 
 # ── Config ───────────────────────────────────────────────────────────────────
 PIPELINE_CONFIG="${1:-config/stage1_research.yaml}"
 
-PROJECT_DIR="/scratch/project_462000963/aralikatte/sft-pipeline"
+PROJECT_DIR="/scratch/project_462000963/users/aralikatte/sft-pipeline"
 SCRATCH="/scratch/project_462000963"
 SIF="${SCRATCH}/containers/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0-dockerhash-ef203c810cc9.sif"
 
@@ -96,7 +103,8 @@ log "Waiting for head to initialise (20s) ..."
 sleep 20
 
 # Quick sanity check that the head is up
-if ! srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
+# --overlap lets this srun share the head node's task slot with the --block ray start
+if ! srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
         $SING ray status --address="${HEAD_IP}:${RAY_PORT}" &>/dev/null; then
     log "ERROR: Ray head did not start. Check the .err log for details."
     exit 1
@@ -118,7 +126,7 @@ if [ "$N_WORKERS" -gt 0 ]; then
     sleep 30
 
     # Log how many nodes Ray sees
-    CLUSTER_INFO=$(srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
+    CLUSTER_INFO=$(srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
         $SING ray status --address="${HEAD_IP}:${RAY_PORT}" 2>/dev/null || echo "(status unavailable)")
     log "Ray cluster status:"
     echo "$CLUSTER_INFO"
@@ -128,7 +136,7 @@ fi
 log "Launching Stage 1 (distributed) ..."
 cd "$PROJECT_DIR"
 
-srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
+srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
     $SING sft-pipeline run-stage stage1_collect \
         --config "$PIPELINE_CONFIG"
 
@@ -142,7 +150,7 @@ fi
 
 # ── Tear down Ray ─────────────────────────────────────────────────────────────
 log "Stopping Ray cluster ..."
-srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
+srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
     $SING ray stop --force || true
 
 # The --block srun jobs will exit once ray stop is called

@@ -298,12 +298,18 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
 
 - **ROCm PyTorch + environment setup**: The cluster runs ROCm 6.3.4. The default `pip install torch` gives a CUDA build that fails with "Found no NVIDIA driver" on AMD GPUs. Run `scripts/setup_env.sh` once (with the overlay mounted `:rw`) to install ROCm PyTorch, sentence-transformers, Triton, and flash-kmeans correctly. All Slurm scripts bind `/opt/rocm` so the ROCm runtime `.so` libraries are visible inside the container. Stage 3 also runs a single GPU pre-flight Ray task before dispatching all 32 workers; if CUDA is unavailable you'll see one clear error with the fix rather than 32 identical failures.
 
-- **Singularity + `/opt/rocm` binding**: `rocm-smi` and the ROCm runtime libraries live in `/opt/rocm` on the host. Without `--bind /opt/rocm`, the command is invisible and PyTorch fails to initialise the GPU even if the ROCm wheel is installed. All `SING=` lines in Slurm scripts include `--bind /opt/rocm`. For interactive sessions use:
+- **Singularity GPU binds — three are required**: For ROCm PyTorch to see the GPU inside a container you must bind all three:
+  | Bind | What it provides |
+  |------|-----------------|
+  | `--bind /opt/rocm` | ROCm runtime libraries (`libamdhip64.so` etc.) |
+  | `--bind /dev/kfd` | AMD KFD kernel driver — `torch.cuda.is_available()` needs this |
+  | `--bind /dev/dri` | DRI render devices (`renderD128` etc.) |
+  Missing `/opt/rocm` → PyTorch raises "Found no NVIDIA driver". Missing `/dev/kfd` or `/dev/dri` → `torch.cuda.is_available()` returns False even with a correct ROCm wheel installed. All `SING=` lines in Slurm scripts include all three. For interactive sessions:
   ```bash
   singularity shell \
       --bind /scratch/project_462000963 \
       --bind /users/aralikatte \
-      --bind /opt/rocm \
+      --bind /opt/rocm --bind /dev/kfd --bind /dev/dri \
       --overlay .../python_latest_overlay.img \
       .../python_latest.sif
   ```

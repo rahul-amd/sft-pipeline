@@ -16,9 +16,16 @@
 #       --bind /scratch/project_462000963 \
 #       --bind /users/aralikatte \
 #       --bind /opt/rocm \
+#       --bind /dev/kfd \
+#       --bind /dev/dri \
 #       --overlay /scratch/project_462000963/users/aralikatte/sincons/python_latest_overlay.img:rw \
 #       /scratch/project_462000963/users/aralikatte/sincons/python_latest.sif \
 #       bash /scratch/project_462000963/users/aralikatte/sft-pipeline/scripts/setup_env.sh
+#
+# Three binds are required for ROCm GPU access inside Singularity:
+#   --bind /opt/rocm   : ROCm runtime libraries (libamdhip64.so, etc.)
+#   --bind /dev/kfd    : AMD KFD kernel driver — torch.cuda.is_available() needs this
+#   --bind /dev/dri    : DRI render devices (renderD128, etc.)
 #
 # What this does:
 #   1. Installs ROCm PyTorch (replaces any existing CUDA build)
@@ -40,7 +47,7 @@ ok()  { echo "[$(date '+%H:%M:%S')] ✓ $*"; }
 err() { echo "[$(date '+%H:%M:%S')] ✗ $*" >&2; }
 
 log "=== SFT Pipeline — environment setup for ROCm ${ROCM_VERSION} ==="
-log "Overlay is writable; packages installed to ~/.local via pip --user"
+log "Overlay is writable; packages installed to your conda env"
 echo
 
 # ── Activate conda env ────────────────────────────────────────────────────────
@@ -63,19 +70,32 @@ log "(This replaces any existing CUDA build — safe to re-run)"
 pip install --user torch torchvision torchaudio \
     --index-url "${TORCH_INDEX_URL}"
 
-# Verify
+# Verify wheel, then check GPU device access separately
 python - <<'EOF'
 import torch
-print(f"  torch version  : {torch.__version__}")
-print(f"  CUDA available : {torch.cuda.is_available()}")
-if torch.cuda.is_available():
+ver = torch.__version__
+avail = torch.cuda.is_available()
+print(f"  torch version  : {ver}")
+print(f"  CUDA available : {avail}")
+if "+rocm" not in ver:
+    raise SystemExit(
+        f"ERROR: torch version {ver!r} does not contain '+rocm'.\n"
+        "The CUDA wheel was installed instead of the ROCm wheel.\n"
+        "Check that --index-url points to the correct ROCm index."
+    )
+if avail:
     print(f"  Device count   : {torch.cuda.device_count()}")
     print(f"  Device[0] name : {torch.cuda.get_device_name(0)}")
 else:
-    raise SystemExit("ERROR: torch.cuda.is_available() is False after install.\n"
-                     "Check that /opt/rocm is bound and the wheel URL is correct.")
+    print()
+    print("  NOTE: torch.cuda.is_available() is False.")
+    print("  The ROCm wheel is correctly installed but the GPU device files")
+    print("  are not bound into the container.  Re-run with:")
+    print("    --bind /dev/kfd --bind /dev/dri")
+    print("  added to the singularity exec command.")
+    print("  The pip installs below will still complete successfully.")
 EOF
-ok "ROCm PyTorch OK"
+ok "ROCm PyTorch wheel installed"
 echo
 
 # ── Step 2: sentence-transformers ────────────────────────────────────────────

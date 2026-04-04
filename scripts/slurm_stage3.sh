@@ -54,7 +54,8 @@ RAY_PORT=6379
 RAY_DASHBOARD_PORT=8265
 
 # ── Singularity wrapper ───────────────────────────────────────────────────────
-SING="singularity exec --bind ${SCRATCH} --bind /users/aralikatte --bind /opt/rocm \
+SING="singularity exec --bind ${SCRATCH} --bind /users/aralikatte \
+    --bind /opt/rocm --bind /dev/kfd --bind /dev/dri \
     --overlay ${OVERLAY}:ro ${SIF} \
     ${PROJECT_DIR}/scripts/run_in_env.sh"
 

@@ -7,7 +7,7 @@
 #
 # What this run does:
 #   - Reads Stage 1 output from the research_stage1_001d run
-#   - Embeds all prompts in parallel across 3 Ray workers (one GPU each)
+#   - Embeds all prompts in parallel across 32 Ray workers (4 nodes × 8 GPUs each)
 #   - Builds a FAISS IVFFlat index on the head node
 #   - Clusters 5M embeddings into 100,000 clusters with flash_kmeans (GPU)
 #   - Writes enriched JSONL with domain, difficulty, cluster_id
@@ -52,7 +52,7 @@ stage2_generate:
 stage3_cluster:
   enabled: true
   distributed: true
-  n_embedding_workers: 3            # 3 workers on non-head nodes, 1 GPU each
+  n_embedding_workers: 32           # 4 nodes × 8 GPUs each = 32 parallel workers
   embedding_model: "BAAI/bge-m3"
   embedding_batch_size: 1024        # larger batches on MI250X (64 GB HBM)
   # FAISS index (built on head node after embedding completes)

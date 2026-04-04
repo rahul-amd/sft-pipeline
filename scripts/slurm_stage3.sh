@@ -2,9 +2,9 @@
 # =============================================================================
 # Slurm job: Stage 3 distributed prompt embedding + clustering.
 #
-# Phase 1 (parallel, worker nodes):
-#   3 Ray workers embed prompts from Stage 1 output in parallel,
-#   each running BAAI/bge-m3 on one MI250X GCD.
+# Phase 1 (parallel, all nodes):
+#   32 Ray workers embed prompts from Stage 1 output in parallel
+#   (4 nodes × 8 GPUs, one bge-m3 instance per GPU).
 #
 # Phase 2 (head node):
 #   Build FAISS IVFFlat index, run flash_kmeans (100k clusters), write
@@ -25,7 +25,7 @@
 #SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
-#SBATCH --gpus-per-node=1
+#SBATCH --gpus-per-node=8
 #SBATCH --mem=128G
 #SBATCH --time=8:00:00
 #SBATCH --account=project_462000963
@@ -102,7 +102,7 @@ srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
         --port=$RAY_PORT \
         --dashboard-port=$RAY_DASHBOARD_PORT \
         --num-cpus="$SLURM_CPUS_PER_TASK" \
-        --num-gpus=1 \
+        --num-gpus=8 \
         --block &
 
 RAY_HEAD_PID=$!
@@ -126,7 +126,7 @@ if [ "$N_WORKERS" -gt 0 ]; then
         $SING ray start \
             --address="${HEAD_IP}:${RAY_PORT}" \
             --num-cpus="$SLURM_CPUS_PER_TASK" \
-            --num-gpus=1 \
+            --num-gpus=8 \
             --block &
 
     log "Waiting for workers to join (30s) ..."

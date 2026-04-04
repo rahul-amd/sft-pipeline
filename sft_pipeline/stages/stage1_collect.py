@@ -2,7 +2,7 @@
 Stage 1 — Prompt Collection from Existing Datasets.
 
 Ingests prompts from HuggingFace datasets or local JSONL files,
-normalizes them, deduplicates with MinHash LSH, and writes a JSONL
+normalizes them, deduplicates by SHA256 prompt_id, and writes a JSONL
 pool of candidate prompts.
 
 Prompt field extraction
@@ -534,10 +534,8 @@ def _merge_and_dedup(
     (SHA256), and write the final sharded output.
 
     Near-duplicate dedup (Jaccard / cosine) is deferred to Stage 4, which
-    has embeddings and FAISS and can do it far more accurately.  MinHash LSH
-    here was the Phase-2 throughput bottleneck: datasketch LSH query() slows
-    down as bucket tables grow (O(n) candidates per lookup at scale), whereas
-    a set lookup is always O(1).
+    has embeddings and FAISS and can do it far more accurately. A set lookup
+    is O(1) and doesn't degrade with corpus size.
 
     Returns total prompts written.
     """
@@ -600,9 +598,9 @@ def run_stage1_distributed(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         is skipped, making the whole phase crash-resumable.
 
     Phase 2 (single node, head):
-        Reads all phase1 files, runs MinHash LSH dedup across the full
-        combined corpus, writes the final sharded output, and updates
-        the DuckDB checkpoint.
+        Reads all phase1 files, deduplicates by prompt_id (SHA256) across
+        sources, writes the final sharded output, and updates the DuckDB
+        checkpoint.
 
     Config:
         stage1_collect.distributed: true
@@ -681,8 +679,8 @@ def run_stage1_distributed(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             failed, len(futures),
         )
 
-    # ── Phase 2: merge + LSH dedup on head node ───────────────────────────────
-    logger.info("Phase2: merging phase1 outputs with LSH dedup …")
+    # ── Phase 2: merge + cross-source dedup on head node ─────────────────────
+    logger.info("Phase2: merging phase1 outputs …")
     total_written = _merge_and_dedup(phase1_dir, output_dir, s1, cm)
 
     cm.mark_stage_complete(STAGE, output_count=total_written)

@@ -296,14 +296,17 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
 
 - **`make_response_record` reasoning length**: The structural filter requires `min_response_tokens=50` (default). Test fixtures must produce reasoning above this threshold. `conftest.py`'s `make_response_record` is calibrated to ~80 tokens — don't shorten it.
 
-- **ROCm PyTorch (sentence-transformers)**: The default `pip install torch` installs the CUDA build, which fails with "Found no NVIDIA driver" on AMD GPUs. Stage 3 embedding workers will all fail if the sft-pipeline conda env has CUDA PyTorch. Install ROCm PyTorch inside the Singularity container once:
+- **ROCm PyTorch + environment setup**: The cluster runs ROCm 6.3.4. The default `pip install torch` gives a CUDA build that fails with "Found no NVIDIA driver" on AMD GPUs. Run `scripts/setup_env.sh` once (with the overlay mounted `:rw`) to install ROCm PyTorch, sentence-transformers, Triton, and flash-kmeans correctly. All Slurm scripts bind `/opt/rocm` so the ROCm runtime `.so` libraries are visible inside the container. Stage 3 also runs a single GPU pre-flight Ray task before dispatching all 32 workers; if CUDA is unavailable you'll see one clear error with the fix rather than 32 identical failures.
+
+- **Singularity + `/opt/rocm` binding**: `rocm-smi` and the ROCm runtime libraries live in `/opt/rocm` on the host. Without `--bind /opt/rocm`, the command is invisible and PyTorch fails to initialise the GPU even if the ROCm wheel is installed. All `SING=` lines in Slurm scripts include `--bind /opt/rocm`. For interactive sessions use:
   ```bash
-  singularity exec --overlay <overlay>:rw <sif> \
-      scripts/run_in_env.sh \
-      pip install --user torch \
-          --index-url https://download.pytorch.org/whl/rocm6.2
+  singularity shell \
+      --bind /scratch/project_462000963 \
+      --bind /users/aralikatte \
+      --bind /opt/rocm \
+      --overlay .../python_latest_overlay.img \
+      .../python_latest.sif
   ```
-  Stage 3 now runs a single GPU pre-flight Ray task before dispatching all 32 workers; if CUDA is unavailable, you'll see this error immediately with the install command rather than 32 identical failures.
 
 - **ROCm vLLM wheel**: Similarly, the standard `pip install vllm` installs the CUDA build. On the cluster, use the ROCm-specific wheel from the vLLM releases page. The `gpu_memory_utilization` and `dtype` settings in `prod.yaml` are tuned for MI250X.
 

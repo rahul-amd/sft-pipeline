@@ -169,7 +169,7 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     emb_dir = Path(s3.embeddings_dir)
     idx_path = Path(s3.faiss_index_path)
-    out_dir = Path(s3.output_path).parent
+    out_dir = Path(s3.output_dir)
     ensure_dir(out_dir)
     ensure_dir(emb_dir)
 
@@ -178,8 +178,8 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     # ------------------------------------------------------------------
     # Step A: Embed all prompts from Stages 1 and 2
     # ------------------------------------------------------------------
-    stage1_dir = Path(s1.output_path).parent
-    stage2_dir = Path(s2.output_path).parent
+    stage1_dir = Path(s1.output_dir)
+    stage2_dir = Path(s2.output_dir)
 
     # Validate that at least the Stage 1 input directory has shards before
     # we start a potentially multi-hour embedding job.
@@ -187,10 +187,9 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     if not stage1_shards:
         raise FileNotFoundError(
             f"Stage 3: no part-*.jsonl shards found in {stage1_dir}.\n"
-            f"  This is derived from cfg.stage1_collect.output_path:\n"
-            f"    {s1.output_path}\n"
-            f"  Make sure Stage 1 has completed and the path above is correct.\n"
-            f"  (The file itself does not need to exist — only its parent directory.)"
+            f"  This is derived from cfg.stage1_collect.output_dir:\n"
+            f"    {s1.output_dir}\n"
+            f"  Make sure Stage 1 has completed and the path above is correct."
         )
     logger.info("Stage3: found %d Stage 1 shard(s) in %s", len(stage1_shards), stage1_dir)
 

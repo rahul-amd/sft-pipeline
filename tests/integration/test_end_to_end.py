@@ -41,8 +41,8 @@ def _mock_run_stage5(cfg, cm):
     from sft_pipeline.checkpoint import ItemStatus
     from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl_dir
 
-    stage4_dir = Path(cfg.stage4_sample.output_path).parent
-    out_dir = Path(cfg.stage5_inference.output_path).parent
+    stage4_dir = Path(cfg.stage4_sample.output_dir)
+    out_dir = Path(cfg.stage5_inference.output_dir)
     ensure_dir(out_dir)
 
     cm.mark_stage_started("stage5_inference")
@@ -85,17 +85,17 @@ global:
 
 stage1_collect:
   enabled: false
-  output_path: "{tp}/stage1/prompts.jsonl"
+  output_dir: "{tp}/stage1"
 
 stage2_generate:
   enabled: false
-  output_path: "{tp}/stage2/prompts.jsonl"
+  output_dir: "{tp}/stage2"
 
 stage3_cluster:
   enabled: false
   embeddings_dir: "{tp}/stage3/embeddings"
   faiss_index_path: "{tp}/stage3/faiss.index"
-  output_path: "{tp}/stage3/clustered_prompts.jsonl"
+  output_dir: "{tp}/stage3"
 
 stage4_sample:
   enabled: true
@@ -111,17 +111,17 @@ stage4_sample:
     medium: 0.34
     hard: 0.33
   dedup_cosine_threshold: 0.95
-  output_path: "{tp}/stage4/sampled_prompts.jsonl"
+  output_dir: "{tp}/stage4"
 
 stage5_inference:
   enabled: true
   model: "test-model"
   n_replicas: 1
-  output_path: "{tp}/stage5/responses.jsonl"
+  output_dir: "{tp}/stage5"
 
 stage6_filter:
   enabled: true
-  output_path: "{tp}/stage6/filtered.jsonl"
+  output_dir: "{tp}/stage6"
   report_path: "{tp}/stage6/filter_report.json"
   llm_judge:
     enabled: false
@@ -139,7 +139,7 @@ export:
     cfg = load_config(cfg_file)
 
     # Pre-populate Stage 3 output (normally produced by Stages 1–3)
-    stage3_dir = Path(cfg.stage3_cluster.output_path).parent
+    stage3_dir = Path(cfg.stage3_cluster.output_dir)
     stage3_dir.mkdir(parents=True, exist_ok=True)
     domains = ["math"] * 5 + ["code"] * 5 + ["science"] * 5 + ["general"] * 5
     difficulties = ["easy", "medium", "hard"] * 6 + ["easy", "medium"]
@@ -169,7 +169,7 @@ export:
         run_stage6(cfg, cm)
 
     # Assertions
-    stage6_dir = Path(cfg.stage6_filter.output_path).parent
+    stage6_dir = Path(cfg.stage6_filter.output_dir)
     output_records = list(
         rec
         for shard in sorted(stage6_dir.glob("*.jsonl"))
@@ -214,7 +214,7 @@ global:
   device: cpu
 stage6_filter:
   enabled: true
-  output_path: "{tp}/stage6/filtered.jsonl"
+  output_dir: "{tp}/stage6"
   report_path: "{tp}/stage6/filter_report.json"
   llm_judge:
     enabled: false
@@ -226,22 +226,22 @@ stage5_inference:
   enabled: false
   model: test
   n_replicas: 1
-  output_path: "{tp}/stage5/responses.jsonl"
+  output_dir: "{tp}/stage5"
 stage1_collect:
   enabled: false
-  output_path: "{tp}/stage1/prompts.jsonl"
+  output_dir: "{tp}/stage1"
 stage2_generate:
   enabled: false
-  output_path: "{tp}/stage2/prompts.jsonl"
+  output_dir: "{tp}/stage2"
 stage3_cluster:
   enabled: false
   embeddings_dir: "{tp}/stage3/embeddings"
   faiss_index_path: "{tp}/stage3/faiss.index"
-  output_path: "{tp}/stage3/clustered_prompts.jsonl"
+  output_dir: "{tp}/stage3"
 stage4_sample:
   enabled: false
   total_prompts: 10
-  output_path: "{tp}/stage4/sampled_prompts.jsonl"
+  output_dir: "{tp}/stage4"
 export:
   final_jsonl_path: "{tp}/final/dataset.jsonl"
   push_to_hub: false
@@ -251,7 +251,7 @@ export:
     cfg = load_config(cfg_file)
 
     # Pre-populate Stage 5 output with 10 records
-    stage5_dir = Path(cfg.stage5_inference.output_path).parent
+    stage5_dir = Path(cfg.stage5_inference.output_dir)
     stage5_dir.mkdir(parents=True, exist_ok=True)
     responses = [make_response_record(p) for p in ALL_SAMPLE_PROMPTS[:10]]
     shard = stage5_dir / "part-000000.jsonl"

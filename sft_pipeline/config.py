@@ -77,7 +77,7 @@ class Stage1Config(BaseModel):
     enabled: bool = True
     datasets: list[DatasetSource] = Field(default_factory=list)
     batch_size: int = 10_000
-    output_path: str = "{base_path}/stage1/prompts.jsonl"
+    output_dir: str = "{base_path}/stage1"
     # Set to true to distribute source collection across a Ray cluster.
     # Each dataset source becomes a Ray task; dedup merge runs on the head node
     # after all tasks complete. Requires ray_address in global config.
@@ -115,7 +115,7 @@ class Stage2Config(BaseModel):
     generator_temperature: float = 0.8
     generator_max_tokens: int = 512
     max_workers: int = 16
-    output_path: str = "{base_path}/stage2/prompts.jsonl"
+    output_dir: str = "{base_path}/stage2"
 
 
 class Stage3Config(BaseModel):
@@ -140,7 +140,7 @@ class Stage3Config(BaseModel):
     # Output
     embeddings_dir: str = "{base_path}/stage3/embeddings"
     faiss_index_path: str = "{base_path}/stage3/faiss.index"
-    output_path: str = "{base_path}/stage3/clustered_prompts.jsonl"
+    output_dir: str = "{base_path}/stage3"
 
 
 class Stage4Config(BaseModel):
@@ -156,7 +156,7 @@ class Stage4Config(BaseModel):
         default_factory=lambda: {"easy": 0.20, "medium": 0.50, "hard": 0.30}
     )
     dedup_cosine_threshold: float = Field(0.92, ge=0.0, le=1.0)
-    output_path: str = "{base_path}/stage4/sampled_prompts.jsonl"
+    output_dir: str = "{base_path}/stage4"
 
     @model_validator(mode="after")
     def quotas_sum_to_one(self) -> Stage4Config:
@@ -202,7 +202,7 @@ class Stage5Config(BaseModel):
     batch_size: int = 256
     checkpoint_every: int = 5_000
     max_retries: int = 3
-    output_path: str = "{base_path}/stage5/responses.jsonl"
+    output_dir: str = "{base_path}/stage5"
 
 
 class StructuralFilterConfig(BaseModel):
@@ -244,7 +244,7 @@ class Stage6Config(BaseModel):
     math: MathFilterConfig = Field(default_factory=MathFilterConfig)
     code: CodeFilterConfig = Field(default_factory=CodeFilterConfig)
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
-    output_path: str = "{base_path}/stage6/filtered.jsonl"
+    output_dir: str = "{base_path}/stage6"
     report_path: str = "{base_path}/stage6/filter_report.json"
 
 

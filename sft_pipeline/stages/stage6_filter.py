@@ -36,8 +36,8 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     s5 = cfg.stage5_inference
     s6 = cfg.stage6_filter
 
-    stage5_dir = Path(s5.output_path).parent
-    out_dir = Path(s6.output_path).parent
+    stage5_dir = Path(s5.output_dir)
+    out_dir = Path(s6.output_dir)
     ensure_dir(out_dir)
 
     cm.mark_stage_started(STAGE)

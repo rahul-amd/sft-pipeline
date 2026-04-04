@@ -186,7 +186,7 @@ def run_stage2(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         logger.warning("stage2_generate: no corpora configured — skipping")
         return
 
-    output_dir = Path(s2.output_path).parent
+    output_dir = Path(s2.output_dir)
     ensure_dir(output_dir)
 
     cm.mark_stage_started(STAGE)

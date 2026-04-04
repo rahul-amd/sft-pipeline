@@ -27,27 +27,24 @@ global:
   seed: 42
 
 # ---------------------------------------------------------------------------
-# Stage 1 — disabled; output_path is a virtual path used only so Stage 3
-# can locate the shard directory via Path(output_path).parent.
-#
-# The file itself (prompts.jsonl) does NOT need to exist — Stage 3 only
-# uses the parent directory to glob part-*.jsonl shards.  Set this to
-# match the Stage 1 run's base_path + "/stage1/prompts.jsonl".
+# Stage 1 — disabled; output_dir points to the shard directory that Stage 3
+# will glob for part-*.jsonl files.  Set this to the Stage 1 run's stage1/
+# directory (e.g. "{base_path}/stage1" from the previous run).
 # ---------------------------------------------------------------------------
 stage1_collect:
   enabled: false
   distributed: false
   datasets: []
-  # Stage 3 reads Path(output_path).parent → looks for part-*.jsonl there.
+  # Stage 3 reads output_dir → looks for part-*.jsonl there.
   # This matches the research_stage1_001d run (stage1_research.yaml).
-  output_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/research_stage1_001d/stage1/prompts.jsonl"
+  output_dir: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/research_stage1_001d/stage1"
 
 # ---------------------------------------------------------------------------
-# Stage 2 — disabled; similarly we just need output_path to resolve the dir
+# Stage 2 — disabled; output_dir is used to locate Stage 2 shard directory
 # ---------------------------------------------------------------------------
 stage2_generate:
   enabled: false
-  output_path: "{base_path}/stage2/prompts.jsonl"   # does not need to exist
+  output_dir: "{base_path}/stage2"
 
 # ---------------------------------------------------------------------------
 # Stage 3 — distributed embedding + flash_kmeans with 100k clusters
@@ -72,7 +69,7 @@ stage3_cluster:
   # Output paths
   embeddings_dir: "{base_path}/stage3/embeddings"
   faiss_index_path: "{base_path}/stage3/faiss.index"
-  output_path: "{base_path}/stage3/clustered_prompts.jsonl"
+  output_dir: "{base_path}/stage3"
 
 # ---------------------------------------------------------------------------
 # Stages 4–6 — disabled in this run

@@ -20,7 +20,7 @@ stage1_collect:
       prompt_field: "question"
       domain_hint: "math"
   # Keep small for dev
-  output_path: "{base_path}/stage1/prompts.jsonl"
+  output_dir: "{base_path}/stage1"
 
 stage2_generate:
   enabled: false   # skip corpus generation locally (no large corpora on laptop)

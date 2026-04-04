@@ -51,7 +51,7 @@ stage1_collect:
       domain_hint: "math"
 
   batch_size: 10000
-  output_path: "{base_path}/stage1/prompts.jsonl"
+  output_dir: "{base_path}/stage1"
 
 # ---------------------------------------------------------------------------
 # Stage 2 — Prompt Generation from Knowledge-Rich Corpora
@@ -78,7 +78,7 @@ stage2_generate:
   generator_temperature: 0.8
   generator_max_tokens: 512
   max_workers: 16
-  output_path: "{base_path}/stage2/prompts.jsonl"
+  output_dir: "{base_path}/stage2"
 
 # ---------------------------------------------------------------------------
 # Stage 3 — Clustering by Domain and Difficulty
@@ -102,7 +102,7 @@ stage3_cluster:
   # Output
   embeddings_dir: "{base_path}/stage3/embeddings"
   faiss_index_path: "{base_path}/stage3/faiss.index"
-  output_path: "{base_path}/stage3/clustered_prompts.jsonl"
+  output_dir: "{base_path}/stage3"
 
 # ---------------------------------------------------------------------------
 # Stage 4 — Prompt Sampling
@@ -122,7 +122,7 @@ stage4_sample:
     medium: 0.50
     hard: 0.30
   dedup_cosine_threshold: 0.92
-  output_path: "{base_path}/stage4/sampled_prompts.jsonl"
+  output_dir: "{base_path}/stage4"
 
 # ---------------------------------------------------------------------------
 # Stage 5 — Teacher Model Inference
@@ -153,7 +153,7 @@ stage5_inference:
   batch_size: 256
   checkpoint_every: 5000
   max_retries: 3
-  output_path: "{base_path}/stage5/responses.jsonl"
+  output_dir: "{base_path}/stage5"
 
 # ---------------------------------------------------------------------------
 # Stage 6 — Quality Filtering
@@ -182,7 +182,7 @@ stage6_filter:
     model: "Qwen/Qwen2.5-7B-Instruct"
     score_threshold: 6.0
     sample_rate: 0.10
-  output_path: "{base_path}/stage6/filtered.jsonl"
+  output_dir: "{base_path}/stage6"
   report_path: "{base_path}/stage6/filter_report.json"
 
 # ---------------------------------------------------------------------------

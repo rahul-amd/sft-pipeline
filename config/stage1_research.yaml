@@ -25,7 +25,7 @@ global:
 
 stage1_collect:
   distributed: true
-  output_path: "{base_path}/stage1/prompts.jsonl"
+  output_dir: "{base_path}/stage1"
 
   datasets:
 

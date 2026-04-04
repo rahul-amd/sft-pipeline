@@ -34,8 +34,8 @@ def estimate_and_print(cfg: PipelineConfig) -> None:
     rows = []
 
     # Stage 1 + 2: count existing output if available
-    s1_dir = Path(cfg.stage1_collect.output_path).parent
-    s2_dir = Path(cfg.stage2_generate.output_path).parent
+    s1_dir = Path(cfg.stage1_collect.output_dir)
+    s2_dir = Path(cfg.stage2_generate.output_dir)
     s1_count = _count_dir(s1_dir)
     s2_count = _count_dir(s2_dir)
     rows.append(("Stage 1 — Collect", _fmt(s1_count), "~fast", "—"))

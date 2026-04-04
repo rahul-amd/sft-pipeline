@@ -32,10 +32,10 @@ global:
   run_id: run_abc
   base_path: /data/{run_id}
 stage5_inference:
-  output_path: "{base_path}/stage5/responses.jsonl"
+  output_dir: "{base_path}/stage5"
 """)
     cfg = load_config(f)
-    assert cfg.stage5_inference.output_path == "/data/run_abc/stage5/responses.jsonl"
+    assert cfg.stage5_inference.output_dir == "/data/run_abc/stage5"
 
 
 def test_domain_quotas_validation(tmp_path):

@@ -42,7 +42,7 @@ def export_final_dataset(cfg: PipelineConfig) -> int:
     Read Stage 6 filtered shards, normalize schema, and write to final path.
     Returns total record count.
     """
-    s6_dir = Path(cfg.stage6_filter.output_path).parent
+    s6_dir = Path(cfg.stage6_filter.output_dir)
     exp = cfg.export
     out_dir = Path(exp.final_jsonl_path).parent
     ensure_dir(out_dir)

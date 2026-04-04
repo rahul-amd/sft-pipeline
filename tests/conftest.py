@@ -113,33 +113,33 @@ global:
 stage1_collect:
   enabled: true
   datasets: []
-  output_path: "{tmp_path}/stage1/prompts.jsonl"
+  output_dir: "{tmp_path}/stage1"
 
 stage2_generate:
   enabled: false
   corpora: []
-  output_path: "{tmp_path}/stage2/prompts.jsonl"
+  output_dir: "{tmp_path}/stage2"
 
 stage3_cluster:
   enabled: false
   embeddings_dir: "{tmp_path}/stage3/embeddings"
   faiss_index_path: "{tmp_path}/stage3/faiss.index"
-  output_path: "{tmp_path}/stage3/clustered_prompts.jsonl"
+  output_dir: "{tmp_path}/stage3"
 
 stage4_sample:
   enabled: false
   total_prompts: 20
-  output_path: "{tmp_path}/stage4/sampled_prompts.jsonl"
+  output_dir: "{tmp_path}/stage4"
 
 stage5_inference:
   enabled: false
   model: "test-model"
   n_replicas: 1
-  output_path: "{tmp_path}/stage5/responses.jsonl"
+  output_dir: "{tmp_path}/stage5"
 
 stage6_filter:
   enabled: false
-  output_path: "{tmp_path}/stage6/filtered.jsonl"
+  output_dir: "{tmp_path}/stage6"
   report_path: "{tmp_path}/stage6/filter_report.json"
   llm_judge:
     enabled: false

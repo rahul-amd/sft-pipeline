@@ -33,9 +33,9 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     s3 = cfg.stage3_cluster
     s4 = cfg.stage4_sample
 
-    stage3_dir = Path(s3.output_path).parent
+    stage3_dir = Path(s3.output_dir)
     emb_dir = Path(s3.embeddings_dir)
-    out_dir = Path(s4.output_path).parent
+    out_dir = Path(s4.output_dir)
     ensure_dir(out_dir)
 
     cm.mark_stage_started(STAGE)

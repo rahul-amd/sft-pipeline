@@ -369,7 +369,7 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         os.environ["HF_HOME"] = cfg.global_.hf_home
         logger.info("Stage1: HF_HOME set to %s", cfg.global_.hf_home)
 
-    output_dir = Path(s1.output_path).parent
+    output_dir = Path(s1.output_dir)
     ensure_dir(output_dir)
 
     cm.mark_stage_started(STAGE)
@@ -630,7 +630,7 @@ def run_stage1_distributed(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     if cfg.global_.hf_home:
         os.environ["HF_HOME"] = cfg.global_.hf_home
 
-    output_dir = Path(s1.output_path).parent
+    output_dir = Path(s1.output_dir)
     phase1_dir = output_dir / "_phase1"
     ensure_dir(output_dir)
     ensure_dir(phase1_dir)

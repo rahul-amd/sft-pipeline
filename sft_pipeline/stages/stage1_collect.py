@@ -43,7 +43,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from sft_pipeline.checkpoint import CheckpointManager, ItemStatus, prompt_id
+from sft_pipeline.checkpoint import CheckpointManager, prompt_id
 from sft_pipeline.config import DatasetSource, PipelineConfig
 from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl
 
@@ -52,7 +52,6 @@ logger = logging.getLogger(__name__)
 STAGE = "stage1_collect"
 
 # Tuning constants
-_CHECKPOINT_BATCH_SIZE = 1_000   # DuckDB rows flushed per batch
 _QUEUE_MAXSIZE = 20_000          # max items buffered between producers and consumer
 _MAX_WORKER_THREADS = 8          # cap concurrent source-loader threads
 
@@ -307,12 +306,17 @@ def _load_local_jsonl(src: DatasetSource):
 
 def _source_worker(
     src: DatasetSource,
-    cm: CheckpointManager,
+    seen_ids: set[str],
     out_q: queue.Queue,
 ) -> None:
     """
     Producer thread: load one dataset source, normalize rows, and enqueue
     (pid, text, source_name, domain_hint) tuples.
+
+    Pre-filters against seen_ids (the set of prompt_ids already written to
+    output shards) so the consumer doesn't have to process duplicates from
+    a previous run.  seen_ids is read-only here — the consumer is the sole
+    writer.
 
     Puts _SENTINEL on the queue when done (even on error) so the consumer
     always knows this worker has finished.
@@ -336,8 +340,8 @@ def _source_worker(
             if len(normalized) < 10:
                 continue
             pid = prompt_id(normalized)
-            # Read-only cache lookup — safe to call from multiple threads
-            if cm.is_processed(pid, STAGE):
+            # Skip prompts already written in a previous run
+            if pid in seen_ids:
                 continue
             out_q.put((pid, normalized, source_name, src.domain_hint))
             enqueued += 1
@@ -369,21 +373,33 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     ensure_dir(output_dir)
 
     cm.mark_stage_started(STAGE)
-    cm.preload_processed(STAGE)
 
+    # ── Resume: load prompt_ids already written in previous runs ─────────────
+    # Scanning existing output shards (large sequential reads) is far faster
+    # than per-record DuckDB WAL writes on Lustre.  No mark_processed_batch
+    # calls are made during the hot loop — only mark_stage_complete at the end.
     seen_ids: set[str] = set()
+    existing_shards = sorted(output_dir.glob("part-*.jsonl"))
+    if existing_shards:
+        logger.info(
+            "Stage1: loading %d existing output shard(s) for resume …",
+            len(existing_shards),
+        )
+        for shard_path in existing_shards:
+            for rec in iter_jsonl(shard_path):
+                seen_ids.add(rec["prompt_id"])
+        logger.info("Stage1: %d prompt_ids pre-loaded from existing shards.", len(seen_ids))
 
     n_sources = len(s1.datasets)
     n_workers = min(n_sources, _MAX_WORKER_THREADS)
     out_q: queue.Queue = queue.Queue(maxsize=_QUEUE_MAXSIZE)
 
-    total_processed = 0   # items received from workers (passed is_processed check)
-    total_written = 0     # items that survived dedup and were written
-    pending: list[tuple[str, ItemStatus, str | None]] = []
+    total_processed = 0   # items received from workers
+    total_written = len(seen_ids)  # count existing as already written
 
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
         for src in s1.datasets:
-            executor.submit(_source_worker, src, cm, out_q)
+            executor.submit(_source_worker, src, seen_ids, out_q)
 
         active = n_sources
         with ShardedJSONLWriter(output_dir, shard_size_mb=200) as writer:
@@ -398,7 +414,6 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                 total_processed += 1
 
                 if pid in seen_ids:
-                    pending.append((pid, ItemStatus.SKIPPED, None))
                     continue
 
                 seen_ids.add(pid)
@@ -410,8 +425,6 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     "domain": domain,
                     "stage": "stage1",
                 })
-                shard = writer.written_shards[-1] if writer.written_shards else None
-                pending.append((pid, ItemStatus.SUCCESS, shard))
                 total_written += 1
 
                 if total_processed % 10_000 == 0:
@@ -420,14 +433,6 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                         "Stage1: processed %d  |  written %d  |  dedup rate %.1f%%",
                         total_processed, total_written, dedup_rate,
                     )
-
-                if len(pending) >= _CHECKPOINT_BATCH_SIZE:
-                    cm.mark_processed_batch(pending, STAGE)
-                    pending.clear()
-
-    # Final checkpoint flush
-    if pending:
-        cm.mark_processed_batch(pending, STAGE)
 
     cm.mark_stage_complete(STAGE, output_count=total_written)
     logger.info("Stage1 complete: written=%d prompts", total_written)

@@ -537,46 +537,55 @@ def _merge_and_dedup(
     has embeddings and FAISS and can do it far more accurately. A set lookup
     is O(1) and doesn't degrade with corpus size.
 
+    **No per-record DuckDB writes in the hot loop.** Flushing the DuckDB
+    checkpoint every N records on a Lustre shared filesystem causes WAL syncs
+    that take ~10 s each, capping throughput at ~100 rec/s. Instead:
+      - Resume is handled by scanning existing output shards at startup and
+        loading their prompt_ids into seen_ids (large sequential reads — fast
+        on Lustre).
+      - DuckDB is updated once at the end via mark_stage_complete only.
+
     Returns total prompts written.
     """
-    from sft_pipeline.storage import iter_jsonl_dir
+    from sft_pipeline.storage import iter_jsonl, iter_jsonl_dir
 
-    shards = sorted(phase1_dir.glob("*.jsonl"))
-    logger.info("Merge: reading %d phase1 shard(s) from %s …", len(shards), phase1_dir)
-
+    # ── Resume: load prompt_ids already written in previous runs ─────────────
     seen_ids: set[str] = set()
-    pending: list[tuple[str, ItemStatus, str | None]] = []
-    total_written = 0
+    existing_shards = sorted(output_dir.glob("part-*.jsonl"))
+    if existing_shards:
+        logger.info(
+            "Merge: loading %d existing output shard(s) for resume …",
+            len(existing_shards),
+        )
+        for shard_path in existing_shards:
+            for rec in iter_jsonl(shard_path):
+                seen_ids.add(rec["prompt_id"])
+        logger.info("Merge: %d prompt_ids pre-loaded from existing shards.", len(seen_ids))
+
+    total_written = len(seen_ids)  # count existing as already written
     total_seen = 0
+
+    phase1_shards = sorted(phase1_dir.glob("*.jsonl"))
+    logger.info("Merge: reading %d phase1 shard(s) from %s …", len(phase1_shards), phase1_dir)
 
     with ShardedJSONLWriter(output_dir, shard_size_mb=200) as writer:
         for rec in iter_jsonl_dir(phase1_dir):
             total_seen += 1
             pid = rec["prompt_id"]
 
-            if pid in seen_ids or cm.is_processed(pid, STAGE):
-                pending.append((pid, ItemStatus.SKIPPED, None))
+            if pid in seen_ids:
                 continue
 
             seen_ids.add(pid)
             writer.write(rec)
-            shard = writer.written_shards[-1] if writer.written_shards else None
-            pending.append((pid, ItemStatus.SUCCESS, shard))
             total_written += 1
 
             if total_written % 50_000 == 0:
                 logger.info(
                     "Merge: written %d / %d seen  (dedup rate %.1f%%)",
                     total_written, total_seen,
-                    100.0 * (1 - total_written / total_seen),
+                    100.0 * (1 - total_written / max(total_seen, 1)),
                 )
-
-            if len(pending) >= _CHECKPOINT_BATCH_SIZE:
-                cm.mark_processed_batch(pending, STAGE)
-                pending.clear()
-
-    if pending:
-        cm.mark_processed_batch(pending, STAGE)
 
     logger.info(
         "Merge complete: written=%d / seen=%d  (dedup rate %.1f%%)",

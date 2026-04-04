@@ -296,7 +296,16 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
 
 - **`make_response_record` reasoning length**: The structural filter requires `min_response_tokens=50` (default). Test fixtures must produce reasoning above this threshold. `conftest.py`'s `make_response_record` is calibrated to ~80 tokens — don't shorten it.
 
-- **ROCm vLLM wheel**: The standard `pip install vllm` installs the CUDA build. On the cluster, use the ROCm-specific wheel from the vLLM releases page. The `gpu_memory_utilization` and `dtype` settings in `prod.yaml` are tuned for MI250X.
+- **ROCm PyTorch (sentence-transformers)**: The default `pip install torch` installs the CUDA build, which fails with "Found no NVIDIA driver" on AMD GPUs. Stage 3 embedding workers will all fail if the sft-pipeline conda env has CUDA PyTorch. Install ROCm PyTorch inside the Singularity container once:
+  ```bash
+  singularity exec --overlay <overlay>:rw <sif> \
+      scripts/run_in_env.sh \
+      pip install --user torch \
+          --index-url https://download.pytorch.org/whl/rocm6.2
+  ```
+  Stage 3 now runs a single GPU pre-flight Ray task before dispatching all 32 workers; if CUDA is unavailable, you'll see this error immediately with the install command rather than 32 identical failures.
+
+- **ROCm vLLM wheel**: Similarly, the standard `pip install vllm` installs the CUDA build. On the cluster, use the ROCm-specific wheel from the vLLM releases page. The `gpu_memory_utilization` and `dtype` settings in `prod.yaml` are tuned for MI250X.
 
 - **Ray cluster connection**: `stage5_inference.py` calls `ray.init(address="auto")` which connects to an existing Ray cluster. Start the cluster first with `ray start --head` on the head node and `ray start --address=<head>` on workers before running Stage 5.
 

@@ -181,6 +181,17 @@ def embed_jsonl_shards(
     # ROCm uses 'cuda' device string in PyTorch
     pt_device = "cuda" if device in ("cuda", "rocm") else "cpu"
 
+    if pt_device == "cuda":
+        import torch as _torch
+        if not _torch.cuda.is_available():
+            raise RuntimeError(
+                f"Worker {worker_id}: GPU requested (device={device!r}) but "
+                "torch.cuda.is_available() is False.\n"
+                "The sft-pipeline env needs ROCm PyTorch, not the default CUDA wheel.\n"
+                "Install: pip install --user torch "
+                "--index-url https://download.pytorch.org/whl/rocm6.2"
+            )
+
     _log.info(
         "Worker %d: loading embedding model %s on device=%s",
         worker_id, model_name, pt_device,

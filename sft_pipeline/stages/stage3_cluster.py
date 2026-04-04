@@ -50,6 +50,38 @@ STAGE = "stage3_cluster"
 # Distributed embedding helper
 # ---------------------------------------------------------------------------
 
+def _gpu_preflight() -> dict:
+    """
+    Lightweight GPU availability check run as a single Ray task before the
+    main embedding workers are dispatched.
+
+    Fails fast with a clear ROCm installation message if torch.cuda is
+    unavailable, saving the user from seeing the same error 32 times.
+
+    Returns basic diagnostic info on success.
+    """
+    import torch
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "torch.cuda.is_available() returned False on this worker.\n"
+            "\n"
+            "The sft-pipeline conda env needs PyTorch built against ROCm, not CUDA.\n"
+            "Standard CUDA wheels (pip install torch) will not work on AMD GPUs.\n"
+            "\n"
+            "Install ROCm PyTorch inside the Singularity container:\n"
+            "  singularity exec --overlay <overlay>:rw <sif> \\\n"
+            "      scripts/run_in_env.sh \\\n"
+            "      pip install --user torch \\\n"
+            "          --index-url https://download.pytorch.org/whl/rocm6.2\n"
+            "(Adjust rocm6.2 to match your cluster's ROCm stack version.)"
+        )
+    return {
+        "device_count": torch.cuda.device_count(),
+        "device_name": torch.cuda.get_device_name(0),
+        "torch_version": torch.__version__,
+    }
+
+
 def _embed_distributed(
     stage1_dir: Path,
     stage2_dir: Path,
@@ -96,6 +128,22 @@ def _embed_distributed(
     )
 
     ray.init(address=cfg.global_.ray_address, ignore_reinit_error=True)
+
+    # ── Pre-flight: verify GPU availability on one worker before dispatching all ──
+    # Catches CUDA-vs-ROCm mismatches immediately with a useful error message
+    # instead of letting all N workers fail with "Found no NVIDIA driver".
+    logger.info("Stage3 distributed: running GPU pre-flight check ...")
+    preflight_remote = ray.remote(num_gpus=1)(_gpu_preflight)
+    try:
+        gpu_info = ray.get(preflight_remote.remote())
+        logger.info(
+            "Stage3 GPU pre-flight OK: %d GPU(s), device=%s, torch=%s",
+            gpu_info["device_count"], gpu_info["device_name"], gpu_info["torch_version"],
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Stage3 GPU pre-flight failed on a worker node: {exc}"
+        ) from exc
 
     # Wrap embed_jsonl_shards as a Ray remote task requiring 1 GPU per worker.
     # num_cpus=4 reserves enough CPUs for the sentence-transformer DataLoader.

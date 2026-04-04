@@ -115,8 +115,8 @@ srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
         --block &
 
 RAY_HEAD_PID=$!
-log "Waiting for head to initialise (20s) ..."
-sleep 20
+log "Waiting for head to initialise (60s) ..."
+sleep 60
 
 # Quick sanity check that the head is up
 if ! srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" \

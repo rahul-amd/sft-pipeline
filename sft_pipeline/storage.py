@@ -38,16 +38,35 @@ def stage_dir(base_path: str, stage: str) -> Path:
 # JSONL reading
 # ---------------------------------------------------------------------------
 
-def iter_jsonl(path: str | Path) -> Iterator[dict]:
-    """Yield parsed dicts from a JSONL file, one line at a time."""
+def iter_jsonl(path: str | Path, skip_errors: bool = True) -> Iterator[dict]:
+    """Yield parsed dicts from a JSONL file, one line at a time.
+
+    Args:
+        skip_errors: If True (default), log a warning and skip lines that fail
+            to parse (e.g. partial writes from a previously cancelled job).
+            If False, re-raise the parse error immediately.
+    """
     p = Path(path)
     if not p.exists():
         return
+    bad_lines = 0
     with p.open("rb") as f:
-        for line in f:
+        for lineno, line in enumerate(f, 1):
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            try:
                 yield orjson.loads(line)
+            except Exception as exc:
+                bad_lines += 1
+                if skip_errors:
+                    logger.warning(
+                        "Skipping malformed line %d in %s: %s", lineno, p.name, exc
+                    )
+                else:
+                    raise
+    if bad_lines:
+        logger.warning("Skipped %d malformed line(s) in %s.", bad_lines, p.name)
 
 
 def iter_jsonl_dir(directory: str | Path) -> Iterator[dict]:

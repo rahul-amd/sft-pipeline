@@ -37,6 +37,19 @@ def _setup_logging(level: str) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def _apply_global_env(cfg) -> None:
+    """Apply global config settings to the process environment.
+
+    Called once in the main process before any stage runs.
+    Ray remote workers are separate processes and apply their own env via
+    the arguments passed to each remote function (e.g. _collect_source).
+    """
+    import os
+    if cfg.global_.hf_home:
+        os.environ["HF_HOME"] = cfg.global_.hf_home
+        logging.getLogger(__name__).info("HF_HOME set to %s", cfg.global_.hf_home)
+
+
 def _load(config_path: str):
     from sft_pipeline.config import load_config
     return load_config(config_path)
@@ -55,6 +68,7 @@ def run(
     """Run all enabled pipeline stages end-to-end."""
     cfg = _load(config)
     _setup_logging(cfg.global_.log_level)
+    _apply_global_env(cfg)
 
     if dry_run or cfg.global_.dry_run:
         from sft_pipeline.cost_estimator import estimate_and_print
@@ -122,6 +136,7 @@ def run_stage(
 
     cfg = _load(config)
     _setup_logging(cfg.global_.log_level)
+    _apply_global_env(cfg)
 
     from sft_pipeline.checkpoint import CheckpointManager
 

@@ -35,7 +35,6 @@ from __future__ import annotations
 import itertools
 import json
 import logging
-import os
 import queue
 import re
 import unicodedata
@@ -365,10 +364,6 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         logger.warning("stage1_collect: no datasets configured — skipping")
         return
 
-    if cfg.global_.hf_home:
-        os.environ["HF_HOME"] = cfg.global_.hf_home
-        logger.info("Stage1: HF_HOME set to %s", cfg.global_.hf_home)
-
     output_dir = Path(s1.output_dir)
     ensure_dir(output_dir)
 
@@ -626,9 +621,6 @@ def run_stage1_distributed(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     if not s1.datasets:
         logger.warning("stage1_collect (distributed): no datasets configured — skipping")
         return
-
-    if cfg.global_.hf_home:
-        os.environ["HF_HOME"] = cfg.global_.hf_home
 
     output_dir = Path(s1.output_dir)
     phase1_dir = output_dir / "_phase1"

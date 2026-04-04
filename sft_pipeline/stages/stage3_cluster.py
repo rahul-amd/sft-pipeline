@@ -181,6 +181,19 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     stage1_dir = Path(s1.output_path).parent
     stage2_dir = Path(s2.output_path).parent
 
+    # Validate that at least the Stage 1 input directory has shards before
+    # we start a potentially multi-hour embedding job.
+    stage1_shards = list(stage1_dir.glob("part-*.jsonl"))
+    if not stage1_shards:
+        raise FileNotFoundError(
+            f"Stage 3: no part-*.jsonl shards found in {stage1_dir}.\n"
+            f"  This is derived from cfg.stage1_collect.output_path:\n"
+            f"    {s1.output_path}\n"
+            f"  Make sure Stage 1 has completed and the path above is correct.\n"
+            f"  (The file itself does not need to exist — only its parent directory.)"
+        )
+    logger.info("Stage3: found %d Stage 1 shard(s) in %s", len(stage1_shards), stage1_dir)
+
     def _all_prompts():
         yield from iter_jsonl_dir(stage1_dir)
         yield from iter_jsonl_dir(stage2_dir)

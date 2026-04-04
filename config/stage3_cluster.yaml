@@ -27,16 +27,19 @@ global:
   seed: 42
 
 # ---------------------------------------------------------------------------
-# Stage 1 — disabled; output_path points to the completed Stage 1 run so
-# Stage 3 knows where to read prompts from (stage3_cluster.py reads
-# cfg.stage1_collect.output_path to locate the input JSONL directory).
+# Stage 1 — disabled; output_path is a virtual path used only so Stage 3
+# can locate the shard directory via Path(output_path).parent.
+#
+# The file itself (prompts.jsonl) does NOT need to exist — Stage 3 only
+# uses the parent directory to glob part-*.jsonl shards.  Set this to
+# match the Stage 1 run's base_path + "/stage1/prompts.jsonl".
 # ---------------------------------------------------------------------------
 stage1_collect:
   enabled: false
   distributed: false
   datasets: []
-  # ← Point to the completed Stage 1 output directory.
-  #   The parent of this path is used as the JSONL shard directory.
+  # Stage 3 reads Path(output_path).parent → looks for part-*.jsonl there.
+  # This matches the research_stage1_001d run (stage1_research.yaml).
   output_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/research_stage1_001d/stage1/prompts.jsonl"
 
 # ---------------------------------------------------------------------------

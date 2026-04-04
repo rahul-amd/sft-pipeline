@@ -120,8 +120,6 @@ global:
   hf_home: "/fast-disk/hf_cache"  # override HuggingFace cache directory
 
 stage1_collect:
-  dedup_threshold: 0.95
-  minhash_num_perm: 128
   datasets:
     - source: hf_dataset
       hf_repo_id: openai/gsm8k

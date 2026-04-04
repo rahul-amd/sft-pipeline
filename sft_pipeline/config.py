@@ -76,12 +76,10 @@ class DatasetSource(BaseModel):
 class Stage1Config(BaseModel):
     enabled: bool = True
     datasets: list[DatasetSource] = Field(default_factory=list)
-    dedup_threshold: float = Field(0.95, ge=0.0, le=1.0)
-    minhash_num_perm: int = 128
     batch_size: int = 10_000
     output_path: str = "{base_path}/stage1/prompts.jsonl"
     # Set to true to distribute source collection across a Ray cluster.
-    # Each dataset source becomes a Ray task; LSH dedup runs on the head node
+    # Each dataset source becomes a Ray task; dedup merge runs on the head node
     # after all tasks complete. Requires ray_address in global config.
     distributed: bool = False
 

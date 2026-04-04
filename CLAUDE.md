@@ -50,7 +50,7 @@ sft-pipeline/
 │   ├── cli.py                   ← Typer CLI (run, run-stage, status, estimate)
 │   ├── cost_estimator.py        ← dry-run estimation (GPU-hours, wall clock)
 │   ├── stages/
-│   │   ├── stage1_collect.py    ← HF dataset ingestion + MinHash LSH dedup
+│   │   ├── stage1_collect.py    ← HF dataset ingestion + SHA256 exact dedup
 │   │   ├── stage2_generate.py   ← corpus chunking + LLM prompt generation
 │   │   ├── stage3_cluster.py    ← embed + FAISS index + HDBSCAN + difficulty
 │   │   ├── stage4_sample.py     ← quota sampling, near-dedup, similarity sort
@@ -331,6 +331,12 @@ sft-pipeline run --config config/prod.yaml
 sft-pipeline status --config config/prod.yaml
 ```
 
+### Stage 1 Deduplication
+
+Both single-node and distributed modes use **SHA256 exact dedup only** — `prompt_id` is the SHA256 of the normalised prompt text and is checked against an in-memory `set[str]`. This is O(1) per record and doesn't degrade with corpus size.
+
+Near-duplicate dedup (semantically similar but not identical prompts) is deliberately deferred to Stage 4, which has embeddings and FAISS cosine similarity available and can do it far more accurately. MinHash LSH was previously used here but caused progressive throughput collapse at scale (datasketch LSH `query()` slows as bucket tables grow).
+
 ### Stage 1 Distributed Mode
 
 When `stage1_collect.distributed: true` in config (set in `prod.yaml`), Stage 1 runs in two phases:
@@ -338,14 +344,12 @@ When `stage1_collect.distributed: true` in config (set in `prod.yaml`), Stage 1 
 **Phase 1 — parallel collection (all nodes)**
 Each dataset source becomes a Ray remote task (`num_cpus=2`). Ray distributes tasks across all nodes. Each task streams its source, normalises, SHA256-deduplicates within the source, and writes to `{output_dir}/_phase1/{source_slug}.jsonl` on the shared filesystem. Tasks are idempotent — if the output file exists, the source is skipped on resume.
 
-**Phase 2 — merge + LSH dedup (head node)**
-After all tasks complete, the head node reads all phase1 files and runs MinHash LSH dedup across the full combined corpus, writing the final sharded output and updating DuckDB.
+**Phase 2 — merge + cross-source dedup (head node)**
+After all tasks complete, the head node reads all phase1 files, deduplicates by `prompt_id` across sources, writes the final sharded output, and updates DuckDB. This is a simple set-based pass — throughput is limited only by disk I/O.
 
-**Speedup**: `sum(source stream times)` → `max(source stream times)` + ~15 min LSH merge.
+**Speedup**: `sum(source stream times)` → `max(source stream times)` + fast merge pass.
 
 **Resume**: If Phase 1 crashes, re-run the command. Completed sources (`.jsonl` file exists in `_phase1/`) are skipped automatically. If Phase 2 crashes, re-run — phase1 files are still there.
-
-**Cross-source near-dedup**: Phase 1 only SHA256-deduplicates within each source. Cross-source near-duplicates are caught in Phase 2's LSH pass and also in Stage 4's cosine-similarity dedup.
 
 **Laptop / single-node**: Leave `distributed: false` (default). `dev.yaml` does not set it.
 
@@ -396,7 +400,7 @@ cloudflared tunnel --url http://localhost:8501
 
 ## Test Coverage Gaps (known)
 
-- Stage 1 (MinHash dedup): no integration test — needs HF datasets mock
+- Stage 1 (dedup): no integration test — needs HF datasets mock
 - Stage 2 (corpus chunking): no integration test — needs LLM HTTP mock
 - Stage 3 (embedding + FAISS): no integration test — heavy dependencies
 - Stage 5 (vLLM): integration test uses mock; no real vLLM test (expected — requires GPU)

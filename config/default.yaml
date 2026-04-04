@@ -50,8 +50,6 @@ stage1_collect:
       prompt_field: "problem"
       domain_hint: "math"
 
-  dedup_threshold: 0.95
-  minhash_num_perm: 128
   batch_size: 10000
   output_path: "{base_path}/stage1/prompts.jsonl"
 

@@ -304,29 +304,15 @@ def _load_local_jsonl(src: DatasetSource):
             yield text
 
 
-def _make_lsh(num_perm: int, threshold: float):
-    from datasketch import MinHashLSH
-    return MinHashLSH(threshold=threshold, num_perm=num_perm)
-
-
-def _make_minhash(text: str, num_perm: int):
-    import xxhash
-    from datasketch import MinHash
-    m = MinHash(num_perm=num_perm, hashfunc=xxhash.xxh32_intdigest)
-    for token in text.lower().split():
-        m.update(token.encode())
-    return m
-
 
 def _source_worker(
     src: DatasetSource,
-    num_perm: int,
     cm: CheckpointManager,
     out_q: queue.Queue,
 ) -> None:
     """
-    Producer thread: load one dataset source, normalize rows, compute MinHash,
-    and enqueue (pid, text, minhash, source_name, domain_hint) tuples.
+    Producer thread: load one dataset source, normalize rows, and enqueue
+    (pid, text, source_name, domain_hint) tuples.
 
     Puts _SENTINEL on the queue when done (even on error) so the consumer
     always knows this worker has finished.
@@ -353,8 +339,7 @@ def _source_worker(
             # Read-only cache lookup — safe to call from multiple threads
             if cm.is_processed(pid, STAGE):
                 continue
-            mh = _make_minhash(normalized, num_perm)
-            out_q.put((pid, normalized, mh, source_name, src.domain_hint))
+            out_q.put((pid, normalized, source_name, src.domain_hint))
             enqueued += 1
     except Exception as exc:
         logger.error("Source %s failed after %d rows: %s", source_name, seen, exc)
@@ -386,8 +371,7 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     cm.mark_stage_started(STAGE)
     cm.preload_processed(STAGE)
 
-    lsh = _make_lsh(s1.minhash_num_perm, s1.dedup_threshold)
-    seen_in_lsh: set[str] = set()
+    seen_ids: set[str] = set()
 
     n_sources = len(s1.datasets)
     n_workers = min(n_sources, _MAX_WORKER_THREADS)
@@ -395,12 +379,11 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     total_processed = 0   # items received from workers (passed is_processed check)
     total_written = 0     # items that survived dedup and were written
-    # Pending checkpoint entries flushed in batches
     pending: list[tuple[str, ItemStatus, str | None]] = []
 
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
         for src in s1.datasets:
-            executor.submit(_source_worker, src, s1.minhash_num_perm, cm, out_q)
+            executor.submit(_source_worker, src, cm, out_q)
 
         active = n_sources
         with ShardedJSONLWriter(output_dir, shard_size_mb=200) as writer:
@@ -411,31 +394,25 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     active -= 1
                     continue
 
-                pid, normalized, mh, source_name, domain_hint = item
+                pid, normalized, source_name, domain_hint = item
                 total_processed += 1
 
-                # Exact duplicate within this run — already written, skip
-                if pid in seen_in_lsh:
+                if pid in seen_ids:
+                    pending.append((pid, ItemStatus.SKIPPED, None))
                     continue
 
-                # Near-duplicate check via MinHash LSH
-                if lsh.query(mh):
-                    pending.append((pid, ItemStatus.SKIPPED, None))
-                else:
-                    lsh.insert(pid, mh)
-                    seen_in_lsh.add(pid)
-
-                    domain = domain_hint or _infer_domain(normalized)
-                    writer.write({
-                        "prompt_id": pid,
-                        "prompt": normalized,
-                        "source": source_name,
-                        "domain": domain,
-                        "stage": "stage1",
-                    })
-                    shard = writer.written_shards[-1] if writer.written_shards else None
-                    pending.append((pid, ItemStatus.SUCCESS, shard))
-                    total_written += 1
+                seen_ids.add(pid)
+                domain = domain_hint or _infer_domain(normalized)
+                writer.write({
+                    "prompt_id": pid,
+                    "prompt": normalized,
+                    "source": source_name,
+                    "domain": domain,
+                    "stage": "stage1",
+                })
+                shard = writer.written_shards[-1] if writer.written_shards else None
+                pending.append((pid, ItemStatus.SUCCESS, shard))
+                total_written += 1
 
                 if total_processed % 10_000 == 0:
                     dedup_rate = 100.0 * (1 - total_written / total_processed) if total_processed else 0.0
@@ -444,7 +421,6 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                         total_processed, total_written, dedup_rate,
                     )
 
-                # Flush checkpoint batch
                 if len(pending) >= _CHECKPOINT_BATCH_SIZE:
                     cm.mark_processed_batch(pending, STAGE)
                     pending.clear()
@@ -471,7 +447,6 @@ def _collect_source(
     src_dict: dict,
     hf_home: str | None,
     out_path: str,
-    num_perm: int,
 ) -> dict:
     """
     Collect one dataset source and write SHA256-deduplicated records to out_path.
@@ -551,20 +526,27 @@ def _collect_source(
 def _merge_and_dedup(
     phase1_dir: Path,
     output_dir: Path,
-    s1,             # Stage1Config
+    s1,             # Stage1Config  (kept for signature compatibility)
     cm: CheckpointManager,
 ) -> int:
     """
-    Read all phase1 JSONL files, apply MinHash LSH dedup across the full
-    corpus, and write the final sharded output. Returns total prompts written.
+    Read all phase1 JSONL files, cross-source exact-dedup by prompt_id
+    (SHA256), and write the final sharded output.
+
+    Near-duplicate dedup (Jaccard / cosine) is deferred to Stage 4, which
+    has embeddings and FAISS and can do it far more accurately.  MinHash LSH
+    here was the Phase-2 throughput bottleneck: datasketch LSH query() slows
+    down as bucket tables grow (O(n) candidates per lookup at scale), whereas
+    a set lookup is always O(1).
+
+    Returns total prompts written.
     """
     from sft_pipeline.storage import iter_jsonl_dir
 
     shards = sorted(phase1_dir.glob("*.jsonl"))
     logger.info("Merge: reading %d phase1 shard(s) from %s …", len(shards), phase1_dir)
 
-    lsh = _make_lsh(s1.minhash_num_perm, s1.dedup_threshold)
-    seen_in_lsh: set[str] = set()
+    seen_ids: set[str] = set()
     pending: list[tuple[str, ItemStatus, str | None]] = []
     total_written = 0
     total_seen = 0
@@ -574,17 +556,11 @@ def _merge_and_dedup(
             total_seen += 1
             pid = rec["prompt_id"]
 
-            if cm.is_processed(pid, STAGE):
+            if pid in seen_ids or cm.is_processed(pid, STAGE):
+                pending.append((pid, ItemStatus.SKIPPED, None))
                 continue
 
-            if pid not in seen_in_lsh:
-                mh = _make_minhash(rec["prompt"], s1.minhash_num_perm)
-                if lsh.query(mh):
-                    pending.append((pid, ItemStatus.SKIPPED, None))
-                    continue
-                lsh.insert(pid, mh)
-                seen_in_lsh.add(pid)
-
+            seen_ids.add(pid)
             writer.write(rec)
             shard = writer.written_shards[-1] if writer.written_shards else None
             pending.append((pid, ItemStatus.SUCCESS, shard))
@@ -670,7 +646,6 @@ def run_stage1_distributed(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             src.model_dump(),
             cfg.global_.hf_home,
             str(out_path),
-            s1.minhash_num_perm,
         )
         futures[future] = src.hf_repo_id or src.path
 

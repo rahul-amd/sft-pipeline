@@ -113,7 +113,6 @@ global:
 stage1_collect:
   enabled: true
   datasets: []
-  dedup_threshold: 0.95
   output_path: "{tmp_path}/stage1/prompts.jsonl"
 
 stage2_generate:

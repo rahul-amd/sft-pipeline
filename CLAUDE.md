@@ -298,13 +298,20 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
 
 - **ROCm PyTorch + environment setup**: The cluster runs ROCm 6.3.4. The default `pip install torch` gives a CUDA build that fails with "Found no NVIDIA driver" on AMD GPUs. Run `scripts/setup_env.sh` once (with the overlay mounted `:rw`) to install ROCm PyTorch, sentence-transformers, Triton, and flash-kmeans correctly. All Slurm scripts bind `/opt/rocm` so the ROCm runtime `.so` libraries are visible inside the container. Stage 3 also runs a single GPU pre-flight Ray task before dispatching all 32 workers; if CUDA is unavailable you'll see one clear error with the fix rather than 32 identical failures.
 
-- **Singularity GPU binds — three are required**: For ROCm PyTorch to see the GPU inside a container you must bind all three:
+- **Singularity GPU binds — three are required, plus `LD_LIBRARY_PATH`**: For ROCm PyTorch to see the GPU inside a container you must bind all three device paths AND export the library search path:
   | Bind | What it provides |
   |------|-----------------|
   | `--bind /opt/rocm` | ROCm runtime libraries (`libamdhip64.so` etc.) |
   | `--bind /dev/kfd` | AMD KFD kernel driver — `torch.cuda.is_available()` needs this |
   | `--bind /dev/dri` | DRI render devices (`renderD128` etc.) |
-  Missing `/opt/rocm` → PyTorch raises "Found no NVIDIA driver". Missing `/dev/kfd` or `/dev/dri` → `torch.cuda.is_available()` returns False even with a correct ROCm wheel installed. All `SING=` lines in Slurm scripts include all three. For interactive sessions:
+
+  Binding `/opt/rocm` makes the files visible inside the container, but Singularity does **not** automatically add `/opt/rocm/bin` to `PATH` or `/opt/rocm/lib` to `LD_LIBRARY_PATH`. Without the latter, `torch` loads but silently fails to open `libamdhip64.so` and `torch.cuda.is_available()` returns `False`. `run_in_env.sh` sets all three env vars automatically; if you run a custom singularity command, set them manually:
+  ```bash
+  export PATH="/opt/rocm/bin:$PATH"
+  export LD_LIBRARY_PATH="/opt/rocm/lib:$LD_LIBRARY_PATH"
+  export HSA_OVERRIDE_GFX_VERSION=9.0.0   # MI250X (gfx90a)
+  ```
+  Missing `/opt/rocm` → "Found no NVIDIA driver". Missing binds or `LD_LIBRARY_PATH` → `is_available()` returns False. All `SING=` lines in Slurm scripts include all three binds; `run_in_env.sh` sets the env vars. For interactive sessions:
   ```bash
   singularity shell \
       --bind /scratch/project_462000963 \
@@ -312,6 +319,10 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
       --bind /opt/rocm --bind /dev/kfd --bind /dev/dri \
       --overlay .../python_latest_overlay.img \
       .../python_latest.sif
+  # Then inside the container:
+  export PATH="/opt/rocm/bin:$PATH"
+  export LD_LIBRARY_PATH="/opt/rocm/lib:$LD_LIBRARY_PATH"
+  export HSA_OVERRIDE_GFX_VERSION=9.0.0
   ```
 
 - **ROCm vLLM wheel**: Similarly, the standard `pip install vllm` installs the CUDA build. On the cluster, use the ROCm-specific wheel from the vLLM releases page. The `gpu_memory_utilization` and `dtype` settings in `prod.yaml` are tuned for MI250X.

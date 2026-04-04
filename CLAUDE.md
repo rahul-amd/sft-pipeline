@@ -305,25 +305,26 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
   | `--bind /dev/kfd` | AMD KFD kernel driver — `torch.cuda.is_available()` needs this |
   | `--bind /dev/dri` | DRI render devices (`renderD128` etc.) |
 
-  Binding `/opt/rocm` makes the files visible inside the container, but Singularity does **not** automatically add `/opt/rocm/bin` to `PATH` or `/opt/rocm/lib` to `LD_LIBRARY_PATH`. Without the latter, `torch` loads but silently fails to open `libamdhip64.so` and `torch.cuda.is_available()` returns `False`. `run_in_env.sh` sets all three env vars automatically; if you run a custom singularity command, set them manually:
+  Two separate issues can each cause `is_available()` to return False, and must both be addressed:
+
+  **Issue 1 — `LD_LIBRARY_PATH` not set**: Singularity bind-mounts `/opt/rocm` but does not add it to `PATH` or `LD_LIBRARY_PATH`. Without `LD_LIBRARY_PATH=/opt/rocm/lib`, torch silently fails to open `libamdhip64.so`. Fixed in `run_in_env.sh` which sets these automatically:
   ```bash
   export PATH="/opt/rocm/bin:$PATH"
   export LD_LIBRARY_PATH="/opt/rocm/lib:$LD_LIBRARY_PATH"
   export HSA_OVERRIDE_GFX_VERSION=9.0.0   # MI250X (gfx90a)
   ```
-  Missing `/opt/rocm` → "Found no NVIDIA driver". Missing binds or `LD_LIBRARY_PATH` → `is_available()` returns False. All `SING=` lines in Slurm scripts include all three binds; `run_in_env.sh` sets the env vars. For interactive sessions:
+
+  **Issue 2 — cgroups v2 device delegation**: On this cluster, when you run `srun --pty bash` and then launch `singularity` from within that shell, Singularity creates a child cgroup that does not inherit the parent job's device allowlist. Even with `ROCR_VISIBLE_DEVICES=0` set and `/dev/kfd` bound, `open("/dev/kfd")` raises `PermissionError` inside the container. **Fix: use `--rocm` flag**, which tells Singularity to handle ROCm device delegation itself rather than relying on cgroup inheritance:
   ```bash
-  singularity shell \
+  singularity exec --rocm \
       --bind /scratch/project_462000963 \
       --bind /users/aralikatte \
-      --bind /opt/rocm --bind /dev/kfd --bind /dev/dri \
+      --bind /opt/rocm \          # still needed: --rocm binds device nodes, not the library tree
       --overlay .../python_latest_overlay.img \
-      .../python_latest.sif
-  # Then inside the container:
-  export PATH="/opt/rocm/bin:$PATH"
-  export LD_LIBRARY_PATH="/opt/rocm/lib:$LD_LIBRARY_PATH"
-  export HSA_OVERRIDE_GFX_VERSION=9.0.0
+      .../python_latest.sif \
+      bash .../scripts/setup_env.sh
   ```
+  Note: `--bind /dev/kfd` and `--bind /dev/dri` are **not** needed when using `--rocm` — it handles those automatically. All Slurm `SING=` variables use `--rocm`. Do **not** use `--bind /dev/kfd --bind /dev/dri` without `--rocm`; the bind makes the device file visible but the cgroup still blocks access.
 
 - **ROCm vLLM wheel**: Similarly, the standard `pip install vllm` installs the CUDA build. On the cluster, use the ROCm-specific wheel from the vLLM releases page. The `gpu_memory_utilization` and `dtype` settings in `prod.yaml` are tuned for MI250X.
 

@@ -54,8 +54,16 @@ RAY_PORT=6379
 RAY_DASHBOARD_PORT=8265
 
 # ── Singularity wrapper ───────────────────────────────────────────────────────
-SING="singularity exec --bind ${SCRATCH} --bind /users/aralikatte \
-    --bind /opt/rocm --bind /dev/kfd --bind /dev/dri \
+# --rocm  lets Singularity handle ROCm device delegation through the cgroup
+#         hierarchy instead of relying on --bind /dev/kfd --bind /dev/dri,
+#         which fails when Singularity is launched from a Slurm --pty bash
+#         shell on cgroups-v2 clusters (PermissionError on /dev/kfd even
+#         though ROCR_VISIBLE_DEVICES is set).
+# --bind /opt/rocm  still required: --rocm binds device nodes, not the
+#         ROCm library tree; without this LD_LIBRARY_PATH can't find libamdhip64.so.
+SING="singularity exec --rocm \
+    --bind ${SCRATCH} --bind /users/aralikatte \
+    --bind /opt/rocm \
     --overlay ${OVERLAY}:ro ${SIF} \
     ${PROJECT_DIR}/scripts/run_in_env.sh"
 

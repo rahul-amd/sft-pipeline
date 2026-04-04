@@ -176,13 +176,13 @@ if $INITIAL_SETUP && ! _in_container; then
     echo "        ${SIF} \\"
     echo "        bash ${PROJECT_DIR}/scripts/setup_env.sh --initial-setup"
     echo
-    log "If you are already on a GPU compute node, add the GPU binds to run"
-    log "Phases 2 and 3 back-to-back:"
+    log "If you are already on a GPU compute node, add --rocm to run"
+    log "Phases 2 and 3 back-to-back (--rocm fixes cgroup device delegation):"
     echo
-    echo "    ${SING_CMD} exec \\"
+    echo "    ${SING_CMD} exec --rocm \\"
     echo "        --bind ${SCRATCH} \\"
     echo "        --bind ${USER_DIR} \\"
-    echo "        --bind /opt/rocm --bind /dev/kfd --bind /dev/dri \\"
+    echo "        --bind /opt/rocm \\"
     echo "        --overlay ${OVERLAY}:rw \\"
     echo "        ${SIF} \\"
     echo "        bash ${PROJECT_DIR}/scripts/setup_env.sh --initial-setup"
@@ -284,13 +284,16 @@ if $INITIAL_SETUP && _in_container; then
         echo
         log "  Step 3 — Run GPU setup inside the container:"
         echo
-        echo "    singularity exec \\"
+        echo "    singularity exec --rocm \\"
         echo "        --bind ${SCRATCH} \\"
         echo "        --bind ${USER_DIR} \\"
-        echo "        --bind /opt/rocm --bind /dev/kfd --bind /dev/dri \\"
+        echo "        --bind /opt/rocm \\"
         echo "        --overlay ${OVERLAY}:rw \\"
         echo "        ${SIF} \\"
         echo "        bash ${PROJECT_DIR}/scripts/setup_env.sh"
+        echo
+        log "  (--rocm fixes PermissionError on /dev/kfd that occurs when"
+        log "   singularity is launched from inside a 'srun --pty bash' shell)"
         echo
         exit 0
     fi
@@ -333,13 +336,17 @@ if [ ! -e /dev/kfd ]; then
     err "     /opt/rocm/bin/rocm-smi"
     err ""
     err "  3. Then run this script inside the container:"
-    err "     singularity exec \\"
+    err "     singularity exec --rocm \\"
     err "         --bind /scratch/project_462000963 \\"
     err "         --bind /users/aralikatte \\"
-    err "         --bind /opt/rocm --bind /dev/kfd --bind /dev/dri \\"
+    err "         --bind /opt/rocm \\"
     err "         --overlay .../python_latest_overlay.img:rw \\"
     err "         .../python_latest.sif \\"
     err "         bash .../sft-pipeline/scripts/setup_env.sh"
+    err ""
+    err "  --rocm lets Singularity handle GPU device delegation through the"
+    err "  cgroup hierarchy (fixes PermissionError on /dev/kfd that occurs"
+    err "  when singularity is launched from inside a 'srun --pty bash' shell)."
     exit 1
 fi
 ok "/dev/kfd found — running on a GPU compute node"

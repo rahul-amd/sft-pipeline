@@ -52,7 +52,9 @@ RAY_DASHBOARD_PORT=8265
 # run_in_env.sh activates the sft-pipeline conda env inside the container
 # before running the command. The overlay is mounted :ro so multiple nodes
 # can open it simultaneously.
-SING="singularity exec --bind ${SCRATCH} --bind /users/aralikatte --bind /opt/rocm \
+# Stage 1 is CPU-only (no GPU needed), so --rocm is not required here.
+SING="singularity exec \
+    --bind ${SCRATCH} --bind /users/aralikatte \
     --overlay ${OVERLAY}:ro ${SIF} \
     ${PROJECT_DIR}/scripts/run_in_env.sh"
 

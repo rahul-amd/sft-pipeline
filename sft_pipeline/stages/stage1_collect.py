@@ -232,29 +232,62 @@ def _load_hf_dataset(src: DatasetSource):
         )
         return
 
-    field = src.prompt_field
-    row_errors = 0
-    for row in ds:
-        try:
-            val = _get_field(row, field)
-            if val is None:
-                continue
-            text = _extract_prompt(val)
-            if text:
-                yield text
-        except Exception as exc:
-            row_errors += 1
-            if row_errors <= 5:
-                logger.warning(
-                    "Skipping malformed row from %s (field=%s): %s",
-                    src.hf_repo_id, field, exc,
+    # kwargs passed through so _iter_hf_rows can reload with features=None on schema errors
+    yield from _iter_hf_rows(ds, src.hf_repo_id, src.prompt_field, kwargs)
+
+
+def _iter_hf_rows(ds, repo_id: str, field: str, load_kwargs: dict):
+    """
+    Iterate over a streaming HF dataset, yielding prompt strings.
+
+    If Arrow schema-casting fails mid-iteration (TypeError / ValueError from
+    the datasets Arrow layer), we reload the dataset with ``features=None``
+    to bypass schema enforcement and retry from the beginning.  This handles
+    datasets whose registered feature schema disagrees with the actual data
+    (e.g. ``string`` vs ``null`` type mismatches).
+    """
+    from datasets import load_dataset
+
+    def _yield_rows(dataset):
+        row_errors = 0
+        for row in dataset:
+            try:
+                val = _get_field(row, field)
+                if val is None:
+                    continue
+                text = _extract_prompt(val)
+                if text:
+                    yield text
+            except Exception as exc:
+                row_errors += 1
+                if row_errors <= 5:
+                    logger.warning(
+                        "Skipping malformed row from %s (field=%s): %s",
+                        repo_id, field, exc,
+                    )
+                elif row_errors == 6:
+                    logger.warning("Further row errors from %s will be suppressed.", repo_id)
+        if row_errors:
+            logger.info("Skipped %d malformed rows from %s.", row_errors, repo_id)
+
+    try:
+        yield from _yield_rows(ds)
+    except (TypeError, ValueError) as exc:
+        err = str(exc)
+        if "cast" in err.lower() or "couldn't cast" in err.lower() or "null" in err.lower():
+            logger.warning(
+                "Schema cast error from %s — retrying with features=None: %s", repo_id, exc
+            )
+            try:
+                ds2 = load_dataset(
+                    repo_id, **{k: v for k, v in load_kwargs.items() if k != "features"},
+                    streaming=True, trust_remote_code=False, features=None,
                 )
-            elif row_errors == 6:
-                logger.warning(
-                    "Further row errors from %s will be suppressed.", src.hf_repo_id
-                )
-    if row_errors:
-        logger.info("Skipped %d malformed rows from %s.", row_errors, src.hf_repo_id)
+                yield from _yield_rows(ds2)
+            except Exception as exc2:
+                logger.warning("Retry with features=None also failed for %s: %s", repo_id, exc2)
+        else:
+            raise
 
 
 def _load_local_jsonl(src: DatasetSource):
@@ -549,7 +582,7 @@ def _merge_and_dedup(
                 if lsh.query(mh):
                     pending.append((pid, ItemStatus.SKIPPED, None))
                     continue
-                lsh.insert(mh, pid)
+                lsh.insert(pid, mh)
                 seen_in_lsh.add(pid)
 
             writer.write(rec)

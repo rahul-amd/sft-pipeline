@@ -120,6 +120,9 @@ class Stage2Config(BaseModel):
 
 class Stage3Config(BaseModel):
     enabled: bool = True
+    # Distributed embedding (Ray)
+    distributed: bool = False          # embed in parallel across Ray workers
+    n_embedding_workers: int = 3       # parallel workers (one GPU each); head handles FAISS+cluster
     embedding_model: str = "BAAI/bge-m3"
     embedding_batch_size: int = 512
     # FAISS

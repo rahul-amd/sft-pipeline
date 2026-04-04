@@ -1,0 +1,84 @@
+# =============================================================================
+# Stage 3 Cluster Run — Distributed embedding + flash_kmeans clustering
+#
+# Usage:
+#   sbatch scripts/slurm_stage3.sh                          # uses this config
+#   sbatch scripts/slurm_stage3.sh config/stage3_cluster.yaml  # explicit
+#
+# What this run does:
+#   - Reads Stage 1 output from the research_stage1_001d run
+#   - Embeds all prompts in parallel across 3 Ray workers (one GPU each)
+#   - Builds a FAISS IVFFlat index on the head node
+#   - Clusters 5M embeddings into 100,000 clusters with flash_kmeans (GPU)
+#   - Writes enriched JSONL with domain, difficulty, cluster_id
+#
+# Prerequisites:
+#   - Stage 1 complete: runs/research_stage1_001d/stage1/ must exist
+#   - flash-kmeans installed: bash scripts/install_flash_kmeans.sh
+#   - stage1_collect.distributed must be false here (Stage 1 already done)
+# =============================================================================
+
+global:
+  device: "rocm"
+  ray_address: "auto"
+  run_id: "research_stage3_001"
+  base_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/{run_id}"
+  hf_home: "/scratch/project_462000963/hf_cache"
+  seed: 42
+
+# ---------------------------------------------------------------------------
+# Stage 1 — disabled; output_path points to the completed Stage 1 run so
+# Stage 3 knows where to read prompts from (stage3_cluster.py reads
+# cfg.stage1_collect.output_path to locate the input JSONL directory).
+# ---------------------------------------------------------------------------
+stage1_collect:
+  enabled: false
+  distributed: false
+  datasets: []
+  # ← Point to the completed Stage 1 output directory.
+  #   The parent of this path is used as the JSONL shard directory.
+  output_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/research_stage1_001d/stage1/prompts.jsonl"
+
+# ---------------------------------------------------------------------------
+# Stage 2 — disabled; similarly we just need output_path to resolve the dir
+# ---------------------------------------------------------------------------
+stage2_generate:
+  enabled: false
+  output_path: "{base_path}/stage2/prompts.jsonl"   # does not need to exist
+
+# ---------------------------------------------------------------------------
+# Stage 3 — distributed embedding + flash_kmeans with 100k clusters
+# ---------------------------------------------------------------------------
+stage3_cluster:
+  enabled: true
+  distributed: true
+  n_embedding_workers: 3            # 3 workers on non-head nodes, 1 GPU each
+  embedding_model: "BAAI/bge-m3"
+  embedding_batch_size: 1024        # larger batches on MI250X (64 GB HBM)
+  # FAISS index (built on head node after embedding completes)
+  faiss_index_type: "IVFFlat"
+  faiss_nlist: 2000                 # more centroids → finer ANN search
+  faiss_nprobe: 100
+  faiss_training_sample: 1000000
+  # Clustering: flash_kmeans runs the full 5M embeddings on GPU
+  clustering_algorithm: "flash_kmeans"
+  n_clusters: 100000                # fine-grained topic clusters (~50 pts/cluster)
+  # Difficulty heuristics (unchanged from default)
+  difficulty_easy_max_tokens: 50
+  difficulty_hard_min_tokens: 200
+  # Output paths
+  embeddings_dir: "{base_path}/stage3/embeddings"
+  faiss_index_path: "{base_path}/stage3/faiss.index"
+  output_path: "{base_path}/stage3/clustered_prompts.jsonl"
+
+# ---------------------------------------------------------------------------
+# Stages 4–6 — disabled in this run
+# ---------------------------------------------------------------------------
+stage4_sample:
+  enabled: false
+
+stage5_inference:
+  enabled: false
+
+stage6_filter:
+  enabled: false

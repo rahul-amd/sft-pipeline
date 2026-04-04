@@ -18,11 +18,11 @@
 # =============================================================================
 
 #SBATCH --job-name=sft-stage1
-#SBATCH --nodes=32
+#SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
-#SBATCH --time=12:00:00
+#SBATCH --time=4:00:00
 #SBATCH --account=project_462000963
 #SBATCH --partition=standard-g
 #SBATCH --output=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-stage1.out
@@ -42,18 +42,19 @@ PIPELINE_CONFIG="${1:-config/stage1_research.yaml}"
 
 PROJECT_DIR="/scratch/project_462000963/users/aralikatte/sft-pipeline"
 SCRATCH="/scratch/project_462000963"
-SIF="${SCRATCH}/containers/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.6.0-dockerhash-ef203c810cc9.sif"
+SIF="${SCRATCH}/users/aralikatte/sincons/python_latest.sif"
+OVERLAY="${SCRATCH}/users/aralikatte/sincons/python_latest_overlay.img"
 
 RAY_PORT=6379
 RAY_DASHBOARD_PORT=8265
 
 # ── Singularity wrapper ───────────────────────────────────────────────────────
-# SINGULARITYENV_PREPEND_PATH ensures /users/aralikatte/.local/bin (where
-# sft-pipeline and ray CLIs are installed via pip --user) is on PATH inside
-# the container. No overlay needed — all deps are baked into the SIF.
-export SINGULARITYENV_PREPEND_PATH="/users/aralikatte/.local/bin"
-
-SING="singularity exec --bind ${SCRATCH} --bind /users/aralikatte ${SIF}"
+# run_in_env.sh activates the sft-pipeline conda env inside the container
+# before running the command. The overlay is mounted :ro so multiple nodes
+# can open it simultaneously.
+SING="singularity exec --bind ${SCRATCH} --bind /users/aralikatte \
+    --overlay ${OVERLAY}:ro ${SIF} \
+    ${PROJECT_DIR}/scripts/run_in_env.sh"
 
 # ── Logging helpers ───────────────────────────────────────────────────────────
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -85,6 +86,12 @@ if ! grep -q "distributed: true" "${PROJECT_DIR}/${PIPELINE_CONFIG}"; then
     log "           stage1_collect:"
     log "             distributed: true"
 fi
+
+# ── Clean up stale /tmp/ray from any previous job ────────────────────────────
+# /tmp is node-local; a previous job may have left a stale /tmp/ray dir which
+# causes "FileExistsError: [Errno 17] File exists: '/tmp/ray'" on ray start.
+log "Cleaning up stale /tmp/ray on all nodes ..."
+srun --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" rm -rf /tmp/ray 2>/dev/null || true
 
 # ── Start Ray head ────────────────────────────────────────────────────────────
 log "Starting Ray head on $HEAD_NODE ..."

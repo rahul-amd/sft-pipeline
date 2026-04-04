@@ -26,14 +26,17 @@ stage2_generate:
   enabled: false   # skip corpus generation locally (no large corpora on laptop)
 
 stage3_cluster:
+  enabled: false
   embedding_batch_size: 128   # smaller batch for RTX 5060
   faiss_nlist: 100            # fewer centroids for small dev dataset
   faiss_training_sample: 5000
 
 stage4_sample:
+  enabled: false
   total_prompts: 1000          # tiny sample for dev
 
 stage5_inference:
+  enabled: false
   # Use a small 7B model on the RTX 5060 for dev testing
   model: "Qwen/Qwen2.5-7B-Instruct"
   n_replicas: 1
@@ -49,6 +52,7 @@ stage5_inference:
   checkpoint_every: 100
 
 stage6_filter:
+  enabled: false
   llm_judge:
     enabled: false   # skip judge for dev
   code:

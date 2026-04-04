@@ -16,14 +16,15 @@
 #   sft-pipeline run-stage stage1_collect --config config/stage1_research.yaml
 
 global:
-  run_id: "research_stage1_001"
-  base_path: "C:/Users/rahul/data/sft-pipeline/runs/{run_id}"
+  run_id: "research_stage1_001d"
+  base_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/{run_id}"
   log_level: "INFO"
   device: "cuda"
   # Set to a path with plenty of disk space before downloading large datasets.
-  hf_home: "C:/Users/rahul/data/hf_cache"
+  hf_home: "/scratch/project_462000963/hf_cache"
 
 stage1_collect:
+  distributed: true
   dedup_threshold: 0.95
   minhash_num_perm: 128
   output_path: "{base_path}/stage1/prompts.jsonl"
@@ -37,147 +38,126 @@ stage1_collect:
       hf_split: r2e_gym
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/OpenMathInstruct-2
       hf_split: train_5M
       prompt_field: problem
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/OpenCodeInstruct
       hf_split: train
       prompt_field: input
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/AceReason-Math
       hf_split: train
       prompt_field: problem
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/AceReason-1.1-SFT
       hf_split: train
       prompt_field: input
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Science-v1
       hf_split: MCQ
       prompt_field: messages
       domain_hint: science
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Science-v1
-      hf_split: RCQ
+      hf_split: RQA
       prompt_field: messages
       domain_hint: science
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Instruction-Following-Chat-v1
       hf_split: chat_if
       prompt_field: messages
       domain_hint: general
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Instruction-Following-Chat-v1
       hf_split: structured_outputs
       prompt_field: messages
       domain_hint: general
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Math-Proofs-v1
       hf_split: lean
       prompt_field: problem
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Agentic-v1
       hf_split: interactive_agent
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Competitive-Programming-v1
       hf_split: competitive_coding_cpp_part00
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Competitive-Programming-v1
       hf_split: competitive_coding_cpp_part01
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Competitive-Programming-v1
       hf_split: competitive_coding_python_part00
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Competitive-Programming-v1
       hf_split: competitive_coding_python_part01
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Competitive-Programming-v1
       hf_split: infinibyte_part00
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Competitive-Programming-v1
       hf_split: infinibyte_part01
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-Math-v2
       hf_split: high_part00
       prompt_field: problem
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-SFT-SWE-v2
       hf_split: agentless
       prompt_field: messages
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-SFT-Safety-v1
       hf_split: train
       prompt_field: messages
       domain_hint: general
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: nvidia/Nemotron-SFT-Instruction-Following-Chat-v2
       hf_split: reasoning_on
       prompt_field: messages
       domain_hint: general
-      max_examples: 10
 
     # ── Allen AI ────────────────────────────────────────────────────────────
 
@@ -186,14 +166,12 @@ stage1_collect:
       hf_split: train
       prompt_field: messages
       domain_hint: general
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: allenai/WildChat-4.8M
       hf_split: train
       prompt_field: conversation
       domain_hint: general
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: allenai/coconot
@@ -201,7 +179,6 @@ stage1_collect:
       hf_split: train
       prompt_field: prompt
       domain_hint: general
-      max_examples: 10
 
     # ── Microsoft ───────────────────────────────────────────────────────────
 
@@ -210,7 +187,6 @@ stage1_collect:
       hf_split: train
       prompt_field: question
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: microsoft/rStar-Coder
@@ -218,7 +194,6 @@ stage1_collect:
       hf_split: train
       prompt_field: question
       domain_hint: code
-      max_examples: 10
 
     # ── HuggingFace ─────────────────────────────────────────────────────────
 
@@ -228,7 +203,6 @@ stage1_collect:
       hf_split: train
       prompt_field: messages
       domain_hint: general
-      max_examples: 10
 
     # ── PrimeIntellect SYNTHETIC ─────────────────────────────────────────────
 
@@ -237,14 +211,12 @@ stage1_collect:
       hf_split: train
       prompt_field: messages
       domain_hint: general
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: PrimeIntellect/SYNTHETIC-2-SFT-verified
       hf_split: train
       prompt_field: messages
       domain_hint: general
-      max_examples: 10
 
     # ── Argilla / Magpie ─────────────────────────────────────────────────────
     # conversation field: list of {"role": ..., "content": ...} (OpenAI format).
@@ -254,7 +226,6 @@ stage1_collect:
       hf_split: train
       prompt_field: conversation
       domain_hint: general
-      max_examples: 10
 
     # ── Math / Reasoning ────────────────────────────────────────────────────
 
@@ -263,14 +234,12 @@ stage1_collect:
       hf_split: train
       prompt_field: problem
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: open-thoughts/OpenThoughts3-1.2M
       hf_split: train
       prompt_field: conversations
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: open-thoughts/OpenThoughts-114k
@@ -278,7 +247,6 @@ stage1_collect:
       hf_split: train
       prompt_field: conversations
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: open-r1/OpenR1-Math-220k
@@ -286,28 +254,24 @@ stage1_collect:
       hf_split: train
       prompt_field: problem
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: alibaba-pai/OmniThought-0528
       hf_split: train
       prompt_field: question
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: meta-math/MetaMathQA
       hf_split: train
       prompt_field: query
       domain_hint: math
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: bespokelabs/Bespoke-Stratos-17k
       hf_split: train
       prompt_field: conversations
       domain_hint: math
-      max_examples: 10
 
     # ── Code ────────────────────────────────────────────────────────────────
 
@@ -316,7 +280,6 @@ stage1_collect:
       hf_split: train
       prompt_field: query
       domain_hint: code
-      max_examples: 10
 
     # conversations field: ShareGPT format ({"from": ..., "value": ...}).
     - source: hf_dataset
@@ -324,7 +287,6 @@ stage1_collect:
       hf_split: train
       prompt_field: conversations
       domain_hint: code
-      max_examples: 10
 
     # ── Chat ────────────────────────────────────────────────────────────────
     # Requires accepting the dataset licence on HF (set HF_TOKEN env var).
@@ -334,7 +296,6 @@ stage1_collect:
       hf_split: train
       prompt_field: conversation
       domain_hint: general
-      max_examples: 10
 
     # ── OPC SFT Stage 2 ─────────────────────────────────────────────────────
 
@@ -344,7 +305,6 @@ stage1_collect:
       hf_split: train
       prompt_field: instruction
       domain_hint: general
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: OpenCoder-LLM/opc-sft-stage2
@@ -352,7 +312,6 @@ stage1_collect:
       hf_split: train
       prompt_field: instruction
       domain_hint: general
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: OpenCoder-LLM/opc-sft-stage2
@@ -360,7 +319,6 @@ stage1_collect:
       hf_split: train
       prompt_field: instruction
       domain_hint: code
-      max_examples: 10
 
     - source: hf_dataset
       hf_repo_id: OpenCoder-LLM/opc-sft-stage2
@@ -368,7 +326,6 @@ stage1_collect:
       hf_split: train
       prompt_field: instruction
       domain_hint: code
-      max_examples: 10
 
     # ── Miscellaneous ────────────────────────────────────────────────────────
 
@@ -377,7 +334,6 @@ stage1_collect:
       hf_split: train
       prompt_field: conversations
       domain_hint: general
-      max_examples: 10
 
 # ── All other stages disabled ─────────────────────────────────────────────────
 

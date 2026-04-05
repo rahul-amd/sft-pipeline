@@ -53,11 +53,10 @@ OVERLAY="${SCRATCH}/users/aralikatte/sincons/python_latest_overlay.img"
 RAY_PORT=6379
 RAY_DASHBOARD_PORT=8265
 
-# Per-job Ray temp dir on scratch — avoids /tmp/ray collisions across jobs.
-# Ray puts sockets, logs, and plasma store files here; /tmp fills up and
-# 'makedirs(exist_ok=True)' still raises EEXIST when /tmp/ray is a broken
-# symlink left by a previous failed job.
-RAY_TEMP_DIR="${SCRATCH}/users/aralikatte/ray_tmp/${SLURM_JOB_ID}"
+# Per-job Ray temp dir — avoids /tmp/ray collisions across jobs AND keeps the
+# path short enough for AF_UNIX sockets (107-byte limit).  Scratch-based paths
+# exceed the limit; /tmp/ray_<jobid> stays well under it.
+RAY_TEMP_DIR="/tmp/ray_${SLURM_JOB_ID}"
 
 # ── Singularity wrapper ───────────────────────────────────────────────────────
 # --rocm  lets Singularity handle ROCm device delegation through the cgroup

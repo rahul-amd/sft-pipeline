@@ -54,7 +54,10 @@ stage3_cluster:
   distributed: true
   n_embedding_workers: 32           # 4 nodes × 8 GPUs each = 32 parallel workers
   embedding_model: "BAAI/bge-m3"
-  embedding_batch_size: 1024        # larger batches on MI250X (64 GB HBM)
+  # embedding_batch_size is the GPU forward-pass cap passed as gpu_batch_size to
+  # model.encode().  I/O accumulation uses batch_size=500 (independent).
+  # 32 is safe on MI250X for bge-m3; increase to 64/128 once stable.
+  embedding_batch_size: 32
   # FAISS index (built on head node after embedding completes)
   faiss_index_type: "IVFFlat"
   faiss_nlist: 2000                 # more centroids → finer ANN search

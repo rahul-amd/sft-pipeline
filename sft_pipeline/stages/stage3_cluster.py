@@ -163,9 +163,10 @@ def _embed_distributed(
             jsonl_paths=chunk,
             worker_id=worker_id,
             model_name=s3.embedding_model,
-            batch_size=s3.embedding_batch_size,
+            batch_size=500,                         # I/O accumulation size
             device=cfg.global_.device,
             output_dir=str(emb_dir),
+            gpu_batch_size=s3.embedding_batch_size, # GPU forward-pass cap
         )
         futures[future] = worker_id
 
@@ -256,9 +257,10 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         n_embedded = embed_prompts(
             prompt_iter=_all_prompts(),
             model_name=s3.embedding_model,
-            batch_size=s3.embedding_batch_size,
+            batch_size=500,                         # I/O accumulation size
             device=cfg.global_.device,
             output_dir=emb_dir,
+            gpu_batch_size=s3.embedding_batch_size, # GPU forward-pass cap
         )
         logger.info("Stage3: embedded %d prompts", n_embedded)
 

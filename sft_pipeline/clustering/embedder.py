@@ -27,6 +27,7 @@ def embed_prompts(
     device: str,
     output_dir: str | Path,
     rows_per_shard: int = 500_000,
+    gpu_batch_size: int = 32,
 ) -> int:
     """
     Embed all prompts and save to sharded Parquet files under `output_dir`.
@@ -38,10 +39,15 @@ def embed_prompts(
     Args:
         prompt_iter: Iterator of dicts with at least 'prompt_id' and 'prompt'.
         model_name: HuggingFace model name for sentence-transformers.
-        batch_size: Number of prompts per embedding batch.
+        batch_size: Number of prompts to accumulate before calling model.encode().
+            Can be large (e.g. 500) for I/O efficiency — the actual GPU forward
+            pass is capped at gpu_batch_size regardless.
         device: 'cuda', 'rocm' (maps to 'cuda' in PyTorch), or 'cpu'.
         output_dir: Directory to write sharded Parquet files.
         rows_per_shard: Flush a new shard file after this many rows.
+        gpu_batch_size: Max sequences per GPU forward pass inside model.encode().
+            Separate from batch_size — controls peak GPU memory.  32 is safe for
+            bge-m3 on MI250X; increase to 64/128 once stable.
 
     Returns:
         Total number of prompts embedded.
@@ -97,7 +103,7 @@ def embed_prompts(
             return
         vecs = model.encode(
             batch_texts,
-            batch_size=len(batch_texts),
+            batch_size=gpu_batch_size,   # GPU forward-pass size; << batch_size
             show_progress_bar=False,
             convert_to_numpy=True,
             normalize_embeddings=True,
@@ -140,6 +146,7 @@ def embed_jsonl_shards(
     device: str,
     output_dir: str | Path,
     rows_per_shard: int = 500_000,
+    gpu_batch_size: int = 32,
 ) -> dict:
     """
     Embed prompts from a list of JSONL shard files and write to Parquet.
@@ -159,10 +166,15 @@ def embed_jsonl_shards(
         jsonl_paths:   List of absolute paths to part-*.jsonl shard files.
         worker_id:     Zero-based worker index; determines output file prefix.
         model_name:    HuggingFace model name for sentence-transformers.
-        batch_size:    Number of prompts per embedding batch.
+        batch_size:    Number of prompts to accumulate before calling model.encode().
+            Can be large (e.g. 500) for I/O efficiency — the actual GPU forward
+            pass is capped at gpu_batch_size regardless.
         device:        'cuda', 'rocm' (maps to 'cuda' in PyTorch), or 'cpu'.
         output_dir:    Shared directory to write Parquet shards.
         rows_per_shard: Max rows per output Parquet shard.
+        gpu_batch_size: Max sequences per GPU forward pass inside model.encode().
+            Separate from batch_size — controls peak GPU memory.  32 is safe for
+            bge-m3 on MI250X; increase to 64/128 once stable.
 
     Returns:
         {"worker_id": int, "n_embedded": int, "n_shards": int}
@@ -240,7 +252,7 @@ def embed_jsonl_shards(
             return
         vecs = model.encode(
             batch_texts,
-            batch_size=len(batch_texts),
+            batch_size=gpu_batch_size,   # GPU forward-pass size; << batch_size
             show_progress_bar=False,
             convert_to_numpy=True,
             normalize_embeddings=True,

@@ -53,6 +53,12 @@ OVERLAY="${SCRATCH}/users/aralikatte/sincons/python_latest_overlay.img"
 RAY_PORT=6379
 RAY_DASHBOARD_PORT=8265
 
+# Per-job Ray temp dir on scratch — avoids /tmp/ray collisions across jobs.
+# Ray puts sockets, logs, and plasma store files here; /tmp fills up and
+# 'makedirs(exist_ok=True)' still raises EEXIST when /tmp/ray is a broken
+# symlink left by a previous failed job.
+RAY_TEMP_DIR="${SCRATCH}/users/aralikatte/ray_tmp/${SLURM_JOB_ID}"
+
 # ── Singularity wrapper ───────────────────────────────────────────────────────
 # --rocm  lets Singularity handle ROCm device delegation through the cgroup
 #         hierarchy instead of relying on --bind /dev/kfd --bind /dev/dri,
@@ -70,8 +76,9 @@ SING="singularity exec --rocm \
 # ── Logging helpers ───────────────────────────────────────────────────────────
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
-# ── Ensure logs dir exists ────────────────────────────────────────────────────
+# ── Ensure logs and Ray temp dirs exist ──────────────────────────────────────
 mkdir -p "${PROJECT_DIR}/logs"
+mkdir -p "${RAY_TEMP_DIR}"
 
 # ── Node discovery ────────────────────────────────────────────────────────────
 mapfile -t ALL_NODES < <(scontrol show hostnames "$SLURM_JOB_NODELIST")
@@ -97,12 +104,8 @@ if ! grep -q "distributed: true" "${PROJECT_DIR}/${PIPELINE_CONFIG}"; then
     log "             distributed: true"
 fi
 
-# ── Clean up stale /tmp/ray from any previous job ────────────────────────────
-log "Cleaning up stale /tmp/ray on all nodes ..."
-srun --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" rm -rf /tmp/ray 2>/dev/null || true
-
 # ── Start Ray head ────────────────────────────────────────────────────────────
-log "Starting Ray head on $HEAD_NODE ..."
+log "Starting Ray head on $HEAD_NODE (temp dir: $RAY_TEMP_DIR) ..."
 
 srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
     $SING ray start \
@@ -112,6 +115,7 @@ srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
         --dashboard-port=$RAY_DASHBOARD_PORT \
         --num-cpus="$SLURM_CPUS_PER_TASK" \
         --num-gpus=8 \
+        --temp-dir="$RAY_TEMP_DIR" \
         --block &
 
 RAY_HEAD_PID=$!
@@ -136,6 +140,7 @@ if [ "$N_WORKERS" -gt 0 ]; then
             --address="${HEAD_IP}:${RAY_PORT}" \
             --num-cpus="$SLURM_CPUS_PER_TASK" \
             --num-gpus=8 \
+            --temp-dir="$RAY_TEMP_DIR" \
             --block &
 
     log "Waiting for workers to join (30s) ..."
@@ -169,6 +174,9 @@ srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
     $SING ray stop --force || true
 
 wait $RAY_HEAD_PID 2>/dev/null || true
+
+log "Cleaning up Ray temp dir ..."
+rm -rf "$RAY_TEMP_DIR" || true
 
 log "Job finished."
 exit $PIPELINE_EXIT

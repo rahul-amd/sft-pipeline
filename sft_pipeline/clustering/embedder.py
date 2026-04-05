@@ -180,6 +180,19 @@ def embed_jsonl_shards(
         {"worker_id": int, "n_embedded": int, "n_shards": int}
     """
     import logging as _logging
+    import os as _os
+
+    # Ray sets CUDA_VISIBLE_DEVICES to isolate each worker to one GPU, but
+    # ROCm's HSA runtime reads ROCR_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES —
+    # not CUDA_VISIBLE_DEVICES. Without this sync, all 8 workers on a node
+    # see all 8 GCDs, their HIP runtimes map overlapping virtual addresses into
+    # the shared HBM pool, and concurrent writes produce "Write access to a
+    # read-only page" HSA memory faults.  Mirror before any torch import.
+    _cuda_visible = _os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if _cuda_visible:
+        _os.environ.setdefault("ROCR_VISIBLE_DEVICES", _cuda_visible)
+        _os.environ.setdefault("HIP_VISIBLE_DEVICES", _cuda_visible)
+
     import pyarrow as pa
     import pyarrow.parquet as pq
     import numpy as np

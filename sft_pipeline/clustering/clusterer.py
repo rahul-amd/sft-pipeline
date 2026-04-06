@@ -117,8 +117,9 @@ def _cluster_with_flash_kmeans(
     k = min(n_clusters, N)
     logger.info("flash_kmeans: clustering %d points into %d clusters (%.1f GB)", N, k, mem_gb)
 
-    # flash_kmeans expects: (batch, N, D), float16, on CUDA
-    x = torch.from_numpy(embeddings.astype(np.float16)).unsqueeze(0).cuda()
+    # flash_kmeans expects: (batch, N, D), float16, on CUDA.
+    # load_embeddings() now returns float16 so copy=False avoids a 44 GB copy.
+    x = torch.from_numpy(embeddings.astype(np.float16, copy=False)).unsqueeze(0).cuda()
 
     cluster_ids, centers, _ = batch_kmeans_Euclid(x, n_clusters=k, tol=1e-4, verbose=False)
 

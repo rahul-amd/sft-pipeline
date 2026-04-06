@@ -26,7 +26,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gpus-per-node=8
-#SBATCH --mem=128G
+#SBATCH --mem=200G
 #SBATCH --time=8:00:00
 #SBATCH --account=project_462000963
 #SBATCH --partition=standard-g

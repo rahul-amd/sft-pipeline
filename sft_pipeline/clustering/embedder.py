@@ -328,32 +328,102 @@ def embed_jsonl_shards(
     return {"worker_id": worker_id, "n_embedded": total, "n_shards": shard_idx}
 
 
+def _parquet_table_to_float16(table) -> tuple[list[str], np.ndarray]:
+    """
+    Convert one PyArrow table (prompt_id, embedding) to numpy float16.
+
+    Uses PyArrow's zero-copy buffer path instead of .to_pylist() to avoid
+    the 3–5× memory spike from materialising a Python list-of-lists.
+    Works with both ListArray and FixedSizeListArray embedding columns.
+    """
+    import pyarrow as pa
+
+    ids = table.column("prompt_id").to_pylist()
+    n = len(ids)
+
+    col = table.column("embedding")
+    if isinstance(col, pa.ChunkedArray):
+        col = col.combine_chunks()
+
+    # Fast path: access the flat buffer directly (no Python intermediates).
+    # col.values gives the flat Float16Array for both List and FixedSizeList types.
+    try:
+        flat = col.values.to_numpy(zero_copy_ok=False)   # 1-D float16
+        vecs = flat.reshape(n, -1).astype(np.float16, copy=False)
+    except Exception:
+        # Fallback: slow path via Python lists (always correct).
+        vecs = np.array(col.to_pylist(), dtype=np.float16)
+
+    return ids, vecs
+
+
 def load_embeddings(parquet_path: str | Path) -> tuple[list[str], np.ndarray]:
     """
-    Load (prompt_ids, embeddings_float32) from a Parquet file or directory of shards.
+    Load (prompt_ids, embeddings_float16) from a Parquet file or directory of shards.
 
-    Accepts:
-      - A single .parquet file (legacy / test usage)
-      - A directory containing embeddings_*.parquet shards (production)
+    Returns float16, NOT float32.  Callers (FAISS, flash-kmeans) convert
+    per-batch / per-chunk as needed, so the full float32 array never exists in RAM.
 
-    Returns float32 for FAISS compatibility.
+    Memory design (directory mode):
+      - Pre-allocates a single float16 numpy array for all rows upfront.
+      - Reads one shard at a time and copies into the pre-allocated slice;
+        the PyArrow table for each shard is freed before the next is read.
+      - Peak RAM ≈ (pre-allocated float16 array) + (one shard's PyArrow table).
+      - At 22 M × 1024 × 2 B = 44 GB array + ~1 GB per shard → well within 128 GB.
+        (Old approach: all shards in RAM simultaneously + float32 copy = ~135 GB peak.)
     """
     import pyarrow.parquet as pq
 
     path = Path(parquet_path)
 
-    if path.is_dir():
-        shard_files = sorted(path.glob(_SHARD_GLOB))
-        if not shard_files:
-            raise FileNotFoundError(f"No embedding shards found in {path}")
-        tables = [pq.read_table(str(f)) for f in shard_files]
-        import pyarrow as pa
-        table = pa.concat_tables(tables)
-        logger.info("Loaded %d shards from %s", len(shard_files), path)
-    else:
+    if not path.is_dir():
+        # Single-file path (legacy / test usage).
         table = pq.read_table(str(path))
+        ids, vecs = _parquet_table_to_float16(table)
+        logger.info("Loaded %d embeddings, shape=%s (float16)", len(ids), vecs.shape)
+        return ids, vecs
 
-    ids = table["prompt_id"].to_pylist()
-    vecs = np.array(table["embedding"].to_pylist(), dtype=np.float32)
-    logger.info("Loaded %d embeddings, shape=%s", len(ids), vecs.shape)
-    return ids, vecs
+    shard_files = sorted(path.glob(_SHARD_GLOB))
+    if not shard_files:
+        raise FileNotFoundError(f"No embedding shards found in {path}")
+
+    # First pass: read only metadata to get total row count and embedding dim.
+    total_rows = sum(pq.read_metadata(str(f)).num_rows for f in shard_files)
+    first_table = pq.read_table(str(shard_files[0]), columns=["embedding"])
+    first_col = first_table.column("embedding")
+    if hasattr(first_col, "combine_chunks"):
+        first_col = first_col.combine_chunks()
+    dims = len(first_col[0].as_py())
+    del first_table, first_col
+
+    gb = total_rows * dims * 2 / 1024 ** 3
+    logger.info(
+        "Pre-allocating float16 array: %d × %d = %.1f GB (from %d shards in %s)",
+        total_rows, dims, gb, len(shard_files), path,
+    )
+    vecs = np.empty((total_rows, dims), dtype=np.float16)
+    all_ids: list[str] = []
+    offset = 0
+
+    for i, shard_file in enumerate(shard_files):
+        table = pq.read_table(str(shard_file))
+        chunk_ids, chunk_vecs = _parquet_table_to_float16(table)
+        del table  # free PyArrow table before reading the next shard
+
+        n = len(chunk_ids)
+        all_ids.extend(chunk_ids)
+        vecs[offset : offset + n] = chunk_vecs
+        del chunk_vecs
+        offset += n
+
+        if (i + 1) % 10 == 0 or (i + 1) == len(shard_files):
+            logger.info(
+                "Loaded shard %d / %d  (%d rows so far, %.1f GB)",
+                i + 1, len(shard_files), offset, offset * dims * 2 / 1024 ** 3,
+            )
+
+    logger.info(
+        "Loaded %d shards from %s — %d rows, %.1f GB float16",
+        len(shard_files), path, len(all_ids), gb,
+    )
+    return all_ids, vecs

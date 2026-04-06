@@ -51,7 +51,7 @@ stage2_generate:
 # ---------------------------------------------------------------------------
 stage3_cluster:
   enabled: true
-  distributed: false
+  distributed: true
   n_embedding_workers: 32           # 4 nodes × 8 GPUs each = 32 parallel workers
   embedding_model: "BAAI/bge-m3"
   # embedding_batch_size is the GPU forward-pass cap passed as gpu_batch_size to

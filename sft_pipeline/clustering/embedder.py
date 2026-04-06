@@ -69,7 +69,16 @@ def embed_prompts(
         device=pt_device,
         model_kwargs={"attn_implementation": "eager"},
     )
-    logger.info("Embedding dim: %d", model.get_sentence_embedding_dimension())
+    # Cap sequence length to 512 tokens.  bge-m3 supports 8192 but eager
+    # attention materialises (batch × heads × seq²) in float32.  Without this
+    # cap, gpu_batch_size=32 at seq=8192 requires 32×16×8192²×4 B = 128 GB.
+    # At seq=512: 32×16×512²×4 B = 512 MB — trivially safe.
+    model.max_seq_length = 512
+    # Keep the last 512 tokens rather than the first.  Prompts often start with
+    # a boilerplate system prompt; the task-specific content is at the end.
+    model.tokenizer.truncation_side = "left"
+    logger.info("Embedding dim: %d  max_seq_length: %d  truncation: last 512 tokens",
+                model.get_sentence_embedding_dimension(), model.max_seq_length)
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -181,8 +190,9 @@ def embed_jsonl_shards(
         output_dir:    Shared directory to write Parquet shards.
         rows_per_shard: Max rows per output Parquet shard.
         gpu_batch_size: Max sequences per GPU forward pass inside model.encode().
-            Separate from batch_size — controls peak GPU memory.  32 is safe for
-            bge-m3 on MI250X; increase to 64/128 once stable.
+            Separate from batch_size — controls peak GPU memory.  With
+            max_seq_length=512 and eager attention, 4 is safe on MI250X (96 MB).
+            Increase to 16/32 only after confirming no OOM with your prompt lengths.
 
     Returns:
         {"worker_id": int, "n_embedded": int, "n_shards": int}
@@ -234,6 +244,8 @@ def embed_jsonl_shards(
         device=pt_device,
         model_kwargs={"attn_implementation": "eager"},
     )
+    model.max_seq_length = 512          # 32×16×512²×4 B = 512 MB; safe on MI250X
+    model.tokenizer.truncation_side = "left"  # keep last 512 tokens, not first
 
     out_dir = _Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

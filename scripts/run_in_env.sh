@@ -16,9 +16,10 @@ conda activate sft-pipeline
 export PATH="/opt/rocm/bin${PATH:+:${PATH}}"
 export LD_LIBRARY_PATH="/opt/rocm/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
-# MI250X ships as gfx90a.  Some PyTorch ROCm builds probe gfx version via HSA;
-# setting this explicitly prevents "No supported GPU" errors on that arch.
-export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-9.0.0}"
+# HSA_OVERRIDE_GFX_VERSION is intentionally NOT set here.
+# ROCm 6.3 natively supports gfx90a (MI250X) — the override is unnecessary and
+# harmful: forcing 9.0.0 (gfx900/Vega10) loads wrong kernels for gfx90a, causing
+# GPU memory access faults (e.g. hipRAND crashes) on the first real kernel launch.
 
 # ── pip --user packages ───────────────────────────────────────────────────────
 # Packages installed with --user land in ~/.local/bin (CLIs) and

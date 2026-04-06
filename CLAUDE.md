@@ -311,7 +311,9 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
   ```bash
   export PATH="/opt/rocm/bin:$PATH"
   export LD_LIBRARY_PATH="/opt/rocm/lib:$LD_LIBRARY_PATH"
-  export HSA_OVERRIDE_GFX_VERSION=9.0.0   # MI250X (gfx90a)
+  # NOTE: do NOT set HSA_OVERRIDE_GFX_VERSION — ROCm 6.3 supports gfx90a natively.
+  # Setting it to 9.0.0 (gfx900/Vega10) loads wrong kernels and causes GPU
+  # memory access faults (hipRAND and other compute kernels crash on MI250X).
   ```
 
   **Issue 2 — cgroups v2 device delegation**: On this cluster, when you run `srun --pty bash` and then launch `singularity` from within that shell, Singularity creates a child cgroup that does not inherit the parent job's device allowlist. Even with `ROCR_VISIBLE_DEVICES=0` set and `/dev/kfd` bound, `open("/dev/kfd")` raises `PermissionError` inside the container. **Fix: use `--rocm` flag**, which tells Singularity to handle ROCm device delegation itself rather than relying on cgroup inheritance:

@@ -60,7 +60,15 @@ def embed_prompts(
     pt_device = "cuda" if device in ("cuda", "rocm") else "cpu"
 
     logger.info("Loading embedding model %s on device=%s", model_name, pt_device)
-    model = SentenceTransformer(model_name, device=pt_device)
+    # attn_implementation="eager" disables SDPA / Flash Attention which newer
+    # transformers enables by default.  On ROCm 6.x the SDPA kernel crashes
+    # immediately on the first forward pass (HSA memory access fault, "Unknown"
+    # reason).  Eager attention is slightly slower but stable.
+    model = SentenceTransformer(
+        model_name,
+        device=pt_device,
+        model_kwargs={"attn_implementation": "eager"},
+    )
     logger.info("Embedding dim: %d", model.get_sentence_embedding_dimension())
 
     out_dir = Path(output_dir)
@@ -221,7 +229,11 @@ def embed_jsonl_shards(
         "Worker %d: loading embedding model %s on device=%s",
         worker_id, model_name, pt_device,
     )
-    model = SentenceTransformer(model_name, device=pt_device)
+    model = SentenceTransformer(
+        model_name,
+        device=pt_device,
+        model_kwargs={"attn_implementation": "eager"},
+    )
 
     out_dir = _Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

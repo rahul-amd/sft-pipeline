@@ -359,13 +359,12 @@ echo
 export PATH="/opt/rocm/bin${PATH:+:${PATH}}"
 export LD_LIBRARY_PATH="/opt/rocm/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
-# MI250X (gfx90a) — prevents "No supported GPU" from the HSA runtime if
-# the PyTorch wheel targets a slightly different gfx revision.
-export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-9.0.0}"
+# HSA_OVERRIDE_GFX_VERSION is intentionally NOT set.
+# ROCm 6.3 natively supports gfx90a (MI250X); setting 9.0.0 (gfx900/Vega10)
+# loads wrong kernels and causes GPU memory access faults on real kernel launches.
 
 log "PATH prefix      : /opt/rocm/bin"
 log "LD_LIBRARY_PATH  : /opt/rocm/lib (prepended)"
-log "HSA_OVERRIDE_GFX : ${HSA_OVERRIDE_GFX_VERSION}"
 echo
 
 # ── Activate conda env ────────────────────────────────────────────────────────

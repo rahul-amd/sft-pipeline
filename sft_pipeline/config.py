@@ -131,7 +131,7 @@ class Stage3Config(BaseModel):
     faiss_nprobe: int = 50
     faiss_training_sample: int = 500_000
     # Clustering
-    clustering_algorithm: Literal["hdbscan", "kmeans", "flash_kmeans"] = "hdbscan"
+    clustering_algorithm: Literal["hdbscan", "kmeans", "flash_kmeans", "faiss_kmeans"] = "hdbscan"
     hdbscan_min_cluster_size: int = 100
     n_clusters: int = 50  # used with kmeans and flash_kmeans
     # Difficulty heuristics

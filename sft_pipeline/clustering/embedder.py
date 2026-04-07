@@ -9,6 +9,7 @@ Memory: each shard holds `rows_per_shard` rows. Default 500K rows at
 """
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 from pathlib import Path
 from typing import Iterator
@@ -96,13 +97,15 @@ def embed_prompts(
         nonlocal shard_idx, shard_rows
         if not shard_ids:
             return
-        vecs = np.vstack(shard_vecs)  # (rows, dim)
+        vecs = np.vstack(shard_vecs)  # (rows, dim), float16
         shard_path = out_dir / f"embeddings_{shard_idx:04d}.parquet"
+        # FixedSizeListArray: avoids row.tolist() Python loop, stores as a flat
+        # float16 buffer with a fixed-size wrapper — zero-copy on read-back.
         table = pa.table({
             "prompt_id": pa.array(shard_ids, type=pa.string()),
-            "embedding": pa.array(
-                [row.tolist() for row in vecs],
-                type=pa.list_(pa.float16()),
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                pa.array(vecs.ravel(), type=pa.float16()),
+                list_size=vecs.shape[1],
             ),
         })
         pq.write_table(table, str(shard_path), compression="zstd")
@@ -264,13 +267,13 @@ def embed_jsonl_shards(
         nonlocal shard_idx, shard_rows
         if not shard_ids:
             return
-        vecs = np.vstack(shard_vecs)
+        vecs = np.vstack(shard_vecs)  # (rows, dim), float16
         shard_path = out_dir / f"{prefix}_{shard_idx:04d}.parquet"
         table = pa.table({
             "prompt_id": pa.array(shard_ids, type=pa.string()),
-            "embedding": pa.array(
-                [row.tolist() for row in vecs],
-                type=pa.list_(pa.float16()),
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                pa.array(vecs.ravel(), type=pa.float16()),
+                list_size=vecs.shape[1],
             ),
         })
         pq.write_table(table, str(shard_path), compression="zstd")
@@ -345,11 +348,15 @@ def _parquet_table_to_float16(table) -> tuple[list[str], np.ndarray]:
     if isinstance(col, pa.ChunkedArray):
         col = col.combine_chunks()
 
-    # Fast path: access the flat buffer directly (no Python intermediates).
-    # col.values gives the flat Float16Array for both List and FixedSizeList types.
+    # Fast path: read the raw float16 data buffer directly.
+    # col.values is the flat child Float16Array for both List and FixedSizeList
+    # column types.  buffers()[0] is the null bitmap (None when no nulls);
+    # buffers()[1] is the contiguous float16 data — np.frombuffer gives a
+    # zero-copy view, no Python list materialisation.
     try:
-        flat = col.values.to_numpy(zero_copy_ok=False)   # 1-D float16
-        vecs = flat.reshape(n, -1).astype(np.float16, copy=False)
+        buf = col.values.buffers()[1]
+        flat = np.frombuffer(buf, dtype=np.float16)
+        vecs = flat.reshape(n, -1)
     except Exception:
         # Fallback: slow path via Python lists (always correct).
         vecs = np.array(col.to_pylist(), dtype=np.float16)
@@ -387,8 +394,9 @@ def load_embeddings(parquet_path: str | Path) -> tuple[list[str], np.ndarray]:
     if not shard_files:
         raise FileNotFoundError(f"No embedding shards found in {path}")
 
-    # First pass: read only metadata to get total row count and embedding dim.
-    total_rows = sum(pq.read_metadata(str(f)).num_rows for f in shard_files)
+    # First pass: read only metadata (no vector data) to get row counts + dim.
+    row_counts = [pq.read_metadata(str(f)).num_rows for f in shard_files]
+    total_rows = sum(row_counts)
     first_table = pq.read_table(str(shard_files[0]), columns=["embedding"])
     first_col = first_table.column("embedding")
     if hasattr(first_col, "combine_chunks"):
@@ -396,34 +404,56 @@ def load_embeddings(parquet_path: str | Path) -> tuple[list[str], np.ndarray]:
     dims = len(first_col[0].as_py())
     del first_table, first_col
 
+    # Compute per-shard write offsets.
+    offsets = [0] * len(shard_files)
+    running = 0
+    for i, n in enumerate(row_counts):
+        offsets[i] = running
+        running += n
+
     gb = total_rows * dims * 2 / 1024 ** 3
     logger.info(
         "Pre-allocating float16 array: %d × %d = %.1f GB (from %d shards in %s)",
         total_rows, dims, gb, len(shard_files), path,
     )
     vecs = np.empty((total_rows, dims), dtype=np.float16)
-    all_ids: list[str] = []
-    offset = 0
+    all_ids: list[str | None] = [None] * total_rows
 
-    for i, shard_file in enumerate(shard_files):
+    # Parallel shard loading with up to 8 I/O threads.
+    # Each thread reads one shard and writes into the pre-allocated slice at
+    # its offset.  Non-overlapping slices → no locking needed.
+    # _parquet_table_to_float16 uses np.frombuffer — releases the GIL during
+    # the numpy reshape, so threads do overlap there.
+    def _load_shard(args: tuple) -> tuple[int, list[str], np.ndarray]:
+        shard_file, offset = args
         table = pq.read_table(str(shard_file))
         chunk_ids, chunk_vecs = _parquet_table_to_float16(table)
-        del table  # free PyArrow table before reading the next shard
+        del table
+        return offset, chunk_ids, chunk_vecs
 
-        n = len(chunk_ids)
-        all_ids.extend(chunk_ids)
-        vecs[offset : offset + n] = chunk_vecs
-        del chunk_vecs
-        offset += n
-
-        if (i + 1) % 10 == 0 or (i + 1) == len(shard_files):
-            logger.info(
-                "Loaded shard %d / %d  (%d rows so far, %.1f GB)",
-                i + 1, len(shard_files), offset, offset * dims * 2 / 1024 ** 3,
-            )
+    n_workers = min(8, len(shard_files))
+    completed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as pool:
+        fut_to_idx = {
+            pool.submit(_load_shard, (f, off)): i
+            for i, (f, off) in enumerate(zip(shard_files, offsets))
+        }
+        for fut in concurrent.futures.as_completed(fut_to_idx):
+            offset, chunk_ids, chunk_vecs = fut.result()
+            n = len(chunk_ids)
+            all_ids[offset : offset + n] = chunk_ids
+            vecs[offset : offset + n] = chunk_vecs
+            del chunk_vecs
+            completed += 1
+            if completed % 10 == 0 or completed == len(shard_files):
+                logger.info(
+                    "Loaded %d / %d shards  (%.1f GB written so far)",
+                    completed, len(shard_files),
+                    completed * (total_rows / len(shard_files)) * dims * 2 / 1024 ** 3,
+                )
 
     logger.info(
         "Loaded %d shards from %s — %d rows, %.1f GB float16",
-        len(shard_files), path, len(all_ids), gb,
+        len(shard_files), path, total_rows, gb,
     )
-    return all_ids, vecs
+    return all_ids, vecs  # type: ignore[return-value]

@@ -298,17 +298,20 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     prompts_text = [id_to_prompt.get(pid, "") for pid in ids]
 
     algo = s3.clustering_algorithm
-    if algo == "flash_kmeans":
-        # Cluster ALL embeddings directly on GPU — no centroid indirection.
-        logger.info("Stage3: using flash_kmeans (GPU) to cluster %d embeddings into %d clusters",
-                    N, s3.n_clusters)
+    if algo in ("faiss_kmeans", "flash_kmeans"):
+        # Direct k-means on all embeddings — no centroid indirection.
+        logger.info(
+            "Stage3: %s clustering %d embeddings into %d clusters",
+            algo, N, s3.n_clusters,
+        )
         cluster_results = cluster_prompts(
             prompt_ids=ids,
             prompts=prompts_text,
             embeddings=vectors,
-            algorithm="flash_kmeans",
+            algorithm=algo,
             n_clusters=s3.n_clusters,
             device=cfg.global_.device,
+            training_sample=s3.faiss_training_sample,
         )
     else:
         # Centroid-based path (hdbscan / kmeans, CPU).

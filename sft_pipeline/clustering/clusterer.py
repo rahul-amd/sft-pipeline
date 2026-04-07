@@ -70,7 +70,75 @@ def _infer_cluster_domain(centroid_prompts: list[str]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# flash-kmeans path (GPU)
+# FAISS k-means path (CPU or GPU via faiss-gpu; NO Triton dependency)
+# ---------------------------------------------------------------------------
+
+def _cluster_with_faiss_kmeans(
+    embeddings: np.ndarray,   # float16 or float32, shape (N, D)
+    n_clusters: int,
+    training_sample: int,
+    device: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Run FAISS built-in k-means on the full embedding matrix.
+
+    Uses faiss.Kmeans which relies on FAISS's own optimised BLAS/GPU kernels —
+    no Triton, so it works on MI250X (flash-kmeans Triton kernels require
+    128 KB shared memory per CU but MI250X only provides 64 KB).
+
+    Training uses a random subsample of `training_sample` vectors; assignment
+    converts float16 chunks to float32 on-the-fly to avoid a 44 GB float32 copy.
+    """
+    import faiss
+
+    N, D = embeddings.shape
+    k = min(n_clusters, N)
+
+    # --- Train on a random subsample ---
+    train_size = min(training_sample, N)
+    rng = np.random.default_rng(42)
+    train_idx = rng.choice(N, size=train_size, replace=False)
+    train_vecs = embeddings[train_idx].astype(np.float32)
+
+    logger.info(
+        "faiss_kmeans: training on %d / %d vectors → %d clusters ...",
+        train_size, N, k,
+    )
+
+    # Try GPU (faiss-gpu / faiss-rocm); fall back to CPU silently.
+    use_gpu = device in ("cuda", "rocm")
+    try:
+        kmeans = faiss.Kmeans(D, k, niter=20, verbose=True, gpu=use_gpu, seed=42)
+        kmeans.train(train_vecs)
+    except Exception as e:
+        if use_gpu:
+            logger.warning("faiss_kmeans: GPU mode failed (%s), retrying on CPU", e)
+            kmeans = faiss.Kmeans(D, k, niter=20, verbose=True, gpu=False, seed=42)
+            kmeans.train(train_vecs)
+        else:
+            raise
+    del train_vecs
+
+    # --- Assign all vectors in float32 chunks (avoids a full 88 GB float32 copy) ---
+    logger.info("faiss_kmeans: assigning %d vectors to %d centroids ...", N, k)
+    chunk = 500_000
+    labels = np.empty(N, dtype=np.int64)
+    for start in range(0, N, chunk):
+        end = min(start + chunk, N)
+        batch_f32 = embeddings[start:end].astype(np.float32)
+        _, I = kmeans.index.search(batch_f32, 1)
+        labels[start:end] = I[:, 0]
+        if start % 5_000_000 == 0 and start > 0:
+            logger.info("faiss_kmeans: assigned %d / %d", end, N)
+
+    n_unique = len(np.unique(labels))
+    logger.info("faiss_kmeans: done. Unique clusters: %d", n_unique)
+    return labels, kmeans.centroids.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# flash-kmeans path (GPU, Triton) — NOT compatible with MI250X
+# (requires 128 KB shared memory per CU; MI250X limit is 64 KB)
 # ---------------------------------------------------------------------------
 
 def _cluster_with_flash_kmeans(
@@ -180,22 +248,24 @@ def _assign_to_centroids(embeddings: np.ndarray, faiss_index) -> list[int]:
 def cluster_prompts(
     prompt_ids: list[str],
     prompts: list[str],
-    embeddings: np.ndarray,          # float32, shape (N, D)
+    embeddings: np.ndarray,          # float16 or float32, shape (N, D)
     centroids: Optional[np.ndarray] = None,  # required for hdbscan/kmeans
     faiss_index=None,                        # required for hdbscan/kmeans
     algorithm: str = "hdbscan",
     min_cluster_size: int = 100,
     n_clusters: int = 50,
     device: str = "cpu",
+    training_sample: int = 1_000_000,
 ) -> list[dict]:
     """
     Assign each prompt a domain label and difficulty tier.
 
-    For algorithm='flash_kmeans': clusters ALL embeddings directly on GPU —
-    no centroid indirection needed; centroids/faiss_index are ignored.
-
-    For algorithm='hdbscan' or 'kmeans': runs on FAISS IVF centroids (CPU).
-    centroids and faiss_index must be provided.
+    For algorithm='faiss_kmeans': FAISS built-in k-means (no Triton).
+      Trains on `training_sample` vectors, assigns all N. Works on MI250X.
+    For algorithm='flash_kmeans': Triton GPU k-means. NOT compatible with MI250X
+      (requires 128 KB shared memory; MI250X CU limit is 64 KB).
+    For algorithm='hdbscan' or 'kmeans': centroid-based (CPU).
+      centroids and faiss_index must be provided.
 
     Returns a list of dicts:
       {"prompt_id": ..., "domain": ..., "difficulty": ..., "cluster_id": int}
@@ -203,10 +273,15 @@ def cluster_prompts(
     N = len(prompt_ids)
     logger.info("cluster_prompts: N=%d, algorithm=%s", N, algorithm)
 
-    if algorithm == "flash_kmeans":
-        labels, centers = _cluster_with_flash_kmeans(embeddings, n_clusters, device)
+    if algorithm in ("faiss_kmeans", "flash_kmeans"):
+        if algorithm == "faiss_kmeans":
+            labels, centers = _cluster_with_faiss_kmeans(
+                embeddings, n_clusters, training_sample, device
+            )
+        else:
+            labels, centers = _cluster_with_flash_kmeans(embeddings, n_clusters, device)
 
-        # Build domain map: for each cluster, inspect its member prompts
+        # Build domain map: for each cluster, inspect a sample of its member prompts
         cluster_domain: dict[int, str] = {}
         for k in range(centers.shape[0]):
             members = [prompts[i] for i in range(N) if labels[i] == k][:50]
@@ -227,7 +302,7 @@ def cluster_prompts(
     if centroids is None or faiss_index is None:
         raise ValueError(
             f"algorithm='{algorithm}' requires centroids and faiss_index. "
-            "Use algorithm='flash_kmeans' to cluster without a FAISS index."
+            "Use algorithm='faiss_kmeans' or 'flash_kmeans' to cluster without a FAISS index."
         )
 
     centroid_labels = _cluster_centroids(centroids, algorithm, min_cluster_size, n_clusters)

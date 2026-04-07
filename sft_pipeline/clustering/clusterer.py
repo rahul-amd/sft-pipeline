@@ -1,13 +1,16 @@
 """
 Domain clustering and difficulty scoring.
 
-Three algorithm options:
+Algorithm options:
   hdbscan      — HDBSCAN on FAISS IVF centroids (CPU, no GPU required)
   kmeans       — sklearn MiniBatchKMeans on FAISS IVF centroids (CPU)
-  flash_kmeans — flash-kmeans Triton kernels directly on all embeddings (CUDA/ROCm GPU)
+  faiss_kmeans — FAISS built-in k-means (CPU BLAS; no Triton); slow on large N
+  torch_kmeans — PyTorch matmul k-means on GPU (cosine distance); recommended
+                 for MI250X — no Triton, no faiss-gpu, works on ROCm natively
+  flash_kmeans — flash-kmeans Triton k-means; NOT compatible with MI250X
+                 (requires 128 KB shared memory; MI250X CU limit is 64 KB)
 
-flash_kmeans is strongly preferred at scale (7M+ points) because it avoids
-the centroid-indirection and runs in O(N·K·iter) on GPU instead of O(n²).
+torch_kmeans is the recommended algorithm at scale on MI250X.
 """
 from __future__ import annotations
 
@@ -137,6 +140,120 @@ def _cluster_with_faiss_kmeans(
 
 
 # ---------------------------------------------------------------------------
+# PyTorch GPU k-means (cosine distance, chunked matmul) — works on MI250X
+# ---------------------------------------------------------------------------
+
+def _cluster_with_torch_kmeans(
+    embeddings: np.ndarray,   # float16 or float32, shape (N, D)
+    n_clusters: int,
+    training_sample: int,
+    device: str,
+    n_iter: int = 20,
+    chunk_size: int = 20_000,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    GPU k-means via PyTorch matmuls on L2-normalised embeddings (cosine distance).
+
+    Works on MI250X/ROCm without Triton and without faiss-gpu.
+    Trains on a random subsample of `training_sample` vectors, then assigns all N.
+
+    Memory footprint (4M training × 1024 dim, 100K clusters):
+      - Training set on GPU: 4M × 1024 × 2B (float16) = 8 GB
+      - Centroids: 100K × 1024 × 4B (float32) = 400 MB
+      - Distance matrix per chunk: 20K × 100K × 2B (float16) = 4 GB
+      Total peak: ~13 GB — well within MI250X 64 GB HBM.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if not torch.cuda.is_available():
+        logger.warning("torch_kmeans: no GPU available, falling back to CPU (slow)")
+
+    N, D = embeddings.shape
+    k = min(n_clusters, N)
+    train_size = min(max(training_sample, k), N)   # at least k to init centroids
+
+    rng = np.random.default_rng(42)
+    train_idx = rng.choice(N, size=train_size, replace=False)
+
+    # Load training set to GPU as float16 (4M × 1024 × 2B = 8 GB)
+    X = torch.from_numpy(
+        embeddings[train_idx].astype(np.float16, copy=False)
+    ).to(torch_device)
+    X = F.normalize(X.float(), dim=1).half()   # L2-normalise; keep float16
+
+    # Init centroids from random training vectors; float32 for stable updates
+    init_idx = torch.randperm(train_size, device=torch_device)[:k]
+    C = F.normalize(X[init_idx].float(), dim=1)   # (k, D) float32
+
+    logger.info(
+        "torch_kmeans: training on %d / %d vectors → %d clusters, up to %d iters ...",
+        train_size, N, k, n_iter,
+    )
+
+    ones = torch.ones(train_size, dtype=torch.float32, device=torch_device)
+
+    for it in range(n_iter):
+        C_h = C.half()   # float16 copy for fast matmul
+        labels = torch.empty(train_size, dtype=torch.int32, device=torch_device)
+
+        for start in range(0, train_size, chunk_size):
+            end = min(start + chunk_size, train_size)
+            sims = X[start:end] @ C_h.T                    # (c, k) cosine similarities
+            labels[start:end] = sims.argmax(dim=1).int()
+
+        # Centroid update: sum assigned vectors, divide by counts
+        new_C = torch.zeros(k, D, dtype=torch.float32, device=torch_device)
+        counts = torch.zeros(k, dtype=torch.float32, device=torch_device)
+        new_C.index_add_(0, labels.long(), X.float())
+        counts.index_add_(0, labels.long(), ones)
+
+        # Re-init empty clusters to random training vectors
+        empty_mask = counts == 0
+        n_empty = int(empty_mask.sum().item())
+        if n_empty:
+            ri = torch.randint(train_size, (n_empty,), device=torch_device)
+            new_C[empty_mask] = X[ri].float()
+            counts[empty_mask] = 1.0
+
+        new_C.div_(counts.unsqueeze(1))
+        new_C = F.normalize(new_C, dim=1)
+
+        shift = (new_C - C).norm(dim=1).max().item()
+        C = new_C
+        logger.info(
+            "torch_kmeans: iter %2d / %d  max-shift=%.6f  empty=%d",
+            it + 1, n_iter, shift, n_empty,
+        )
+        if shift < 1e-4 and it > 2:
+            logger.info("torch_kmeans: converged at iter %d", it + 1)
+            break
+
+    del X, ones
+    torch.cuda.empty_cache()
+
+    # Assign all N vectors; stream from CPU numpy in chunks to avoid OOM
+    logger.info("torch_kmeans: assigning all %d vectors ...", N)
+    C_h = F.normalize(C, dim=1).half()   # (k, D) float16
+    all_labels = np.empty(N, dtype=np.int32)
+
+    for start in range(0, N, chunk_size):
+        end = min(start + chunk_size, N)
+        chunk = torch.from_numpy(
+            embeddings[start:end].astype(np.float16, copy=False)
+        ).to(torch_device)
+        chunk = F.normalize(chunk.float(), dim=1).half()
+        all_labels[start:end] = (chunk @ C_h.T).argmax(dim=1).cpu().numpy()
+        if start % 2_000_000 == 0 and start > 0:
+            logger.info("torch_kmeans: assigned %d / %d", start, N)
+
+    n_unique = len(np.unique(all_labels))
+    logger.info("torch_kmeans: done. Unique clusters: %d", n_unique)
+    return all_labels.astype(np.int64), C.float().cpu().numpy()
+
+
+# ---------------------------------------------------------------------------
 # flash-kmeans path (GPU, Triton) — NOT compatible with MI250X
 # (requires 128 KB shared memory per CU; MI250X limit is 64 KB)
 # ---------------------------------------------------------------------------
@@ -260,8 +377,11 @@ def cluster_prompts(
     """
     Assign each prompt a domain label and difficulty tier.
 
-    For algorithm='faiss_kmeans': FAISS built-in k-means (no Triton).
-      Trains on `training_sample` vectors, assigns all N. Works on MI250X.
+    For algorithm='torch_kmeans': PyTorch matmul k-means on GPU (cosine distance).
+      Recommended for MI250X — no Triton, no faiss-gpu. Trains on `training_sample`
+      vectors, assigns all N.
+    For algorithm='faiss_kmeans': FAISS built-in k-means (CPU BLAS; no Triton).
+      Trains on `training_sample` vectors, assigns all N. Works on MI250X but slow.
     For algorithm='flash_kmeans': Triton GPU k-means. NOT compatible with MI250X
       (requires 128 KB shared memory; MI250X CU limit is 64 KB).
     For algorithm='hdbscan' or 'kmeans': centroid-based (CPU).
@@ -273,8 +393,12 @@ def cluster_prompts(
     N = len(prompt_ids)
     logger.info("cluster_prompts: N=%d, algorithm=%s", N, algorithm)
 
-    if algorithm in ("faiss_kmeans", "flash_kmeans"):
-        if algorithm == "faiss_kmeans":
+    if algorithm in ("torch_kmeans", "faiss_kmeans", "flash_kmeans"):
+        if algorithm == "torch_kmeans":
+            labels, centers = _cluster_with_torch_kmeans(
+                embeddings, n_clusters, training_sample, device
+            )
+        elif algorithm == "faiss_kmeans":
             labels, centers = _cluster_with_faiss_kmeans(
                 embeddings, n_clusters, training_sample, device
             )

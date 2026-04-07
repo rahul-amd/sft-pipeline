@@ -1,5 +1,5 @@
 # =============================================================================
-# Stage 3 Cluster Run — Distributed embedding + flash_kmeans clustering
+# Stage 3 Cluster Run — Distributed embedding + torch_kmeans clustering
 #
 # Usage:
 #   sbatch scripts/slurm_stage3.sh                          # uses this config
@@ -9,7 +9,7 @@
 #   - Reads Stage 1 output from the research_stage1_001d run
 #   - Embeds all prompts in parallel across 32 Ray workers (4 nodes × 8 GPUs each)
 #   - Builds a FAISS IVFFlat index on the head node
-#   - Clusters 5M embeddings into 100,000 clusters with flash_kmeans (GPU)
+#   - Clusters 5M embeddings into 100,000 clusters with torch_kmeans (GPU)
 #   - Writes enriched JSONL with domain, difficulty, cluster_id
 #
 # Prerequisites:
@@ -47,7 +47,7 @@ stage2_generate:
   output_dir: "{base_path}/stage2"
 
 # ---------------------------------------------------------------------------
-# Stage 3 — distributed embedding + flash_kmeans with 100k clusters
+# Stage 3 — distributed embedding + torch_kmeans with 100k clusters
 # ---------------------------------------------------------------------------
 stage3_cluster:
   enabled: true
@@ -63,10 +63,11 @@ stage3_cluster:
   faiss_nlist: 2000                 # more centroids → finer ANN search
   faiss_nprobe: 100
   faiss_training_sample: 4000000   # FAISS recommends ≥39×k; 39×100k=3.9M
-  # Clustering: flash_kmeans runs the full 5M embeddings on GPU
-  # flash_kmeans (Triton) requires 128 KB shared memory per CU; MI250X limit is
-  # 64 KB → OutOfResources crash.  faiss_kmeans uses FAISS BLAS kernels instead.
-  clustering_algorithm: "faiss_kmeans"
+  # Clustering: torch_kmeans uses PyTorch matmuls (cosine distance) directly on
+  # GPU — no Triton, no faiss-gpu, works natively on MI250X/ROCm.
+  # flash_kmeans (Triton) requires 128 KB shared memory; MI250X limit is 64 KB.
+  # faiss_kmeans falls back to CPU BLAS and takes ~8 hours for 15M × 100K.
+  clustering_algorithm: "torch_kmeans"
   n_clusters: 100000                # fine-grained topic clusters (~50 pts/cluster)
   # Difficulty heuristics (unchanged from default)
   difficulty_easy_max_tokens: 50

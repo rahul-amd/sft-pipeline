@@ -240,7 +240,7 @@ if $INITIAL_SETUP && _in_container; then
     section "Phase 2 — pip installs"
 
     log "Upgrading pip / setuptools / wheel ..."
-    pip install --user --upgrade pip setuptools wheel
+    pip install --upgrade pip setuptools wheel
     echo
 
     # Install the sft-pipeline package and all its declared dependencies.
@@ -248,7 +248,7 @@ if $INITIAL_SETUP && _in_container; then
     # used for any additional pinned overrides.
     if [ -f "${PROJECT_DIR}/requirements.txt" ]; then
         log "Found requirements.txt — installing pinned overrides ..."
-        pip install --user -r "${PROJECT_DIR}/requirements.txt"
+        pip install -r "${PROJECT_DIR}/requirements.txt"
         ok "requirements.txt done"
         echo
     fi
@@ -256,7 +256,7 @@ if $INITIAL_SETUP && _in_container; then
     if [ -f "${PROJECT_DIR}/pyproject.toml" ]; then
         log "Installing sft-pipeline (editable) and all declared dependencies ..."
         # --no-build-isolation ensures the already-installed build tools are reused
-        pip install --user -e "${PROJECT_DIR}"
+        pip install -e "${PROJECT_DIR}"
         ok "sft-pipeline installed (editable mode)"
     else
         log "Warning: no pyproject.toml found at ${PROJECT_DIR} — skipping package install"
@@ -404,7 +404,7 @@ section "Phase 3 — GPU packages (ROCm ${ROCM_VERSION})"
 log "Step 1: Installing ROCm PyTorch from ${TORCH_INDEX_URL} ..."
 log "(Replaces any existing CUDA build — safe to re-run)"
 
-pip install --user torch torchvision torchaudio \
+pip install torch torchvision torchaudio \
     --index-url "${TORCH_INDEX_URL}"
 
 # Verify wheel, then check GPU device access separately so we can give a
@@ -437,7 +437,7 @@ echo
 
 # ── Step 2: sentence-transformers ────────────────────────────────────────────
 log "Step 2: Installing / upgrading sentence-transformers ..."
-pip install --user "sentence-transformers>=3.0"
+pip install "sentence-transformers>=3.0"
 
 python - <<'EOF'
 import torch
@@ -458,7 +458,7 @@ if python -c "import triton; print(f'  Triton {triton.__version__} already insta
     ok "Triton already present"
 else
     log "Triton not found — installing ..."
-    pip install --user "triton>=3.0"
+    pip install "triton>=3.0"
     python -c "import triton; print(f'  triton {triton.__version__}')"
     ok "Triton installed"
 fi
@@ -466,7 +466,7 @@ echo
 
 # ── Step 4: flash-kmeans ──────────────────────────────────────────────────────
 log "Step 4: Installing flash-kmeans ..."
-pip install --user flash-kmeans
+pip install flash-kmeans
 
 python - <<'EOF'
 import torch

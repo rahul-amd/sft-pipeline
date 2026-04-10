@@ -21,6 +21,15 @@ export LD_LIBRARY_PATH="/opt/rocm/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 # harmful: forcing 9.0.0 (gfx900/Vega10) loads wrong kernels for gfx90a, causing
 # GPU memory access faults (e.g. hipRAND crashes) on the first real kernel launch.
 
+# ── Triton kernel cache ───────────────────────────────────────────────────────
+# Default ~/.triton/cache sits on the home filesystem which has a strict quota.
+# Redirect to the scratch filesystem so compiled kernels don't fill the quota.
+# SCRATCH is set by Slurm; fall back to the known project scratch path.
+_SCRATCH="${SCRATCH:-/scratch/project_462000963}"
+export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${_SCRATCH}/users/aralikatte/triton_cache}"
+mkdir -p "${TRITON_CACHE_DIR}"
+unset _SCRATCH
+
 # ── pip --user packages ───────────────────────────────────────────────────────
 # Packages installed with --user land in ~/.local/bin (CLIs) and
 # ~/.local/lib/pythonX.Y/site-packages (imports).  Derive the version from the

@@ -387,6 +387,16 @@ except OSError as e:
 PYEOF
 echo
 
+# ── Triton kernel cache ───────────────────────────────────────────────────────
+# By default Triton writes JIT-compiled kernels to ~/.triton/cache, which sits
+# on the home filesystem and quickly exhausts the per-user quota.  Redirect to
+# /tmp (fast local disk, no quota) during this setup session.  Production runs
+# use the scratch filesystem via TRITON_CACHE_DIR set in run_in_env.sh.
+export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-/tmp/triton_cache}"
+log "TRITON_CACHE_DIR : ${TRITON_CACHE_DIR}"
+mkdir -p "${TRITON_CACHE_DIR}"
+echo
+
 section "Phase 3 — GPU packages (ROCm ${ROCM_VERSION})"
 
 # ── Step 1: ROCm PyTorch ──────────────────────────────────────────────────────

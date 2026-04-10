@@ -61,7 +61,7 @@ USER_DIR="${USER_DIR:-/users/aralikatte}"
 SINCONS_DIR="${SINCONS_DIR:-${SCRATCH}/users/aralikatte/sincons}"
 SIF="${SIF:-${SINCONS_DIR}/python_latest.sif}"
 OVERLAY="${OVERLAY:-${SINCONS_DIR}/python_latest_overlay.img}"
-OVERLAY_SIZE_MB="${OVERLAY_SIZE_MB:-30720}"   # 30 GB
+OVERLAY_SIZE_MB="${OVERLAY_SIZE_MB:-102400}"  # 100 GB
 
 # Conda / Python
 CONDA_ROOT="${CONDA_ROOT:-/share/miniconda3}"
@@ -91,6 +91,35 @@ section() {
 # Returns 0 (true) when running inside a Singularity / Apptainer container.
 _in_container() {
     [ -n "${SINGULARITY_NAME:-}" ] || [ -n "${APPTAINER_NAME:-}" ]
+}
+
+# Print the three-step instructions for running GPU setup on a compute node.
+# Used in both Phase 2's "no GPU" exit and Phase 3's guard error to avoid
+# duplicating the same text.
+_print_gpu_instructions() {
+    log "  Step 1 — Get a GPU compute node:"
+    echo
+    echo "    srun --account=project_462000963 --partition=standard-g \\"
+    echo "         --nodes=1 --ntasks=1 --cpus-per-task=8 \\"
+    echo "         --gpus-per-node=1 --mem=32G --time=0:30:00 --pty bash"
+    echo
+    log "  Step 2 — Verify GPUs on the host:"
+    echo
+    echo "    /opt/rocm/bin/rocm-smi"
+    echo
+    log "  Step 3 — Run GPU setup inside the container:"
+    echo
+    echo "    singularity exec --rocm \\"
+    echo "        --bind ${SCRATCH} \\"
+    echo "        --bind ${USER_DIR} \\"
+    echo "        --bind /opt/rocm \\"
+    echo "        --overlay ${OVERLAY}:rw \\"
+    echo "        ${SIF} \\"
+    echo "        bash ${PROJECT_DIR}/scripts/setup_env.sh"
+    echo
+    log "  (--rocm fixes PermissionError on /dev/kfd that occurs when"
+    log "   singularity is launched from inside a 'srun --pty bash' shell)"
+    echo
 }
 
 # Detect singularity vs apptainer
@@ -272,29 +301,7 @@ if $INITIAL_SETUP && _in_container; then
         echo
         log "To complete setup, get a GPU compute node and re-run without --initial-setup:"
         echo
-        log "  Step 1 — Get a GPU compute node:"
-        echo
-        echo "    srun --account=project_462000963 --partition=standard-g \\"
-        echo "         --nodes=1 --ntasks=1 --cpus-per-task=8 \\"
-        echo "         --gpus-per-node=1 --mem=32G --time=0:30:00 --pty bash"
-        echo
-        log "  Step 2 — Verify GPUs on the host:"
-        echo
-        echo "    /opt/rocm/bin/rocm-smi"
-        echo
-        log "  Step 3 — Run GPU setup inside the container:"
-        echo
-        echo "    singularity exec --rocm \\"
-        echo "        --bind ${SCRATCH} \\"
-        echo "        --bind ${USER_DIR} \\"
-        echo "        --bind /opt/rocm \\"
-        echo "        --overlay ${OVERLAY}:rw \\"
-        echo "        ${SIF} \\"
-        echo "        bash ${PROJECT_DIR}/scripts/setup_env.sh"
-        echo
-        log "  (--rocm fixes PermissionError on /dev/kfd that occurs when"
-        log "   singularity is launched from inside a 'srun --pty bash' shell)"
-        echo
+        _print_gpu_instructions
         exit 0
     fi
 
@@ -321,32 +328,10 @@ fi
 # physically present AND allocated to the current job.  Absent on login nodes
 # or compute nodes where --gpus-per-node was not specified.
 if [ ! -e /dev/kfd ]; then
-    err "=== WRONG NODE ==="
     err "/dev/kfd not found — this node has no GPU allocated."
-    err ""
-    err "Phase 3 (GPU package installs) must run inside a Singularity container"
-    err "on a GPU compute node.  Steps:"
-    err ""
-    err "  1. Get a compute node with 1 GPU:"
-    err "     srun --account=project_462000963 --partition=standard-g \\"
-    err "          --nodes=1 --ntasks=1 --cpus-per-task=8 \\"
-    err "          --gpus-per-node=1 --mem=32G --time=0:30:00 --pty bash"
-    err ""
-    err "  2. From that shell, verify GPUs are visible on the host:"
-    err "     /opt/rocm/bin/rocm-smi"
-    err ""
-    err "  3. Then run this script inside the container:"
-    err "     singularity exec --rocm \\"
-    err "         --bind /scratch/project_462000963 \\"
-    err "         --bind /users/aralikatte \\"
-    err "         --bind /opt/rocm \\"
-    err "         --overlay .../python_latest_overlay.img:rw \\"
-    err "         .../python_latest.sif \\"
-    err "         bash .../sft-pipeline/scripts/setup_env.sh"
-    err ""
-    err "  --rocm lets Singularity handle GPU device delegation through the"
-    err "  cgroup hierarchy (fixes PermissionError on /dev/kfd that occurs"
-    err "  when singularity is launched from inside a 'srun --pty bash' shell)."
+    err "Phase 3 must run on a GPU compute node inside a Singularity container."
+    echo
+    _print_gpu_instructions
     exit 1
 fi
 ok "/dev/kfd found — running on a GPU compute node"
@@ -368,9 +353,13 @@ log "LD_LIBRARY_PATH  : /opt/rocm/lib (prepended)"
 echo
 
 # ── Activate conda env ────────────────────────────────────────────────────────
-# shellcheck disable=SC1090
-source "${CONDA_ROOT}/etc/profile.d/conda.sh"
-conda activate "${CONDA_ENV}"
+# Phase 2 may have already sourced conda.sh and activated the env.
+# Skip re-activation if we're already in the right env.
+if [ "${CONDA_DEFAULT_ENV:-}" != "${CONDA_ENV}" ]; then
+    # shellcheck disable=SC1090
+    source "${CONDA_ROOT}/etc/profile.d/conda.sh"
+    conda activate "${CONDA_ENV}"
+fi
 log "Conda env : $(conda info --base)/envs/${CONDA_ENV}"
 
 # ── Show host ROCm version ────────────────────────────────────────────────────
@@ -437,7 +426,7 @@ echo
 
 # ── Step 2: sentence-transformers ────────────────────────────────────────────
 log "Step 2: Installing / upgrading sentence-transformers ..."
-pip install "sentence-transformers>=3.0"
+pip install "sentence-transformers>=3.0" --extra-index-url "${TORCH_INDEX_URL}"
 
 python - <<'EOF'
 import torch
@@ -466,7 +455,7 @@ echo
 
 # ── Step 4: flash-kmeans ──────────────────────────────────────────────────────
 log "Step 4: Installing flash-kmeans ..."
-pip install flash-kmeans
+pip install flash-kmeans --extra-index-url "${TORCH_INDEX_URL}"
 
 python - <<'EOF'
 import torch
@@ -486,5 +475,5 @@ echo
 # ── Summary ───────────────────────────────────────────────════════════════════
 section "Setup complete"
 log ""
-log "All packages are installed in the conda env $(CONDA_ENV) (persisted inside the overlay)."
+log "All packages are installed in the conda env '${CONDA_ENV}' (persisted inside the overlay)."
 log "The overlay can now be mounted :ro for all Slurm jobs."

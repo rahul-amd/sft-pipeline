@@ -35,6 +35,9 @@ dependencies = [
     "polars>=0.20",
     "pyarrow>=16.0",
 
+    # Distributed compute
+    "ray>=2.10",
+
     # Checkpointing
     "duckdb>=0.10",
 

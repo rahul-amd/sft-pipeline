@@ -56,7 +56,7 @@ RAY_DASHBOARD_PORT=8265
 # Per-job Ray temp dir — avoids /tmp/ray collisions across jobs AND keeps the
 # path short enough for AF_UNIX sockets (107-byte limit).  Scratch-based paths
 # exceed the limit; /tmp/ray_<jobid> stays well under it.
-RAY_TEMP_DIR="${SCRATCH}/users/aralikatte/tmp/ray_${SLURM_JOB_ID}"
+RAY_TEMP_DIR="/tmp/ray_${SLURM_JOB_ID}"
 
 # ── Singularity wrapper ───────────────────────────────────────────────────────
 # --rocm  lets Singularity handle ROCm device delegation through the cgroup

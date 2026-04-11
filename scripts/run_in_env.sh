@@ -9,6 +9,15 @@
 source /share/miniconda3/etc/profile.d/conda.sh
 conda activate sft-pipeline
 
+# ── GPU device visibility ─────────────────────────────────────────────────────
+# Slurm sets ROCR_VISIBLE_DEVICES to restrict GPU access per task.
+# Ray's AMD GPU manager (ray/_private/accelerators/amd_gpu.py) raises RuntimeError
+# if ROCR_VISIBLE_DEVICES is set without HIP_VISIBLE_DEVICES.  Translate here so
+# both ROCm runtime and Ray agree on which GPUs are visible.
+if [ -n "${ROCR_VISIBLE_DEVICES:-}" ] && [ -z "${HIP_VISIBLE_DEVICES:-}" ]; then
+    export HIP_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES}"
+fi
+
 # ── ROCm runtime ──────────────────────────────────────────────────────────────
 # /opt/rocm is bind-mounted from the host but Singularity does not automatically
 # add it to PATH or LD_LIBRARY_PATH.  Without these, torch cannot find

@@ -405,10 +405,22 @@ def cluster_prompts(
         else:
             labels, centers = _cluster_with_flash_kmeans(embeddings, n_clusters, device)
 
-        # Build domain map: for each cluster, inspect a sample of its member prompts
+        # Build domain map: for each cluster, inspect a sample of its member prompts.
+        # Do this in a single O(N) pass to collect up to 50 member indices per cluster,
+        # rather than the naive O(K×N) loop that scans all N prompts for every cluster.
+        _SAMPLE = 50
+        cluster_members: dict[int, list[int]] = {}
+        for i, lbl in enumerate(labels):
+            k_lbl = int(lbl)
+            lst = cluster_members.get(k_lbl)
+            if lst is None:
+                cluster_members[k_lbl] = [i]
+            elif len(lst) < _SAMPLE:
+                lst.append(i)
+
         cluster_domain: dict[int, str] = {}
         for k in range(centers.shape[0]):
-            members = [prompts[i] for i in range(N) if labels[i] == k][:50]
+            members = [prompts[i] for i in cluster_members.get(k, [])]
             cluster_domain[k] = _infer_cluster_domain(members)
 
         results: list[dict] = []
@@ -435,9 +447,19 @@ def cluster_prompts(
     centroid_assignments = _assign_to_centroids(embeddings, faiss_index)
 
     nlist = len(centroids)
+    # Single O(N) pass to collect up to 50 member indices per centroid.
+    _SAMPLE = 50
+    centroid_members: dict[int, list[int]] = {}
+    for i, ca in enumerate(centroid_assignments):
+        lst = centroid_members.get(ca)
+        if lst is None:
+            centroid_members[ca] = [i]
+        elif len(lst) < _SAMPLE:
+            lst.append(i)
+
     centroid_domain: dict[int, str] = {}
     for cidx in range(nlist):
-        members = [prompts[i] for i, ca in enumerate(centroid_assignments) if ca == cidx][:50]
+        members = [prompts[i] for i in centroid_members.get(cidx, [])]
         centroid_domain[cidx] = _infer_cluster_domain(members)
 
     results = []

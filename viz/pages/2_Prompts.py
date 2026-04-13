@@ -89,14 +89,14 @@ if selected_rows:
               </div>
               <div>
                 <span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Domain</span><br>
-                <span style="background:#1e1b4b;color:#a5b4fc;padding:2px 8px;border-radius:4px;font-size:0.8rem;">{row['domain']}</span>
+                <span style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);padding:2px 8px;border-radius:4px;font-size:0.8rem;">{row['domain']}</span>
               </div>
             """,
             unsafe_allow_html=True,
         )
         if row.get("difficulty"):
-            colour = {"easy": "#064e3b", "medium": "#451a03", "hard": "#450a0a"}.get(row["difficulty"], "#1e293b")
-            text = {"easy": "#6ee7b7", "medium": "#fcd34d", "hard": "#fca5a5"}.get(row["difficulty"], "#94a3b8")
+            colour = {"easy": "rgba(52,211,153,0.15)", "medium": "rgba(251,191,36,0.15)", "hard": "rgba(248,113,113,0.15)"}.get(row["difficulty"], "rgba(99,102,241,0.15)")
+            text = {"easy": "#34d399", "medium": "#fbbf24", "hard": "#f87171"}.get(row["difficulty"], "#818cf8")
             st.markdown(
                 f'<div style="margin-top:0.1rem;">'
                 f'<span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Difficulty</span><br>'
@@ -116,7 +116,7 @@ if selected_rows:
             topics_str = row["topics"] if isinstance(row["topics"], str) else ", ".join(row["topics"])
             if topics_str.strip():
                 tags = "".join(
-                    f'<span style="background:#0c1a2e;color:#67e8f9;border:1px solid #164e63;'
+                    f'<span style="background:rgba(34,211,238,0.1);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);'
                     f'padding:2px 7px;border-radius:4px;font-size:0.75rem;margin:2px 2px 2px 0;display:inline-block;">'
                     f'{t.strip()}</span>'
                     for t in topics_str.split(",") if t.strip()
@@ -130,7 +130,7 @@ if selected_rows:
                 )
         if has_summary and row.get("summary", "").strip():
             st.markdown(
-                f'<div style="margin-top:0.5rem;padding:0.6rem 0.75rem;background:#0d1224;'
+                f'<div style="margin-top:0.5rem;padding:0.6rem 0.75rem;background:rgba(99,102,241,0.08);'
                 f'border-left:3px solid #6366f1;border-radius:0 6px 6px 0;">'
                 f'<span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Summary</span><br>'
                 f'<span style="color:#94a3b8;font-size:0.82rem;font-style:italic;">{row["summary"]}</span>'

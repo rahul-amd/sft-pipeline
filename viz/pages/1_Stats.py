@@ -43,19 +43,21 @@ with col_left:
         color="domain",
         color_discrete_sequence=PLOTLY_COLORS,
         labels={"count": "Prompts", "domain": ""},
+        height=max(220, len(dc) * 42),
     )
     fig.update_layout(**_layout)
     st.plotly_chart(fig, use_container_width=True)
 
 with col_right:
     st.subheader("Top Sources")
-    sc = df["source"].value_counts().head(20).reset_index()
+    sc = df["source"].value_counts().head(15).reset_index()
     sc.columns = ["source", "count"]
     fig = px.bar(
         sc.sort_values("count", ascending=True),
         x="count", y="source", orientation="h",
         color_discrete_sequence=[PLOTLY_COLORS[1]],
         labels={"count": "Prompts", "source": ""},
+        height=max(220, len(sc) * 32),
     )
     fig.update_layout(**_layout)
     st.plotly_chart(fig, use_container_width=True)
@@ -74,8 +76,9 @@ with col_diff:
         fig = px.bar(
             difc, x="difficulty", y="count",
             color="difficulty",
-            color_discrete_map={"easy": "#10b981", "medium": "#f59e0b", "hard": "#ef4444"},
+            color_discrete_map={"easy": "#34d399", "medium": "#fbbf24", "hard": "#f87171"},
             labels={"count": "Prompts", "difficulty": ""},
+            height=260,
         )
         fig.update_layout(**_layout)
         st.plotly_chart(fig, use_container_width=True)
@@ -113,6 +116,7 @@ if has_annotation:
             x="count", y="language", orientation="h",
             color_discrete_sequence=[PLOTLY_COLORS[2]],
             labels={"count": "Prompts", "language": ""},
+            height=max(220, len(lc) * 32),
         )
         fig.update_layout(**_layout)
         st.plotly_chart(fig, use_container_width=True)
@@ -135,6 +139,7 @@ if has_annotation:
                 x="count", y="topic", orientation="h",
                 color_discrete_sequence=[PLOTLY_COLORS[3]],
                 labels={"count": "Prompts", "topic": ""},
+                height=max(220, len(tc) * 28),
             )
             fig.update_layout(**_layout)
             st.plotly_chart(fig, use_container_width=True)

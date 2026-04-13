@@ -52,9 +52,9 @@ page_df = filtered.iloc[start: start + PAGE_SIZE]
 st.divider()
 
 _DIFF_COLOURS = {
-    "easy":   ("rgba(6,78,59,0.4)",   "#6ee7b7"),
-    "medium": ("rgba(69,26,3,0.4)",   "#fcd34d"),
-    "hard":   ("rgba(69,10,10,0.4)",  "#fca5a5"),
+    "easy":   ("rgba(52,211,153,0.15)",  "#34d399"),
+    "medium": ("rgba(251,191,36,0.15)",  "#fbbf24"),
+    "hard":   ("rgba(248,113,113,0.15)", "#f87171"),
 }
 
 for _, row in page_df.iterrows():
@@ -107,7 +107,7 @@ for _, row in page_df.iterrows():
             if reasoning:
                 st.markdown(
                     f'<div style="max-height:320px;overflow-y:auto;'
-                    f'background:#0d1224;border:1px solid #1e293b;'
+                    f'background:rgba(0,0,0,0.25);border:1px solid #1e293b;'
                     f'padding:0.75rem 1rem;border-radius:8px;'
                     f'font-size:0.82rem;color:#94a3b8;line-height:1.65;'
                     f'font-family:\'JetBrains Mono\',monospace;">{reasoning}</div>',

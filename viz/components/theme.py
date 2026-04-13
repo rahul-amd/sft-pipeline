@@ -2,31 +2,39 @@
 Shared visual theme for the SFT Pipeline viz app.
 
 Call apply_theme() at the top of every page (after st.set_page_config).
+
+The base dark theme (backgrounds, input widgets, dataframes, text colours) is
+handled by viz/.streamlit/config.toml so that ALL Streamlit components—including
+st.dataframe and multiselect—are styled consistently without fighting the shadow
+DOM.  This module adds polish on top: fonts, metric cards, chart containers, etc.
 """
 from __future__ import annotations
 import streamlit as st
 
 # ── Plotly colour sequence ────────────────────────────────────────────────────
 PLOTLY_COLORS = [
-    "#6366f1",  # indigo
-    "#06b6d4",  # cyan
-    "#10b981",  # emerald
-    "#f59e0b",  # amber
-    "#ef4444",  # red
-    "#8b5cf6",  # violet
-    "#ec4899",  # pink
-    "#14b8a6",  # teal
-    "#f97316",  # orange
-    "#a3e635",  # lime
+    "#818cf8",  # indigo-400
+    "#22d3ee",  # cyan-400
+    "#34d399",  # emerald-400
+    "#fbbf24",  # amber-400
+    "#f87171",  # red-400
+    "#a78bfa",  # violet-400
+    "#f472b6",  # pink-400
+    "#2dd4bf",  # teal-400
+    "#fb923c",  # orange-400
+    "#a3e635",  # lime-400
 ]
 
 # NOTE: no xaxis/yaxis keys here — those conflict if a caller also passes
 # xaxis=... directly to update_layout(). Apply axis styles with
 # fig.update_xaxes() / fig.update_yaxes() separately when needed.
+#
+# paper_bgcolor / plot_bgcolor must match config.toml backgroundColor so
+# charts don't have a different background from the page.
 PLOTLY_LAYOUT = dict(
     template="plotly_dark",
-    paper_bgcolor="#0d1224",
-    plot_bgcolor="#0d1224",
+    paper_bgcolor="#0a0f1e",
+    plot_bgcolor="#0a0f1e",
     font=dict(family="Inter, sans-serif", color="#cbd5e1"),
     colorway=PLOTLY_COLORS,
 )
@@ -36,47 +44,59 @@ _CSS = """
 /* ── Google Fonts ──────────────────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── Hide Streamlit top header bar ────────────────────────────────────────── */
-header[data-testid="stHeader"] {
-    background: #070b14 !important;
-    border-bottom: 1px solid #1e293b !important;
+html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+
+/* ── Page title — indigo→cyan gradient ────────────────────────────────────── */
+.block-container h1,
+[data-testid="stHeadingWithActionElements"] h1 {
+    background: linear-gradient(90deg, #818cf8 0%, #22d3ee 60%, #34d399 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em;
+    padding-bottom: 0.25rem;
 }
-/* Hamburger / deploy / manage buttons */
-header[data-testid="stHeader"] button,
-header[data-testid="stHeader"] a {
+
+/* ── Subheaders ────────────────────────────────────────────────────────────── */
+.block-container h2 {
+    color: #64748b !important;
+    font-weight: 500 !important;
+    font-size: 0.7rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 0.4rem;
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.6rem !important;
+}
+.block-container h3 {
     color: #475569 !important;
-}
-header[data-testid="stHeader"] svg {
-    fill: #475569 !important;
-}
-
-/* ── Global ────────────────────────────────────────────────────────────────── */
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
-.stApp {
-    background: #070b14;
+    font-size: 0.7rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
 }
 
-/* ── Main content padding ──────────────────────────────────────────────────── */
-.block-container {
-    padding-top: 1.5rem !important;
-    padding-bottom: 2rem !important;
+/* ── Sidebar subheaders — cancel gradient + shrink ─────────────────────────── */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    background: none !important;
+    -webkit-text-fill-color: #94a3b8 !important;
+    font-size: 0.65rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 0.35rem;
+    margin-top: 0.75rem !important;
 }
 
-/* ── Sidebar ───────────────────────────────────────────────────────────────── */
-[data-testid="stSidebar"] {
-    background: #0d1224 !important;
-    border-right: 1px solid #1e293b !important;
-}
-
-/* Sidebar nav links (multipage) */
+/* ── Sidebar nav links ─────────────────────────────────────────────────────── */
 [data-testid="stSidebarNav"] a,
 [data-testid="stSidebarNavItems"] a,
-[data-testid="stSidebarNavLink"],
-[data-testid="stSidebar"] nav a {
+[data-testid="stSidebarNavLink"] {
     color: #64748b !important;
-    text-decoration: none !important;
     font-size: 0.875rem !important;
     font-weight: 400 !important;
     border-radius: 6px !important;
@@ -86,212 +106,84 @@ html, body, [class*="css"] {
 [data-testid="stSidebarNavItems"] a:hover,
 [data-testid="stSidebarNavLink"]:hover {
     color: #e2e8f0 !important;
-    background: rgba(99,102,241,0.1) !important;
+    background: rgba(99,102,241,0.12) !important;
 }
-/* Active page link */
 [data-testid="stSidebarNav"] a[aria-current="page"],
 [data-testid="stSidebarNavItems"] a[aria-current="page"],
 [data-testid="stSidebarNavLink"][aria-current="page"] {
     color: #818cf8 !important;
-    background: rgba(99,102,241,0.12) !important;
-    font-weight: 500 !important;
-}
-
-/* Sidebar text / labels */
-[data-testid="stSidebar"] .stMarkdown p,
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stRadio label,
-[data-testid="stSidebar"] .stCheckbox label {
-    color: #94a3b8 !important;
-}
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    color: #e2e8f0 !important;
-    font-size: 0.72rem !important;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    font-weight: 600;
-    /* cancel h1 gradient inside sidebar */
-    background: none !important;
-    -webkit-background-clip: unset !important;
-    -webkit-text-fill-color: #e2e8f0 !important;
-    background-clip: unset !important;
-}
-[data-testid="stSidebar"] hr {
-    border-color: #1e293b !important;
-}
-
-/* ── Page title (h1 gradient) ──────────────────────────────────────────────── */
-.block-container h1,
-[data-testid="stHeadingWithActionElements"] h1 {
-    background: linear-gradient(90deg, #818cf8 0%, #06b6d4 55%, #10b981 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    font-weight: 700 !important;
-    letter-spacing: -0.02em;
-    padding-bottom: 0.25rem;
-}
-
-/* ── Section subheaders ────────────────────────────────────────────────────── */
-.block-container h2 {
-    color: #94a3b8 !important;
-    font-weight: 500 !important;
-    font-size: 0.72rem !important;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    border-bottom: 1px solid #1e293b;
-    padding-bottom: 0.5rem;
-    margin-top: 1.5rem !important;
-    margin-bottom: 0.75rem !important;
-}
-.block-container h3 {
-    color: #64748b !important;
-    font-weight: 500 !important;
-    font-size: 0.7rem !important;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    background: rgba(99,102,241,0.15) !important;
+    font-weight: 600 !important;
 }
 
 /* ── Metric cards ──────────────────────────────────────────────────────────── */
 [data-testid="stMetric"] {
-    background: #0d1224;
     border: 1px solid #1e293b;
     border-radius: 10px;
-    padding: 1rem 1.25rem !important;
-    transition: border-color 0.2s;
+    padding: 0.9rem 1.1rem !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 [data-testid="stMetric"]:hover {
-    border-color: #334155;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 1px rgba(99,102,241,0.2);
 }
 [data-testid="stMetricLabel"] p {
-    color: #64748b !important;
-    font-size: 0.7rem !important;
+    font-size: 0.68rem !important;
     font-weight: 500 !important;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+    color: #64748b !important;
 }
 [data-testid="stMetricValue"] {
-    color: #e2e8f0 !important;
-    font-size: 1.55rem !important;
+    font-size: 1.5rem !important;
     font-weight: 700 !important;
     letter-spacing: -0.02em;
+    color: #e2e8f0 !important;
 }
 
-/* ── Captions ──────────────────────────────────────────────────────────────── */
-[data-testid="stCaptionContainer"] p,
-.stCaption p {
-    color: #475569 !important;
-    font-size: 0.78rem !important;
+/* ── Plotly chart container ────────────────────────────────────────────────── */
+[data-testid="stPlotlyChart"] {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #1e293b;
 }
 
 /* ── Dividers ──────────────────────────────────────────────────────────────── */
-hr {
-    border-color: #1e293b !important;
+hr { border-color: #1e293b !important; }
+
+/* ── Captions ──────────────────────────────────────────────────────────────── */
+[data-testid="stCaptionContainer"] p, .stCaption p {
+    font-size: 0.78rem !important;
+    color: #475569 !important;
 }
 
-/* ── Dataframe ─────────────────────────────────────────────────────────────── */
-[data-testid="stDataFrame"] {
-    border: 1px solid #1e293b;
-    border-radius: 8px;
-    overflow: hidden;
+/* ── Code ──────────────────────────────────────────────────────────────────── */
+code {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.8rem !important;
 }
-
-/* ── Text area ─────────────────────────────────────────────────────────────── */
-textarea {
-    background: #0d1224 !important;
+pre {
     border: 1px solid #1e293b !important;
     border-radius: 8px !important;
-    color: #cbd5e1 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* ── Text area (prompt viewer) ─────────────────────────────────────────────── */
+textarea {
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.82rem !important;
     line-height: 1.6 !important;
-}
-textarea:focus {
-    border-color: #6366f1 !important;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
-    outline: none !important;
-}
-
-/* ── Text inputs ───────────────────────────────────────────────────────────── */
-input[type="text"], input[type="search"] {
-    background: #0d1224 !important;
-    border: 1px solid #1e293b !important;
-    border-radius: 6px !important;
-    color: #e2e8f0 !important;
-}
-input[type="text"]:focus, input[type="search"]:focus {
-    border-color: #6366f1 !important;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
-}
-
-/* ── Multiselect tags ──────────────────────────────────────────────────────── */
-[data-baseweb="tag"] {
-    background: #1e1b4b !important;
-    border: 1px solid #3730a3 !important;
-    border-radius: 4px !important;
-}
-[data-baseweb="tag"] span {
-    color: #a5b4fc !important;
-    font-size: 0.78rem !important;
+    border-radius: 8px !important;
 }
 
 /* ── Expanders ─────────────────────────────────────────────────────────────── */
 [data-testid="stExpander"] {
     border: 1px solid #1e293b !important;
     border-radius: 8px !important;
-    background: #0d1224 !important;
 }
 [data-testid="stExpander"] summary {
-    color: #94a3b8 !important;
     font-size: 0.85rem !important;
-    padding: 0.6rem 0.75rem !important;
-}
-[data-testid="stExpander"] summary:hover {
-    color: #e2e8f0 !important;
-}
-
-/* ── Alert / info boxes ────────────────────────────────────────────────────── */
-[data-testid="stAlert"] > div {
-    border-radius: 8px !important;
-}
-
-/* ── Code ──────────────────────────────────────────────────────────────────── */
-code {
-    background: #1e293b !important;
-    border-radius: 4px !important;
-    color: #a5b4fc !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.8rem !important;
-    padding: 1px 5px !important;
-}
-pre {
-    background: #0d1224 !important;
-    border: 1px solid #1e293b !important;
-    border-radius: 8px !important;
-    font-family: 'JetBrains Mono', monospace !important;
-}
-pre code {
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-}
-
-/* ── Number input ──────────────────────────────────────────────────────────── */
-input[type="number"] {
-    background: #0d1224 !important;
-    border: 1px solid #1e293b !important;
-    color: #e2e8f0 !important;
-    border-radius: 6px !important;
-}
-
-/* ── Plotly chart wrapper ──────────────────────────────────────────────────── */
-[data-testid="stPlotlyChart"] {
-    border-radius: 10px;
-    overflow: hidden;
-    background: #0d1224;
-    border: 1px solid #1e293b;
+    padding: 0.55rem 0.75rem !important;
 }
 
 /* ── Scrollbars ────────────────────────────────────────────────────────────── */
@@ -299,10 +191,16 @@ input[type="number"] {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+/* ── Main content padding ──────────────────────────────────────────────────── */
+.block-container {
+    padding-top: 1.5rem !important;
+    padding-bottom: 2rem !important;
+}
 </style>
 """
 
 
 def apply_theme() -> None:
-    """Inject the dark CSS theme. Call once per page, after st.set_page_config."""
+    """Inject polish CSS. Call once per page, after st.set_page_config."""
     st.markdown(_CSS, unsafe_allow_html=True)

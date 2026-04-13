@@ -16,7 +16,10 @@
 #   MODEL        HuggingFace model id (required unless --model is passed)
 #   TP           tensor-parallel size  (default: 8, one per MI250X GCD pair)
 #   PORT         server port           (default: 8000)
-#   HOST         bind address          (default: 0.0.0.0)
+#   BIND_HOST    bind address          (default: 0.0.0.0)
+#                NOTE: do NOT use HOST — it is a reserved shell variable on
+#                Cray/LUMI nodes (set to the node hostname) and will cause
+#                "Errno 99: Cannot assign requested address" in the API server.
 #   SIF          path to vllm_rocm.sif
 #   HF_HOME      HF cache directory    (default: ${SCRATCH}/hf_cache)
 #   GPU_MEM_UTIL fraction of GPU memory to use (default: 0.92)
@@ -35,7 +38,7 @@ SIF="${SIF:-${SINCONS_DIR}/vllm_rocm.sif}"
 MODEL="${MODEL:-}"
 TP="${TP:-8}"
 PORT="${PORT:-8000}"
-HOST="${HOST:-0.0.0.0}"
+BIND_HOST="${BIND_HOST:-0.0.0.0}"   # NOT HOST — that env var is set by the OS on Cray/LUMI nodes
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.92}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 HF_HOME="${HF_HOME:-${SCRATCH}/hf_cache}"
@@ -46,7 +49,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --model)                MODEL="$2"; shift 2 ;;
         --tensor-parallel-size) TP="$2";    shift 2 ;;
-        --port)                 PORT="$2";  shift 2 ;;
+        --port)                 PORT="$2";      shift 2 ;;
+        --host)                 BIND_HOST="$2"; shift 2 ;;
         --help|-h)
             grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'
             exit 0 ;;
@@ -85,7 +89,7 @@ VLLM_ARGS=(
     --tensor-parallel-size "${TP}"
     --dtype              float16
     --gpu-memory-utilization "${GPU_MEM_UTIL}"
-    --host               "${HOST}"
+    --host               "${BIND_HOST}"
     --port               "${PORT}"
     --trust-remote-code
 )
@@ -99,6 +103,7 @@ echo
 log "SIF              : ${SIF}"
 log "Model            : ${MODEL}"
 log "Tensor parallel  : ${TP}"
+log "Bind host        : ${BIND_HOST}"
 log "Port             : ${PORT}"
 log "GPU mem util     : ${GPU_MEM_UTIL}"
 log "HF_HOME          : ${HF_HOME}"

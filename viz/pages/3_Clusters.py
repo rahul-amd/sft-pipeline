@@ -96,6 +96,8 @@ fig = px.scatter(
     labels={"umap_x": "", "umap_y": ""},
 )
 fig.update_traces(marker=dict(size=point_size))
+# Split axis settings into separate calls to avoid duplicate-kwarg conflict
+# with **PLOTLY_LAYOUT (which must not contain xaxis/yaxis keys).
 fig.update_layout(
     **PLOTLY_LAYOUT,
     height=660,
@@ -107,14 +109,14 @@ fig.update_layout(
         font=dict(size=12),
     ),
     margin=dict(l=0, r=0, t=10, b=0),
-    xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
-    yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
     hoverlabel=dict(
         bgcolor="#0d1224",
         bordercolor="#334155",
         font=dict(family="Inter, sans-serif", size=12, color="#e2e8f0"),
     ),
 )
+fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False)
+fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
 
 event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
 

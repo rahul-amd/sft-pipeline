@@ -82,7 +82,7 @@ fig = px.bar(
     color="domain",
     color_discrete_sequence=PLOTLY_COLORS,
     labels={"count": "Prompts", "domain": ""},
-    height=max(200, len(domain_counts) * 44),
+    height=max(280, len(domain_counts) * 52),
 )
 fig.update_layout(**PLOTLY_LAYOUT, showlegend=False, margin=dict(l=0, r=0, t=10, b=0))
 st.plotly_chart(fig, use_container_width=True)

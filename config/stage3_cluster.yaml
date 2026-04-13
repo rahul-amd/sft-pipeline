@@ -72,6 +72,28 @@ stage3_cluster:
   # Difficulty heuristics (unchanged from default)
   difficulty_easy_max_tokens: 50
   difficulty_hard_min_tokens: 200
+  # ---------------------------------------------------------------------------
+  # LLM annotation — set annotation_enabled: true and point annotation_api_base
+  # at a running vLLM OpenAI-compatible server before enabling.
+  #
+  # Start the server on the head node before running the Slurm job:
+  #   singularity exec ... scripts/run_in_env.sh \
+  #       python -m vllm.entrypoints.openai.api_server \
+  #           --model Qwen/Qwen3-30B-A3B-Thinking-2507 \
+  #           --tensor-parallel-size 4 \
+  #           --port 8001
+  #
+  # annotation_concurrency controls how many API requests are in flight at once.
+  # Tune it to match the server's throughput (start at 64, increase if GPU util is low).
+  # ---------------------------------------------------------------------------
+  annotation_enabled: false
+  annotation_model: "Qwen/Qwen3-30B-A3B-Thinking-2507"
+  annotation_api_base: "http://localhost:8001/v1"
+  annotation_api_key: "EMPTY"
+  annotation_concurrency: 64
+  annotation_max_tokens: 1024
+  annotation_temperature: 0.2
+  annotation_checkpoint_every: 50000
   # Output paths
   embeddings_dir: "{base_path}/stage3/embeddings"
   faiss_index_path: "{base_path}/stage3/faiss.index"

@@ -349,18 +349,63 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     cluster_map: dict[str, dict] = {r["prompt_id"]: r for r in cluster_results}
 
     # ------------------------------------------------------------------
+    # Step C': LLM annotation (optional)
+    # Sends each prompt to an OpenAI-compatible API server and returns a
+    # JSON annotation {domain, topics, difficulty, language}.  LLM values
+    # take priority over heuristics when both are present.
+    # ------------------------------------------------------------------
+    annotation_map: dict[str, dict] = {}
+    if s3.annotation_enabled:
+        from sft_pipeline.clustering.annotator import annotate_prompts
+
+        ann_checkpoint = Path(s3.output_dir) / "annotations.parquet"
+        annotation_records = [
+            {"prompt_id": pid, "prompt": prompts_text[i]}
+            for i, pid in enumerate(ids)
+        ]
+        logger.info(
+            "Stage3: LLM annotation enabled — %d prompts → %s  (concurrency=%d)",
+            len(annotation_records), s3.annotation_api_base, s3.annotation_concurrency,
+        )
+        annotation_map = annotate_prompts(
+            prompt_records=annotation_records,
+            model=s3.annotation_model,
+            api_base=s3.annotation_api_base,
+            api_key=s3.annotation_api_key,
+            concurrency=s3.annotation_concurrency,
+            max_tokens=s3.annotation_max_tokens,
+            temperature=s3.annotation_temperature,
+            checkpoint_path=ann_checkpoint,
+            checkpoint_every=s3.annotation_checkpoint_every,
+        )
+        logger.info("Stage3: annotation complete — %d records", len(annotation_map))
+    else:
+        logger.info("Stage3: LLM annotation disabled (annotation_enabled: false)")
+
+    # ------------------------------------------------------------------
     # Step D: Write enriched output JSONL
+    # LLM annotation values take priority over heuristic cluster labels.
+    # New fields added when annotation is enabled: topics, language.
     # ------------------------------------------------------------------
     total_written = 0
     with ShardedJSONLWriter(out_dir, shard_size_mb=300) as writer:
         for rec in _all_prompts():
             pid = rec["prompt_id"]
             cluster_info = cluster_map.get(pid, {})
+            ann = annotation_map.get(pid, {})
             enriched = {
                 **rec,
-                "domain": cluster_info.get("domain", rec.get("domain", "general")),
-                "difficulty": cluster_info.get("difficulty", "medium"),
+                # LLM annotation wins over heuristic; heuristic wins over raw record
+                "domain": (ann.get("domain")
+                           or cluster_info.get("domain")
+                           or rec.get("domain", "general")),
+                "difficulty": (ann.get("difficulty")
+                               or cluster_info.get("difficulty", "medium")),
                 "cluster_id": cluster_info.get("cluster_id", -1),
+                # Fields only populated when annotation is enabled; empty/default otherwise
+                "topics": ann.get("topics", []),
+                "language": ann.get("language", "en"),
+                "summary": ann.get("summary", ""),
             }
             writer.write(enriched)
             total_written += 1

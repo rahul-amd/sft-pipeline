@@ -32,13 +32,29 @@ _MULTI_STEP_PATTERNS = re.compile(
 
 _DOMAIN_LABEL_KEYWORDS: dict[str, list[str]] = {
     "math": ["equation", "solve", "calculate", "proof", "algebra", "geometry",
-             "integral", "derivative", "theorem", "probability"],
+             "integral", "derivative", "theorem", "probability", "matrix",
+             "statistics", "arithmetic", "calculus", "combinatorics"],
     "code": ["function", "algorithm", "python", "javascript", "implement", "code",
-             "program", "class", "debug", "api", "sql", "data structure"],
+             "program", "class", "debug", "api", "sql", "data structure",
+             "typescript", "java", "c++", "rust", "compiler", "runtime", "loop"],
     "science": ["physics", "chemistry", "biology", "molecule", "reaction", "force",
-                "energy", "quantum", "cell", "evolution", "atom", "element"],
-    "language": ["translate", "grammar", "essay", "summarize", "vocabulary",
-                 "sentence", "paragraph", "write", "synonym", "paraphrase"],
+                "energy", "quantum", "cell", "evolution", "atom", "element",
+                "gravity", "photosynthesis", "dna", "orbit", "thermodynamics"],
+    "reasoning": ["logic", "deduce", "conclude", "premise", "fallacy", "puzzle",
+                  "riddle", "infer", "argument", "valid", "syllogism", "paradox",
+                  "critical thinking", "analyze the argument"],
+    "writing": ["essay", "story", "creative", "draft", "edit", "narrative",
+                "fiction", "poem", "blog post", "article", "rewrite", "tone",
+                "introduction", "conclusion", "persuasive"],
+    "language": ["translate", "grammar", "vocabulary", "synonym", "paraphrase",
+                 "conjugate", "tense", "linguistic", "idiom", "pronoun",
+                 "sentence structure", "spanish", "french", "mandarin"],
+    "knowledge": ["history", "geography", "capital", "who was", "when did",
+                  "what is", "define", "explain", "culture", "biography",
+                  "encyclopedia", "fact", "event", "founded"],
+    "instruction": ["how to", "steps to", "how do i", "guide me", "tutorial",
+                    "walk me through", "recipe", "procedure", "instructions for",
+                    "set up", "configure", "install"],
 }
 
 
@@ -69,7 +85,7 @@ def _infer_cluster_domain(centroid_prompts: list[str]) -> str:
         for domain, keywords in _DOMAIN_LABEL_KEYWORDS.items()
     }
     best = max(scores, key=lambda d: scores[d])
-    return best if scores[best] > 0 else "general"
+    return best if scores[best] > 0 else "other"
 
 
 # ---------------------------------------------------------------------------

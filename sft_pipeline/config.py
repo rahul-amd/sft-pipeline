@@ -137,6 +137,18 @@ class Stage3Config(BaseModel):
     # Difficulty heuristics
     difficulty_easy_max_tokens: int = 50
     difficulty_hard_min_tokens: int = 200
+    # LLM annotation (optional — hits an OpenAI-compatible API server in parallel)
+    # When enabled, each prompt is sent to the model which returns a JSON object
+    # with {domain, topics, difficulty, language}.  LLM values take priority over
+    # the heuristic domain/difficulty produced by the clustering step.
+    annotation_enabled: bool = False
+    annotation_model: str = "Qwen/Qwen3-30B-A3B-Thinking-2507"
+    annotation_api_base: str = "http://localhost:8001/v1"
+    annotation_api_key: str = "EMPTY"        # vLLM servers don't need a real key
+    annotation_concurrency: int = 64         # parallel requests in flight
+    annotation_max_tokens: int = 1024        # thinking (~500–800 tok) + JSON (~50 tok)
+    annotation_temperature: float = 0.2
+    annotation_checkpoint_every: int = 50_000  # save progress parquet this often
     # Output
     embeddings_dir: str = "{base_path}/stage3/embeddings"
     faiss_index_path: str = "{base_path}/stage3/faiss.index"
@@ -148,8 +160,9 @@ class Stage4Config(BaseModel):
     total_prompts: int = 7_000_000
     domain_quotas: dict[str, float] = Field(
         default_factory=lambda: {
-            "math": 0.25, "code": 0.20, "science": 0.20,
-            "general": 0.20, "language": 0.15,
+            "math": 0.20, "code": 0.18, "science": 0.15,
+            "reasoning": 0.12, "writing": 0.10, "language": 0.08,
+            "knowledge": 0.10, "instruction": 0.05, "other": 0.02,
         }
     )
     difficulty_quotas: dict[str, float] = Field(

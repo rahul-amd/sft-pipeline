@@ -10,9 +10,11 @@ import streamlit as st
 
 from components.data_loader import get_snapshot, has_stage
 from components.filters import render_filters
+from components.theme import apply_theme
 
 st.set_page_config(page_title="Answers — SFT Pipeline", layout="wide")
-st.title("💬 Answers Viewer")
+apply_theme()
+st.title("Answers Viewer")
 
 df, meta = get_snapshot()
 
@@ -38,6 +40,8 @@ if filtered.empty:
     st.warning("No records match the current filters.")
     st.stop()
 
+st.markdown("<br>", unsafe_allow_html=True)
+
 # Pagination
 PAGE_SIZE = 10
 total_pages = max(1, (len(filtered) - 1) // PAGE_SIZE + 1)
@@ -47,34 +51,75 @@ page_df = filtered.iloc[start: start + PAGE_SIZE]
 
 st.divider()
 
+_DIFF_COLOURS = {
+    "easy":   ("rgba(6,78,59,0.4)",   "#6ee7b7"),
+    "medium": ("rgba(69,26,3,0.4)",   "#fcd34d"),
+    "hard":   ("rgba(69,10,10,0.4)",  "#fca5a5"),
+}
+
 for _, row in page_df.iterrows():
     passed = row.get("passed_filters")
-    badge = " ✅" if passed is True else (" ❌" if passed is False else "")
-    header = f"**{row['source']}** · {row['domain']}"
-    if row.get("difficulty"):
-        header += f" · {row['difficulty']}"
-    header += badge
+    if passed is True:
+        filter_badge = '<span style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);padding:1px 8px;border-radius:4px;font-size:0.75rem;margin-left:6px;">✓ passed</span>'
+    elif passed is False:
+        filter_badge = '<span style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:1px 8px;border-radius:4px;font-size:0.75rem;margin-left:6px;">✗ filtered</span>'
+    else:
+        filter_badge = ""
 
-    with st.expander(header, expanded=False):
+    diff = row.get("difficulty", "")
+    diff_bg, diff_text = _DIFF_COLOURS.get(diff, ("#1e293b", "#94a3b8"))
+    diff_badge = (
+        f'<span style="background:{diff_bg};color:{diff_text};border:1px solid {diff_text}33;'
+        f'padding:1px 8px;border-radius:4px;font-size:0.75rem;margin-left:6px;">{diff}</span>'
+        if diff else ""
+    )
+
+    header_html = (
+        f'<span style="color:#e2e8f0;font-weight:600;">{row["source"]}</span>'
+        f'<span style="color:#475569;margin:0 6px;">·</span>'
+        f'<span style="color:#a5b4fc;">{row["domain"]}</span>'
+        f"{diff_badge}{filter_badge}"
+    )
+
+    with st.expander(f"{row['source']} · {row['domain']}", expanded=False):
+        # Re-render the styled header inside the expander
+        st.markdown(
+            f'<div style="margin-bottom:0.75rem;">{header_html}</div>',
+            unsafe_allow_html=True,
+        )
         col_prompt, col_reasoning, col_answer = st.columns([2, 3, 2])
 
         with col_prompt:
-            st.markdown("**Prompt**")
+            st.markdown(
+                '<p style="color:#475569;font-size:0.7rem;text-transform:uppercase;'
+                'letter-spacing:0.07em;margin-bottom:0.4rem;">Prompt</p>',
+                unsafe_allow_html=True,
+            )
             st.markdown(row["prompt"])
 
         with col_reasoning:
-            st.markdown("**Reasoning**")
+            st.markdown(
+                '<p style="color:#475569;font-size:0.7rem;text-transform:uppercase;'
+                'letter-spacing:0.07em;margin-bottom:0.4rem;">Reasoning</p>',
+                unsafe_allow_html=True,
+            )
             reasoning = row.get("reasoning") or ""
             if reasoning:
                 st.markdown(
-                    f'<div style="max-height:300px;overflow-y:auto;'
-                    f'background:#f8f8f8;padding:8px;border-radius:4px;'
-                    f'font-size:0.85em">{reasoning}</div>',
+                    f'<div style="max-height:320px;overflow-y:auto;'
+                    f'background:#0d1224;border:1px solid #1e293b;'
+                    f'padding:0.75rem 1rem;border-radius:8px;'
+                    f'font-size:0.82rem;color:#94a3b8;line-height:1.65;'
+                    f'font-family:\'JetBrains Mono\',monospace;">{reasoning}</div>',
                     unsafe_allow_html=True,
                 )
             else:
                 st.caption("No reasoning trace.")
 
         with col_answer:
-            st.markdown("**Answer**")
+            st.markdown(
+                '<p style="color:#475569;font-size:0.7rem;text-transform:uppercase;'
+                'letter-spacing:0.07em;margin-bottom:0.4rem;">Answer</p>',
+                unsafe_allow_html=True,
+            )
             st.markdown(row.get("answer") or "—")

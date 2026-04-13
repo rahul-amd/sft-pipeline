@@ -40,7 +40,16 @@ def render_filters(
                 "Difficulty", difficulties, default=difficulties, key="f_difficulty"
             )
 
-        # Search
+        # Language — shown only when annotation has run (more than 1 distinct value)
+        selected_languages = None
+        if "language" in df.columns:
+            langs = sorted(df["language"].dropna().unique().tolist())
+            if len(langs) > 1:
+                selected_languages = st.multiselect(
+                    "Language", langs, default=langs, key="f_language"
+                )
+
+        # Search (prompt text + summary if available)
         search = ""
         if show_search:
             search = st.text_input("Search prompts", "", key="f_search")
@@ -57,8 +66,13 @@ def render_filters(
     )
     if selected_difficulties is not None:
         mask &= df["difficulty"].isin(selected_difficulties)
+    if selected_languages is not None:
+        mask &= df["language"].isin(selected_languages)
     if search:
-        mask &= df["prompt"].str.contains(search, case=False, na=False)
+        prompt_match = df["prompt"].str.contains(search, case=False, na=False)
+        if "summary" in df.columns:
+            prompt_match |= df["summary"].str.contains(search, case=False, na=False)
+        mask &= prompt_match
     if passed_only:
         mask &= df["passed_filters"] == True  # noqa: E712
 

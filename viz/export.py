@@ -191,9 +191,13 @@ def export(run_dir: Path, out_path: Path, sample: int, seed: int) -> None:
             "prompt_id": pid,
             "prompt": rec.get("prompt", ""),
             "source": rec.get("source", ""),
-            "domain": rec.get("domain", "general"),
+            "domain": rec.get("domain", "other"),
             "difficulty": rec.get("difficulty"),
             "cluster_id": rec.get("cluster_id"),
+            # Annotation fields — present when annotation_enabled: true in Stage 3
+            "topics": ", ".join(rec.get("topics") or []),  # list → comma string for display
+            "language": rec.get("language", "en"),
+            "summary": rec.get("summary", ""),
         }
         if umap_coords and pid in umap_coords:
             row["umap_x"], row["umap_y"] = umap_coords[pid]

@@ -19,7 +19,7 @@ streamlit run viz/app.py
 
 ```bash
 # Expose publicly via Cloudflare Tunnel (free, no account needed)
-cloudflared tunnel --url http://localhost:8501
+cloudflared tunnel --protocol http2 --url http://localhost:8501
 ```
 
 This generates a `*.trycloudflare.com` URL you can share with anyone. The tunnel is temporary — it dies when the process stops. For a permanent URL, run it in a `screen`/`tmux` session or use `nohup`.

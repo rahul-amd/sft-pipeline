@@ -120,12 +120,43 @@ if [ ! -e /dev/kfd ]; then
     exit 1
 fi
 
-# ── ROCm sanity check on host ─────────────────────────────────────────────────
-if command -v /opt/rocm/bin/rocm-smi >/dev/null 2>&1; then
+# ── ROCm sanity check + GFX architecture guard ───────────────────────────────
+# hipErrorInvalidImage means the SIF was built for a different GPU architecture.
+# Detect the host GFX name and warn loudly before wasting time loading the model.
+if command -v /opt/rocm/bin/rocminfo >/dev/null 2>&1; then
+    # rocminfo lists all HSA agents; the GPU agent lines contain "gfxNNN"
+    HOST_GFX="$(/opt/rocm/bin/rocminfo 2>/dev/null \
+                 | awk '/^\s+Name:/ && /gfx/ {gsub(/^[[:space:]]+Name:[[:space:]]+/,""); print $0; exit}')"
+    log "Host GPU arch    : ${HOST_GFX:-unknown}"
+
+    # Extract the gfx target embedded in the SIF tag (if the SIF variable contains a tag).
+    # The tag is stored in the SIF path or passed as VLLM_TAG by build_sif.sh.
+    SIF_GFX="${VLLM_TAG:-}"   # e.g. "rocm6.3_mi300_..." or "rocm7.x_gfx950_..."
+    if [ -n "${HOST_GFX}" ] && echo "${SIF_GFX}" | grep -q 'gfx'; then
+        TAG_GFX="$(echo "${SIF_GFX}" | grep -o 'gfx[0-9a-z]*' | head -1)"
+        if [ "${TAG_GFX}" != "${HOST_GFX}" ]; then
+            err "──────────────────────────────────────────────────────────────────"
+            err " GFX ARCHITECTURE MISMATCH — this will cause hipErrorInvalidImage"
+            err "──────────────────────────────────────────────────────────────────"
+            err " Host GPU   : ${HOST_GFX}"
+            err " SIF tag    : ${TAG_GFX}  (from VLLM_TAG=${SIF_GFX})"
+            err ""
+            err " Rebuild the SIF with a tag that matches ${HOST_GFX}:"
+            err "   VLLM_TAG=<rocm6.3_..._${HOST_GFX}_...> bash vllm/build_sif.sh"
+            err ""
+            err " Browse tags: https://hub.docker.com/r/rocm/vllm/tags"
+            err " Filter:      curl -s 'https://hub.docker.com/v2/repositories/rocm/vllm/tags?page_size=100' \\"
+            err "                   | python3 -c \"import sys,json; [print(t['name']) for t in json.load(sys.stdin)['results']]\" \\"
+            err "                   | grep ${HOST_GFX}"
+            exit 1
+        fi
+        log "GFX arch check   : ✓ tag (${TAG_GFX}) matches host (${HOST_GFX})"
+    fi
+elif command -v /opt/rocm/bin/rocm-smi >/dev/null 2>&1; then
     log "GPUs visible on host (rocm-smi):"
     /opt/rocm/bin/rocm-smi --showproductname 2>/dev/null || true
-    echo
 fi
+echo
 
 # ── Network interface detection ───────────────────────────────────────────────
 # HPC nodes have multiple NICs (InfiniBand ib0/hsn0, management eth0, etc.).

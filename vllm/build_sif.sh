@@ -20,10 +20,26 @@ set -euo pipefail
 # ── Configuration — override via environment variables ────────────────────────
 
 # vLLM ROCm image tag.
-# Browse available tags at: https://hub.docker.com/r/rocm/vllm/tags
-# Match the tag's ROCm version to your cluster's ROCm (check: cat /opt/rocm/.info/version).
-# This cluster: ROCm 6.3.4  →  use a rocm6.3 or rocm6.x tag.
-VLLM_TAG="${VLLM_TAG:-rocm7.12.0_gfx950-dcgpu_ubuntu24.04_py3.12_pytorch_2.9.1_vllm_0.16.0}"
+#
+# CRITICAL — match BOTH the ROCm version AND the GFX (GPU) architecture:
+#
+#   Cluster ROCm version:  cat /opt/rocm/.info/version   → 6.3.4
+#   Cluster GPU arch:      /opt/rocm/bin/rocminfo | grep 'Name:.*gfx'
+#                          MI250X = gfx90a
+#                          MI300X = gfx942
+#                          MI350X = gfx950   ← DO NOT use this on MI250X
+#
+# Find valid tags:
+#   curl -s "https://hub.docker.com/v2/repositories/rocm/vllm/tags?page_size=100" \
+#        | python3 -c "import sys,json; [print(t['name']) for t in json.load(sys.stdin)['results']]" \
+#        | grep gfx90a
+#
+# For this cluster (ROCm 6.3, MI250X/gfx90a) a known-good tag is:
+#   rocm6.3_mi300_ubuntu22.04_py3.11_vllm_v0.8.5.post1
+# (despite saying "mi300" AMD ships these with gfx90a kernels for MI250X too)
+#
+# Browse all tags: https://hub.docker.com/r/rocm/vllm/tags
+VLLM_TAG="${VLLM_TAG:-rocm6.3_mi300_ubuntu22.04_py3.11_vllm_v0.8.5.post1}"
 DOCKER_IMAGE="docker://rocm/vllm:${VLLM_TAG}"
 
 # Output paths

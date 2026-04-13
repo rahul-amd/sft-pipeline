@@ -120,41 +120,36 @@ if [ ! -e /dev/kfd ]; then
     exit 1
 fi
 
-# ── ROCm sanity check + GFX architecture guard ───────────────────────────────
-# hipErrorInvalidImage means the SIF was built for a different GPU architecture.
-# Detect the host GFX name and warn loudly before wasting time loading the model.
-if command -v /opt/rocm/bin/rocminfo >/dev/null 2>&1; then
-    # rocminfo lists all HSA agents; the GPU agent lines contain "gfxNNN"
+# ── GFX architecture guard ────────────────────────────────────────────────────
+# hipErrorInvalidImage means the SIF kernels were compiled for a different GPU
+# arch. Detect the host arch from /opt/rocm (always present on the host) and
+# check it against the explicit gfxNNN in the image tag if present.
+# The check only fires when the tag contains a literal "gfxNNN" string that
+# differs from the host — tags like "mi300" (no explicit gfx) pass through.
+HOST_GFX=""
+if [ -x /opt/rocm/bin/rocminfo ]; then
     HOST_GFX="$(/opt/rocm/bin/rocminfo 2>/dev/null \
                  | awk '/^\s+Name:/ && /gfx/ {gsub(/^[[:space:]]+Name:[[:space:]]+/,""); print $0; exit}')"
-    log "Host GPU arch    : ${HOST_GFX:-unknown}"
+fi
+log "Host GPU arch    : ${HOST_GFX:-unknown (rocminfo not found at /opt/rocm)}"
 
-    # Extract the gfx target embedded in the SIF tag (if the SIF variable contains a tag).
-    # The tag is stored in the SIF path or passed as VLLM_TAG by build_sif.sh.
-    SIF_GFX="${VLLM_TAG:-}"   # e.g. "rocm6.3_mi300_..." or "rocm7.x_gfx950_..."
-    if [ -n "${HOST_GFX}" ] && echo "${SIF_GFX}" | grep -q 'gfx'; then
-        TAG_GFX="$(echo "${SIF_GFX}" | grep -o 'gfx[0-9a-z]*' | head -1)"
-        if [ "${TAG_GFX}" != "${HOST_GFX}" ]; then
-            err "──────────────────────────────────────────────────────────────────"
-            err " GFX ARCHITECTURE MISMATCH — this will cause hipErrorInvalidImage"
-            err "──────────────────────────────────────────────────────────────────"
-            err " Host GPU   : ${HOST_GFX}"
-            err " SIF tag    : ${TAG_GFX}  (from VLLM_TAG=${SIF_GFX})"
-            err ""
-            err " Rebuild the SIF with a tag that matches ${HOST_GFX}:"
-            err "   VLLM_TAG=<rocm6.3_..._${HOST_GFX}_...> bash vllm/build_sif.sh"
-            err ""
-            err " Browse tags: https://hub.docker.com/r/rocm/vllm/tags"
-            err " Filter:      curl -s 'https://hub.docker.com/v2/repositories/rocm/vllm/tags?page_size=100' \\"
-            err "                   | python3 -c \"import sys,json; [print(t['name']) for t in json.load(sys.stdin)['results']]\" \\"
-            err "                   | grep ${HOST_GFX}"
-            exit 1
-        fi
-        log "GFX arch check   : ✓ tag (${TAG_GFX}) matches host (${HOST_GFX})"
+SIF_TAG="${VLLM_TAG:-}"
+if [ -n "${HOST_GFX}" ] && echo "${SIF_TAG}" | grep -q 'gfx'; then
+    TAG_GFX="$(echo "${SIF_TAG}" | grep -o 'gfx[0-9a-z]*' | head -1)"
+    if [ "${TAG_GFX}" != "${HOST_GFX}" ]; then
+        err "──────────────────────────────────────────────────────────────────"
+        err " GFX ARCHITECTURE MISMATCH — this will cause hipErrorInvalidImage"
+        err "──────────────────────────────────────────────────────────────────"
+        err " Host GPU   : ${HOST_GFX}"
+        err " SIF tag    : ${TAG_GFX}  (from VLLM_TAG=${SIF_TAG})"
+        err ""
+        err " Rebuild the SIF with a tag that matches ${HOST_GFX}:"
+        err "   VLLM_TAG=<tag_containing_${HOST_GFX}> bash vllm/build_sif.sh"
+        err ""
+        err " Browse tags: https://hub.docker.com/r/rocm/vllm/tags"
+        exit 1
     fi
-elif command -v /opt/rocm/bin/rocm-smi >/dev/null 2>&1; then
-    log "GPUs visible on host (rocm-smi):"
-    /opt/rocm/bin/rocm-smi --showproductname 2>/dev/null || true
+    log "GFX arch check   : ✓ tag (${TAG_GFX}) matches host (${HOST_GFX})"
 fi
 echo
 
@@ -198,19 +193,37 @@ log "Starting vLLM server ..."
 log "Endpoint will be: http://$(hostname -s):${PORT}/v1"
 echo
 
-# Key Singularity flags:
-#   --rocm          fixes cgroup device delegation (needed when inside srun --pty)
-#   --bind /opt/rocm  exposes ROCm libraries (libamdhip64.so etc.)
-#   --bind SCRATCH    model weights + HF cache land here
+# Singularity flags:
+#   --bind /dev/kfd   AMD KFD compute device (required for torch.cuda)
+#   --bind /dev/dri   DRI render devices     (required for ROCm)
+#   --bind SCRATCH    model weights + HF cache
 #
-# Key env vars passed into the container:
-#   VLLM_HOST_IP          — tells vLLM which IP to advertise for worker coordination
-#   NCCL_SOCKET_IFNAME    — pins RCCL's NIC so it doesn't bind a non-routable interface
-#   GLOO_SOCKET_IFNAME    — same for the Gloo fallback backend
-#   RAY_DISABLE_DASHBOARD — stops Ray from binding its dashboard on a random port
-#   RAY_GCS_SERVER_ADDRESS — pins Ray's GCS to the same IP as vLLM
-"${SING_CMD}" exec --rocm \
-    --bind /opt/rocm \
+# Two modes depending on how Singularity is launched:
+#
+# 1. sbatch / srun singularity exec (this script's mode):
+#    --bind /dev/kfd --bind /dev/dri  → device access, no lib injection
+#    No --rocm needed; cgroup delegation works because Slurm sets it up
+#    directly for the singularity process.
+#
+# 2. srun --pty bash → singularity exec --rocm (interactive debugging):
+#    --rocm is needed for cgroup device delegation inside the interactive shell.
+#    --rocm also injects host ROCm libs into /.singularity.d/libs/ which need
+#    glibc 2.38+ (container is Ubuntu 22.04 / glibc 2.35), breaking torch import.
+#    Fix: after entering the container, strip /.singularity.d/libs manually:
+#
+#      export LD_LIBRARY_PATH="$(
+#          echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' \
+#          | grep -v '^/.singularity.d' | tr '\n' ':' | sed 's/:$//'
+#      )"
+#
+# Key env vars:
+#   VLLM_HOST_IP          — which IP vLLM advertises for worker coordination
+#   NCCL_SOCKET_IFNAME    — pins RCCL to the right NIC
+#   GLOO_SOCKET_IFNAME    — same for Gloo fallback
+#   RAY_DISABLE_DASHBOARD — stops Ray binding a random dashboard port
+"${SING_CMD}" exec \
+    --bind /dev/kfd \
+    --bind /dev/dri \
     --bind "${SCRATCH}" \
     --env HF_HOME="${HF_HOME}" \
     --env TRITON_CACHE_DIR="${SCRATCH}/users/aralikatte/triton_cache" \

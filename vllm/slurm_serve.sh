@@ -12,6 +12,19 @@
 #
 # The server prints its endpoint URL to the log once it is ready:
 #   grep "Uvicorn running" logs/vllm_serve_*.log
+#
+# Interactive GPU check:
+#   srun --account=project_462000963 --partition=standard-g \
+#        --nodes=1 --ntasks=1 --gpus-per-node=1 --mem=32G --time=0:30:00 \
+#        singularity exec \
+#            --bind /dev/kfd --bind /dev/dri \
+#            --bind /scratch/project_462000963 \
+#            /scratch/project_462000963/users/aralikatte/sincons/vllm_rocm.sif \
+#            python3 -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+#
+# NOTE: do NOT use --rocm — the vLLM image has ROCm baked in and --rocm
+# injects host libs that need glibc 2.38+ (container is Ubuntu 22.04 / glibc
+# 2.35), breaking torch import with "GLIBC_2.38 not found".
 # =============================================================================
 
 #SBATCH --job-name=vllm-serve

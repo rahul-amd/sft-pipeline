@@ -156,39 +156,31 @@ all N nodes to be free simultaneously.
 
 ### How it works
 
-1. `slurm_serve_array.sh` submits an array of worker jobs (default: 16).
+1. `slurm_serve_array.sh` submits an array of independent 1-node jobs.
    Each task writes `hostname:port` to a shared rendezvous directory on scratch,
    then runs `serve.sh`.
-2. `slurm_nginx.sh` runs after the array starts (`--dependency=after:<array_id>`).
-   It waits for all rendezvous files to appear, polls `/health` on each backend,
-   generates an nginx config, and starts nginx as a load balancer.
+2. **Task 0 doubles as the nginx coordinator** — no separate Slurm job needed.
+   It starts vLLM in the background, then waits for all other workers to register
+   and pass `/health`, generates an nginx config, and starts nginx.
+   The load balancer URL is printed in `logs/vllm_worker_<array_id>_0.log`.
+
+This design avoids a second `sbatch` submission, which matters when you are
+close to your per-user job limit.
 
 ### Usage
 
 ```bash
-# Default: 16 workers (array tasks 0–15), 2 GPUs each
-JID=$(sbatch --parsable vllm/slurm_serve_array.sh) && \
-echo "Workers: $JID" && \
-sbatch --dependency=after:$JID \
-       --export=ALL,ARRAY_JOB_ID=$JID,N_WORKERS=16 \
-       vllm/slurm_nginx.sh
+# Default: 16 workers (array tasks 0–15), 2 GPUs each — one command
+sbatch vllm/slurm_serve_array.sh
 
 # 8 workers
-JID=$(sbatch --parsable --array=0-7 vllm/slurm_serve_array.sh) && \
-sbatch --dependency=after:$JID \
-       --export=ALL,ARRAY_JOB_ID=$JID,N_WORKERS=8 \
-       vllm/slurm_nginx.sh
+sbatch --array=0-7 vllm/slurm_serve_array.sh
 
-# Different model / context length
-JID=$(sbatch --parsable \
-    vllm/slurm_serve_array.sh) && \
-MAX_MODEL_LEN=8192 MODEL=Qwen/Qwen3-30B-A3B-Thinking-2507 \
-sbatch --dependency=after:$JID \
-       --export=ALL,ARRAY_JOB_ID=$JID,N_WORKERS=16,MAX_MODEL_LEN=8192 \
-       vllm/slurm_nginx.sh
+# Different model or context length
+MAX_MODEL_LEN=8192 sbatch vllm/slurm_serve_array.sh
 ```
 
-The nginx job prints the load balancer URL once ready:
+Once task 0 is running and all backends are healthy, the URL appears in its log:
 ```
 [14:05:22] Load balancer endpoint: http://nid007006:9000/v1
 ```
@@ -199,18 +191,21 @@ vllm_base_url: "http://nid007006:9000/v1"
 annotation_concurrency: 1024   # N_WORKERS × 64
 ```
 
-### Environment overrides for array workers
+### Environment overrides
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MODEL` | `Qwen/Qwen3-30B-A3B-Thinking-2507` | HF model id |
 | `TP` | `2` | Tensor-parallel size (GCDs per replica) |
 | `MAX_MODEL_LEN` | unset | Max sequence length |
-| `PORT` | `8000` | vLLM port on each worker node |
+| `PORT_BASE` | `8000` | Base port; actual port = `PORT_BASE + task_id` |
+| `LB_PORT` | `9000` | nginx listen port on task-0 node |
 | `GPU_MEM_UTIL` | `0.92` | GPU memory fraction |
 
-Pass overrides to the array job via `--export`:
+Pass overrides via environment or `--export`:
 ```bash
+MAX_MODEL_LEN=8192 sbatch vllm/slurm_serve_array.sh
+
 sbatch --export=ALL,MODEL=Qwen/Qwen2.5-72B-Instruct,TP=8 \
        --array=0-3 \
        vllm/slurm_serve_array.sh
@@ -225,8 +220,8 @@ sbatch --export=ALL,MODEL=Qwen/Qwen2.5-72B-Instruct,TP=8 \
 | `build_sif.sh` | Pull Docker image → build SIF (run once on login node) |
 | `serve.sh`     | Start vLLM server from SIF (single node, interactive or Slurm) |
 | `slurm_serve.sh` | Slurm batch wrapper for a single vLLM node |
-| `slurm_serve_array.sh` | Job array: one vLLM worker per task |
-| `slurm_nginx.sh` | nginx coordinator for job array workers |
+| `slurm_serve_array.sh` | Job array: one vLLM worker per task; task 0 runs nginx |
+| `slurm_nginx.sh` | Standalone nginx coordinator (alternative if needed separately) |
 
 ---
 

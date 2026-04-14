@@ -110,14 +110,12 @@ log "HF_HOME          : ${HF_HOME}"
 log "NIC override     : ${NIC:-(auto-detect)}"
 echo
 
-# ── Verify GPU is visible ─────────────────────────────────────────────────────
+# ── Verify GPU is visible (advisory only — cgroups can make stat() return EPERM
+#    even when the device is accessible via the container) ─────────────────────
 if [ ! -e /dev/kfd ]; then
-    err "/dev/kfd not found — are you on a GPU compute node?"
-    err "Request one first:"
-    echo "  srun --account=project_462000963 --partition=standard-g \\"
-    echo "       --nodes=1 --ntasks=1 --gpus-per-node=${TP} --mem=128G \\"
-    echo "       --time=4:00:00 --pty bash"
-    exit 1
+    log "Warning: /dev/kfd not found via stat() — may be a cgroup device restriction."
+    log "  If the container fails to see the GPU, request a GPU allocation first:"
+    log "  srun --account=project_462000963 --partition=standard-g --gpus-per-node=${TP} --pty bash"
 fi
 
 # ── GFX architecture guard ────────────────────────────────────────────────────
@@ -129,7 +127,8 @@ fi
 HOST_GFX=""
 if [ -x /opt/rocm/bin/rocminfo ]; then
     HOST_GFX="$(/opt/rocm/bin/rocminfo 2>/dev/null \
-                 | awk '/^\s+Name:/ && /gfx/ {gsub(/^[[:space:]]+Name:[[:space:]]+/,""); print $0; exit}')"
+                 | awk '/^\s+Name:/ && /gfx/ {gsub(/^[[:space:]]+Name:[[:space:]]+/,""); print $0; exit}')" \
+              || true
 fi
 log "Host GPU arch    : ${HOST_GFX:-unknown (rocminfo not found at /opt/rocm)}"
 
@@ -163,12 +162,12 @@ echo
 # one reachable from other compute nodes.  Users can override with NIC=<name>.
 if [ -z "${NIC}" ]; then
     # ip route show default → "default via <gw> dev <iface> ..."
-    NIC="$(ip route show default 2>/dev/null | awk '/dev/ {print $5; exit}')"
+    NIC="$(ip route show default 2>/dev/null | awk '/dev/ {print $5; exit}')" || true
 fi
 
 if [ -n "${NIC}" ]; then
     NODE_IP="$(ip -4 addr show dev "${NIC}" 2>/dev/null \
-               | awk '/inet / {split($2,a,"/"); print a[1]; exit}')"
+               | awk '/inet / {split($2,a,"/"); print a[1]; exit}')" || true
 else
     NODE_IP=""
 fi

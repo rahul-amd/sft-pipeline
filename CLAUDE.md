@@ -12,17 +12,17 @@ Builds a 7-stage automated pipeline to produce **5M high-quality prompt–respon
 
 **Production target**: 32-node AMD MI250X cluster (512 GCDs total, ROCm), local disk.
 **Dev environment**: Windows 11 laptop, NVIDIA RTX 5060 (CUDA), or CPU-only.
-**Stage 7 (translation)**: Deferred to v2 — stub exists but is not implemented.
+**Stage 7 (translation)**: Deferred to v2 — not yet implemented.
 
 ---
 
 ## Project Status
 
-As of 2026-03-25: **Stages 1–6 fully implemented. All 39 tests passing** (flash-kmeans tests skip when GPU/library unavailable).
+As of 2026-04-13: **Stages 1–6 fully implemented. All 77 tests passing** (flash-kmeans tests skip when GPU/library unavailable).
 
 ```
-tests/unit/          — 37 tests (config, checkpoint, storage, parser, filters)
-tests/unit/clustering/ — flash-kmeans tests (skip without CUDA + flash-kmeans)
+tests/unit/          — 64 tests (config, checkpoint, storage, parser, filters, stage1_extract)
+tests/unit/clustering/ — 11 flash-kmeans tests (skip without CUDA + flash-kmeans)
 tests/integration/   — 2 tests (end-to-end smoke + checkpoint resume)
 ```
 
@@ -35,14 +35,17 @@ Run tests: `python -m pytest tests/ -v`
 ```
 sft-pipeline/
 ├── CLAUDE.md                    ← this file
+├── README.md
+├── requirements.txt             ← top-level pip requirements
+├── pyproject.toml
 ├── docs/
 │   └── requirements-and-plan.md ← original proposal breakdown + design decisions
-├── pyproject.toml
 ├── config/
 │   ├── default.yaml             ← master config (all defaults documented here)
 │   ├── dev.yaml                 ← laptop overrides (CPU/CUDA, small scale)
 │   ├── prod.yaml                ← cluster overrides (ROCm, 7M prompts, 64 replicas)
-│   └── stage1_research.yaml    ← Stage 1 only; 45 public HF research datasets
+│   ├── stage1_research.yaml     ← Stage 1 only; 45 public HF research datasets
+│   └── stage3_cluster.yaml      ← Stage 3 cluster run config (distributed embedding)
 ├── sft_pipeline/
 │   ├── config.py                ← Pydantic v2 models + YAML loader
 │   ├── checkpoint.py            ← DuckDB checkpoint tracker
@@ -55,8 +58,7 @@ sft-pipeline/
 │   │   ├── stage3_cluster.py    ← embed + FAISS index + HDBSCAN + difficulty
 │   │   ├── stage4_sample.py     ← quota sampling, near-dedup, similarity sort
 │   │   ├── stage5_inference.py  ← vLLM batch inference (single-node + Ray)
-│   │   ├── stage6_filter.py     ← quality filter pipeline + filter_report.json
-│   │   └── stage7_translate.py  ← stub only (v2)
+│   │   └── stage6_filter.py     ← quality filter pipeline + filter_report.json
 │   ├── filters/
 │   │   ├── structural.py        ← missing fields, length bounds, repetition loops
 │   │   ├── heuristic.py         ← type-token ratio, boilerplate, contradiction
@@ -66,22 +68,26 @@ sft-pipeline/
 │   ├── clustering/
 │   │   ├── embedder.py          ← batched sentence-transformer → sharded float16 Parquet
 │   │   ├── faiss_index.py       ← IVFFlat build/save/load (CPU only)
-│   │   └── clusterer.py         ← HDBSCAN/K-Means/flash-kmeans + difficulty heuristics
+│   │   ├── clusterer.py         ← HDBSCAN/K-Means/flash-kmeans + difficulty heuristics
+│   │   └── annotator.py         ← async LLM annotation (domain/difficulty/topics/language)
 │   ├── inference/
 │   │   ├── vllm_batch.py        ← offline vLLM batch loop + Ray actor class
 │   │   ├── prompt_formatter.py  ← chat template application
 │   │   └── output_parser.py     ← <think>/<answer> extraction with fallbacks
-│   ├── translation/             ← v2 stubs
-│   │   ├── segment_parser.py
-│   │   ├── deepl_client.py
-│   │   └── google_translate_client.py
 │   └── export/
-│       ├── jsonl_writer.py      ← final schema normalization + JSONL export
-│       └── hf_exporter.py       ← optional HF Hub push (disabled in v1)
+│       └── jsonl_writer.py      ← final schema normalization + JSONL export
 ├── scripts/
-│   ├── run_pipeline.py          ← end-to-end runner script
-│   ├── estimate_cost.py         ← dry-run report
-│   └── serve_vllm.sh            ← start vLLM HTTP server (Stage 2 + Stage 6 judge)
+│   ├── setup_env.sh             ← one-time ROCm PyTorch + deps install (cluster)
+│   ├── run_in_env.sh            ← singularity exec entrypoint (activates conda env)
+│   ├── install_flash_kmeans.sh  ← flash-kmeans install with ROCm/Triton support
+│   ├── slurm_stage1.sh          ← Slurm batch: Stage 1 distributed collection
+│   ├── slurm_stage3.sh          ← Slurm batch: Stage 3 distributed embedding + clustering
+│   └── test_ray.sh              ← minimal Ray smoke test (single node)
+├── vllm/
+│   ├── README.md                ← vLLM ROCm SIF usage guide
+│   ├── build_sif.sh             ← build Singularity SIF from rocm/vllm Docker image
+│   ├── serve.sh                 ← start vLLM server from SIF (interactive or via Slurm)
+│   └── slurm_serve.sh           ← Slurm batch wrapper around serve.sh
 ├── tests/
 │   ├── conftest.py              ← shared fixtures + make_prompt_record/make_response_record
 │   ├── unit/
@@ -89,6 +95,7 @@ sft-pipeline/
 │   │   ├── test_checkpoint.py
 │   │   ├── test_storage.py
 │   │   ├── test_output_parser.py
+│   │   ├── test_stage1_extract.py  ← _extract_prompt helper (OpenAI/ShareGPT/plain)
 │   │   ├── filters/
 │   │   │   ├── test_structural.py
 │   │   │   └── test_math_verifier.py
@@ -96,25 +103,23 @@ sft-pipeline/
 │   │       └── test_clusterer_flash_kmeans.py  ← skip without CUDA + flash-kmeans
 │   └── integration/
 │       └── test_end_to_end.py   ← Stages 4 + mock-5 + 6 smoke test + resume test
-├── viz/
-│   ├── README.md
-│   ├── export.py            ← snapshot export CLI (run after each stage completes)
-│   ├── app.py               ← Streamlit entry point
-│   ├── pages/
-│   │   ├── 1_Stats.py       ← domain/source/difficulty charts
-│   │   ├── 2_Prompts.py     ← searchable prompt table
-│   │   ├── 3_Clusters.py    ← UMAP scatter plot
-│   │   └── 4_Answers.py     ← prompt+reasoning+answer viewer
-│   ├── components/
-│   │   ├── data_loader.py   ← st.cache_data snapshot loader (mtime-busted)
-│   │   └── filters.py       ← shared sidebar filter widgets
-│   ├── data/                ← snapshot.parquet + meta.json (gitignored)
-│   └── requirements.txt     ← viz-only deps (separate from pipeline)
-├── docker/
-│   ├── Dockerfile.pipeline
-│   └── Dockerfile.vllm
-└── infra/
-    └── ray_cluster.yaml
+└── viz/
+    ├── README.md
+    ├── export.py            ← snapshot export CLI (run after each stage completes)
+    ├── app.py               ← Streamlit entry point
+    ├── .streamlit/
+    │   └── config.toml      ← Streamlit server config
+    ├── pages/
+    │   ├── 1_Stats.py       ← domain/source/difficulty charts
+    │   ├── 2_Prompts.py     ← searchable prompt table
+    │   ├── 3_Clusters.py    ← UMAP scatter plot
+    │   └── 4_Answers.py     ← prompt+reasoning+answer viewer
+    ├── components/
+    │   ├── data_loader.py   ← st.cache_data snapshot loader (mtime-busted)
+    │   ├── filters.py       ← shared sidebar filter widgets
+    │   └── theme.py         ← shared visual theme (call apply_theme() on each page)
+    ├── data/                ← snapshot.parquet + meta.json (gitignored)
+    └── requirements.txt     ← viz-only deps (separate from pipeline)
 ```
 
 ---
@@ -238,7 +243,7 @@ centroids = np.stack([index.quantizer.reconstruct(i) for i in range(nlist)])
 ```
 
 ### ROCm/CUDA abstraction (`embedder.py`, `vllm_batch.py`)
-PyTorch uses `"cuda"` as the device string for both CUDA and ROCm. Config uses `device: "rocm"` for clarity; code maps `"rocm"` → `"cuda"` internally when passing to PyTorch. vLLM ROCm build is a separate wheel — install separately on cluster.
+PyTorch uses `"cuda"` as the device string for both CUDA and ROCm. Config uses `device: "rocm"` for clarity; code maps `"rocm"` → `"cuda"` internally when passing to PyTorch. On the cluster, vLLM runs from a Singularity SIF (see `vllm/`) rather than a pip wheel.
 
 ### vLLM offline batch mode (`stage5_inference.py`, `vllm_batch.py`)
 Uses `vllm.LLM` (offline) instead of the HTTP server. Zero round-trip overhead for millions of requests; direct access to `RequestOutput` for best-of-n candidate selection. Multi-replica scaling via Ray actors (`build_ray_actor_class()`); each actor holds a persistent `LLM` instance.
@@ -254,6 +259,14 @@ Filters run cheapest-first: structural → heuristic → math → code → llm_j
 
 ### SymPy "uncertain" vs "fail" (`math_verifier.py`)
 SymPy can fail to parse valid LaTeX (e.g., custom macros, non-standard notation). Parse failures return `FilterResult(passed=True, reason="uncertain")` — don't reject what the parser can't understand. Only structural inconsistencies (answer numbers absent from reasoning) cause rejection.
+
+### LLM prompt annotation (`clustering/annotator.py`)
+After clustering, each prompt is annotated with `{domain, difficulty, topics, language, summary}` by calling an OpenAI-compatible API (Qwen3-30B-A3B-Thinking-2507 or similar). Key properties:
+- **Async with semaphore-bounded concurrency** — avoids overwhelming the vLLM server.
+- **Checkpoint to Parquet every N records** — safe to restart mid-run; Stage 3 picks up from the last completed shard.
+- **`<think>` block stripping** — thinking models wrap reasoning before the JSON; `annotator.py` strips `<think>…</think>` before parsing.
+- **Graceful fallback** — API errors and JSON parse failures return validated defaults (`domain="other"`, `difficulty="medium"`) and never crash the pipeline.
+- **Prompt truncation** — keeps only the last 512 whitespace-split tokens of each prompt to stay within the model's context window while preserving the actual question.
 
 ---
 
@@ -326,11 +339,11 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
       .../python_latest.sif \
       bash .../scripts/setup_env.sh
   ```
-  Note: `--bind /dev/kfd` and `--bind /dev/dri` are **not** needed when using `--rocm` — it handles those automatically. All Slurm `SING=` variables use `--rocm`. Do **not** use `--bind /dev/kfd --bind /dev/dri` without `--rocm`; the bind makes the device file visible but the cgroup still blocks access.
+  Note: `--bind /dev/kfd` and `--bind /dev/dri` are **not** needed when using `--rocm` — it handles those automatically. The pipeline Slurm scripts (`scripts/slurm_stage1.sh`, `scripts/slurm_stage3.sh`) use `--rocm`. Do **not** use `--bind /dev/kfd --bind /dev/dri` without `--rocm`; the bind makes the device file visible but the cgroup still blocks access.
 
-  **Exception — vLLM SIF (Docker-based, ROCm baked in)**: see the dedicated section below.
+  **Exception — vLLM SIF (Docker-based, ROCm baked in)**: see the dedicated section below. The vLLM SIF uses `--bind /dev/kfd --bind /dev/dri` (no `--rocm`) to avoid a glibc clash.
 
-- **ROCm vLLM wheel**: Similarly, the standard `pip install vllm` installs the CUDA build. On the cluster, use the ROCm-specific wheel from the vLLM releases page. The `gpu_memory_utilization` and `dtype` settings in `prod.yaml` are tuned for MI250X.
+- **ROCm vLLM — use the SIF, not a pip wheel**: The standard `pip install vllm` gives a CUDA build that fails on AMD GPUs. On the cluster, vLLM runs from a pre-built Singularity SIF (`vllm/build_sif.sh` → `vllm/serve.sh`); no pip install needed. The `gpu_memory_utilization` and `dtype` settings in `vllm/serve.sh` are tuned for MI250X.
 
 - **vLLM ROCm Singularity SIF — five hard-won lessons** (`vllm/` directory):
 
@@ -378,7 +391,8 @@ ray start --head --num-cpus=32 --num-gpus=16
 ray start --address=<head-node-ip>:6379 --num-cpus=32 --num-gpus=16
 
 # 3. Start vLLM HTTP server for Stage 2 generator + Stage 6 judge
-bash scripts/serve_vllm.sh
+#    (interactive) bash vllm/serve.sh --model Qwen/Qwen2.5-72B-Instruct
+#    (batch job)   sbatch vllm/slurm_serve.sh
 
 # 4. Run pipeline (Stage 1 will distribute sources across all 32 nodes)
 sft-pipeline run --config config/prod.yaml

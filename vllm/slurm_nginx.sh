@@ -24,7 +24,7 @@
 #SBATCH --mem=4G
 #SBATCH --time=2-00:00:00
 #SBATCH --account=project_462000963
-#SBATCH --partition=small
+#SBATCH --partition=standard
 #SBATCH --job-name=vllm_nginx
 #SBATCH --output=logs/vllm_nginx_%j.log
 

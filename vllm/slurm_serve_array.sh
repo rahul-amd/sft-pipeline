@@ -17,7 +17,8 @@
 #   MODEL         HF model id          (default: Qwen/Qwen3-30B-A3B-Thinking-2507)
 #   TP            tensor-parallel size (default: 2)
 #   MAX_MODEL_LEN max sequence length  (default: unset → model default)
-#   PORT          vLLM HTTP port       (default: 8000)
+#   PORT_BASE     base HTTP port       (default: 8000); actual port = PORT_BASE + SLURM_ARRAY_TASK_ID
+#                 Two tasks on the same node get different ports automatically.
 #   GPU_MEM_UTIL  GPU memory fraction  (default: 0.92)
 #   SCRATCH       base scratch path    (default: /scratch/project_462000963)
 #
@@ -43,7 +44,10 @@
 set -euo pipefail
 
 SCRATCH="${SCRATCH:-/scratch/project_462000963}"
-PORT="${PORT:-8000}"
+# Each task gets a unique port: PORT_BASE + task_id.
+# If two tasks land on the same node they bind different ports and don't conflict.
+PORT=$(( ${PORT_BASE:-8000} + SLURM_ARRAY_TASK_ID ))
+export PORT
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 

@@ -87,7 +87,8 @@ sft-pipeline/
 │   ├── README.md                ← vLLM ROCm SIF usage guide
 │   ├── build_sif.sh             ← build Singularity SIF from rocm/vllm Docker image
 │   ├── serve.sh                 ← start vLLM server from SIF (interactive or via Slurm)
-│   └── slurm_serve.sh           ← Slurm batch wrapper around serve.sh
+│   ├── slurm_serve.sh           ← Slurm batch wrapper around serve.sh (single node)
+│   └── slurm_serve_multi.sh     ← multi-node vLLM + nginx load balancer
 ├── tests/
 │   ├── conftest.py              ← shared fixtures + make_prompt_record/make_response_record
 │   ├── unit/
@@ -391,8 +392,10 @@ ray start --head --num-cpus=32 --num-gpus=16
 ray start --address=<head-node-ip>:6379 --num-cpus=32 --num-gpus=16
 
 # 3. Start vLLM HTTP server for Stage 2 generator + Stage 6 judge
-#    (interactive) bash vllm/serve.sh --model Qwen/Qwen2.5-72B-Instruct
-#    (batch job)   sbatch vllm/slurm_serve.sh
+#    (single node) sbatch vllm/slurm_serve.sh
+#    (multi-node)  sbatch --nodes=4 vllm/slurm_serve_multi.sh
+#                  → nginx load balancer on head node :9000, one replica per node
+#    (interactive) ROCM_COMPAT=1 bash vllm/serve.sh --model <model> --tensor-parallel-size 2
 
 # 4. Run pipeline (Stage 1 will distribute sources across all 32 nodes)
 sft-pipeline run --config config/prod.yaml

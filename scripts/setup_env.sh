@@ -292,6 +292,25 @@ if $INITIAL_SETUP && _in_container; then
     fi
     echo
 
+    # ── Install system tools via conda ───────────────────────────────────────
+    # nginx is used by vllm/slurm_serve_multi.sh as the load balancer for
+    # multi-node vLLM deployments.  It is a binary, not a pip package, so it
+    # lives here rather than in requirements.txt / pyproject.toml.
+    section "Phase 2 — system tools (nginx)"
+    log "Installing nginx from conda-forge ..."
+    conda install -n "${CONDA_ENV}" -c conda-forge nginx -y
+    python - <<'EOF'
+import subprocess, sys
+result = subprocess.run(["nginx", "-v"], capture_output=True, text=True)
+version = (result.stdout + result.stderr).strip()
+if result.returncode != 0 and not version:
+    print("  nginx: NOT FOUND — conda install may have failed", file=sys.stderr)
+    sys.exit(1)
+print(f"  nginx OK: {version}")
+EOF
+    ok "nginx installed"
+    echo
+
     ok "Phase 2 complete."
     echo
 

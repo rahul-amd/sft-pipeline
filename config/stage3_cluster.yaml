@@ -86,10 +86,10 @@ stage3_cluster:
   # annotation_concurrency controls how many API requests are in flight at once.
   # Tune it to match the server's throughput (start at 64, increase if GPU util is low).
   # ---------------------------------------------------------------------------
-  annotation_enabled: false
+  annotation_enabled: true
   annotation_model: "Qwen/Qwen3-30B-A3B-Thinking-2507"
-  annotation_api_base: "http://localhost:8001/v1"
-  annotation_api_key: "EMPTY"
+  annotation_api_base: "http://nid005361:8000/v1"
+  annotation_api_key: "none"
   annotation_concurrency: 64
   annotation_max_tokens: 1024
   annotation_temperature: 0.2

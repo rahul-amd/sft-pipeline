@@ -39,6 +39,11 @@ tenacity>=8.3
 # Export
 orjson>=3.10
 
+# ── System tools (installed via conda, not pip) ──────────────────────────────
+# nginx — load balancer for multi-node vLLM (vllm/slurm_serve_multi.sh)
+#   conda install -c conda-forge nginx
+#   (setup_env.sh Phase 2 does this automatically)
+
 # ── Optional extras ──────────────────────────────────────────────────────────
 # GPU inference (CUDA — laptop dev):
 #   pip install torch>=2.3 vllm>=0.5
@@ -47,8 +52,8 @@ orjson>=3.10
 #   pip install flash-kmeans
 #
 # GPU inference (ROCm — cluster):
-#   pip install torch --index-url https://download.pytorch.org/whl/rocm6.1
-#   pip install vllm  # use the ROCm-specific wheel from vllm releases
+#   torch installed by setup_env.sh Phase 3 (ROCm wheel, not pip default)
+#   vllm runs from Singularity SIF — see vllm/build_sif.sh, not pip install
 #
 # Code sandbox (production):
 #   pip install e2b-code-interpreter>=0.0.8

@@ -52,10 +52,11 @@ ROCM_COMPAT="${ROCM_COMPAT:-0}"
 # ── Parse --model / --tensor-parallel-size flags ─────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --model)                MODEL="$2"; shift 2 ;;
-        --tensor-parallel-size) TP="$2";    shift 2 ;;
-        --port)                 PORT="$2";      shift 2 ;;
-        --host)                 BIND_HOST="$2"; shift 2 ;;
+        --model)                MODEL="$2";         shift 2 ;;
+        --tensor-parallel-size) TP="$2";            shift 2 ;;
+        --max-model-len)        MAX_MODEL_LEN="$2"; shift 2 ;;
+        --port)                 PORT="$2";          shift 2 ;;
+        --host)                 BIND_HOST="$2";     shift 2 ;;
         --help|-h)
             grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'
             exit 0 ;;
@@ -108,6 +109,7 @@ echo
 log "SIF              : ${SIF}"
 log "Model            : ${MODEL}"
 log "Tensor parallel  : ${TP}"
+log "Max seq len      : ${MAX_MODEL_LEN:-(model default)}"
 log "Bind host        : ${BIND_HOST}"
 log "Port             : ${PORT}"
 log "GPU mem util     : ${GPU_MEM_UTIL}"

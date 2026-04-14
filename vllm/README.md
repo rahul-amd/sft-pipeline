@@ -147,48 +147,74 @@ stage5_inference:
 
 ---
 
-## Scaling throughput: multi-node nginx load balancer
+## Scaling throughput: job array + nginx
 
-For models that fit on one node (TP ≤ 16), the way to scale throughput is to
-run **one vLLM instance per node** and put **nginx** in front.
+For maximum scheduler flexibility, use the **job array** approach instead of a
+single multi-node allocation.  Each array task is an independent 1-node job
+(2 GPUs); the scheduler can backfill them individually rather than waiting for
+all N nodes to be free simultaneously.
+
+### How it works
+
+1. `slurm_serve_array.sh` submits an array of worker jobs (default: 16).
+   Each task writes `hostname:port` to a shared rendezvous directory on scratch,
+   then runs `serve.sh`.
+2. `slurm_nginx.sh` runs after the array starts (`--dependency=after:<array_id>`).
+   It waits for all rendezvous files to appear, polls `/health` on each backend,
+   generates an nginx config, and starts nginx as a load balancer.
+
+### Usage
 
 ```bash
-# 4 nodes × TP=2 → 4 independent replicas, 8 GCDs total
-sbatch --nodes=4 vllm/slurm_serve_multi.sh
+# Default: 16 workers (array tasks 0–15), 2 GPUs each
+JID=$(sbatch --parsable vllm/slurm_serve_array.sh) && \
+echo "Workers: $JID" && \
+sbatch --dependency=after:$JID \
+       --export=ALL,ARRAY_JOB_ID=$JID,N_WORKERS=16 \
+       vllm/slurm_nginx.sh
 
-# 8 nodes
-sbatch --nodes=8 vllm/slurm_serve_multi.sh
+# 8 workers
+JID=$(sbatch --parsable --array=0-7 vllm/slurm_serve_array.sh) && \
+sbatch --dependency=after:$JID \
+       --export=ALL,ARRAY_JOB_ID=$JID,N_WORKERS=8 \
+       vllm/slurm_nginx.sh
 
-# Override model / TP / context length
-MODEL=Qwen/Qwen3-30B-A3B-Thinking-2507 TP=2 MAX_MODEL_LEN=8192 \
-    sbatch --nodes=4 vllm/slurm_serve_multi.sh
+# Different model / context length
+JID=$(sbatch --parsable \
+    vllm/slurm_serve_array.sh) && \
+MAX_MODEL_LEN=8192 MODEL=Qwen/Qwen3-30B-A3B-Thinking-2507 \
+sbatch --dependency=after:$JID \
+       --export=ALL,ARRAY_JOB_ID=$JID,N_WORKERS=16,MAX_MODEL_LEN=8192 \
+       vllm/slurm_nginx.sh
 ```
 
-The script:
-1. Starts one `serve.sh` per node (each with TP=2, 2 GPUs)
-2. Polls `/health` on all backends until they pass (up to 30 min)
-3. Generates an nginx upstream config with `least_conn` load balancing
-4. Starts nginx on the head node at `:9000`
+The nginx job prints the load balancer URL once ready:
+```
+[14:05:22] Load balancer endpoint: http://nid007006:9000/v1
+```
 
-Point the pipeline at the nginx endpoint:
+Point your pipeline at it:
 ```yaml
-# config/prod.yaml or annotator config
-vllm_base_url: "http://<head-node>:9000/v1"
+vllm_base_url: "http://nid007006:9000/v1"
+annotation_concurrency: 1024   # N_WORKERS × 64
 ```
 
-**nginx must be installed** on the head node:
+### Environment overrides for array workers
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODEL` | `Qwen/Qwen3-30B-A3B-Thinking-2507` | HF model id |
+| `TP` | `2` | Tensor-parallel size (GCDs per replica) |
+| `MAX_MODEL_LEN` | unset | Max sequence length |
+| `PORT` | `8000` | vLLM port on each worker node |
+| `GPU_MEM_UTIL` | `0.92` | GPU memory fraction |
+
+Pass overrides to the array job via `--export`:
 ```bash
-conda install -c conda-forge nginx   # once, in the sft-pipeline conda env
+sbatch --export=ALL,MODEL=Qwen/Qwen2.5-72B-Instruct,TP=8 \
+       --array=0-3 \
+       vllm/slurm_serve_array.sh
 ```
-
-If nginx is not found, the script prints the direct backend URLs and keeps the
-vLLM servers alive so you can use them individually or restart nginx separately.
-
-**Why `least_conn` not round-robin**: thinking models have highly variable
-response times (a hard problem can take 10× longer than an easy one).
-`least_conn` sends each new request to the backend with the fewest active
-connections, naturally load-balancing based on actual throughput rather than
-request count.
 
 ---
 
@@ -199,7 +225,8 @@ request count.
 | `build_sif.sh` | Pull Docker image → build SIF (run once on login node) |
 | `serve.sh`     | Start vLLM server from SIF (single node, interactive or Slurm) |
 | `slurm_serve.sh` | Slurm batch wrapper for a single vLLM node |
-| `slurm_serve_multi.sh` | Multi-node vLLM + nginx load balancer |
+| `slurm_serve_array.sh` | Job array: one vLLM worker per task |
+| `slurm_nginx.sh` | nginx coordinator for job array workers |
 
 ---
 

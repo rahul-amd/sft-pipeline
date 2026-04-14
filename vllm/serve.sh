@@ -26,6 +26,10 @@
 #   MAX_MODEL_LEN max context length   (default: unset → model default)
 #   SCRATCH      base scratch path     (default: /scratch/project_462000963)
 #   NIC          override auto-detected NIC name (e.g. eth0, hsn0, ib0)
+#   ROCM_COMPAT  set to 1 when running from an interactive srun --pty bash shell.
+#                Uses --rocm for cgroup device delegation and strips the injected
+#                host libs from LD_LIBRARY_PATH to avoid GLIBC_2.38 mismatch.
+#                Not needed (and should not be set) for sbatch / slurm_serve.sh.
 # =============================================================================
 
 set -euo pipefail
@@ -43,6 +47,7 @@ GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.92}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 HF_HOME="${HF_HOME:-${SCRATCH}/hf_cache}"
 NIC="${NIC:-}"   # auto-detected below if not set
+ROCM_COMPAT="${ROCM_COMPAT:-0}"
 
 # ── Parse --model / --tensor-parallel-size flags ─────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -197,39 +202,61 @@ echo
 #   --bind /dev/dri   DRI render devices     (required for ROCm)
 #   --bind SCRATCH    model weights + HF cache
 #
-# Two modes depending on how Singularity is launched:
+# Two modes (controlled by ROCM_COMPAT):
 #
-# 1. sbatch / srun singularity exec (this script's mode):
-#    --bind /dev/kfd --bind /dev/dri  → device access, no lib injection
-#    No --rocm needed; cgroup delegation works because Slurm sets it up
-#    directly for the singularity process.
+# ROCM_COMPAT=0 (default) — sbatch / srun singularity exec:
+#   --bind /dev/kfd --bind /dev/dri; no lib injection.
+#   Cgroup delegation is set up by Slurm directly for the singularity process.
 #
-# 2. srun --pty bash → singularity exec --rocm (interactive debugging):
-#    --rocm is needed for cgroup device delegation inside the interactive shell.
-#    --rocm also injects host ROCm libs into /.singularity.d/libs/ which need
-#    glibc 2.38+ (container is Ubuntu 22.04 / glibc 2.35), breaking torch import.
-#    Fix: after entering the container, strip /.singularity.d/libs manually:
+# ROCM_COMPAT=1 — interactive srun --pty bash session:
+#   --rocm handles cgroup device delegation inside the interactive shell.
+#   --rocm also injects host ROCm libs into /.singularity.d/libs/; those libs
+#   need glibc 2.38+ but this container is Ubuntu 22.04 (glibc 2.35), so we
+#   strip /.singularity.d out of LD_LIBRARY_PATH via a bash wrapper before
+#   exec-ing the actual vLLM server.
 #
-#      export LD_LIBRARY_PATH="$(
-#          echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' \
-#          | grep -v '^/.singularity.d' | tr '\n' ':' | sed 's/:$//'
-#      )"
-#
-# Key env vars:
+# Key env vars forwarded to container:
 #   VLLM_HOST_IP          — which IP vLLM advertises for worker coordination
 #   NCCL_SOCKET_IFNAME    — pins RCCL to the right NIC
 #   GLOO_SOCKET_IFNAME    — same for Gloo fallback
 #   RAY_DISABLE_DASHBOARD — stops Ray binding a random dashboard port
-"${SING_CMD}" exec \
-    --bind /dev/kfd \
-    --bind /dev/dri \
-    --bind "${SCRATCH}" \
-    --env HF_HOME="${HF_HOME}" \
-    --env TRITON_CACHE_DIR="${SCRATCH}/users/aralikatte/triton_cache" \
-    --env ROCR_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-}" \
-    --env VLLM_HOST_IP="${NODE_IP}" \
-    --env NCCL_SOCKET_IFNAME="${NIC}" \
-    --env GLOO_SOCKET_IFNAME="${NIC}" \
-    --env RAY_DISABLE_DASHBOARD=1 \
-    "${SIF}" \
-    "${VLLM_ARGS[@]}"
+
+# Build the env-var args shared by both modes
+SING_ENV_ARGS=(
+    --env HF_HOME="${HF_HOME}"
+    --env TRITON_CACHE_DIR="${SCRATCH}/users/aralikatte/triton_cache"
+    --env ROCR_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-}"
+    --env VLLM_HOST_IP="${NODE_IP}"
+    --env NCCL_SOCKET_IFNAME="${NIC}"
+    --env GLOO_SOCKET_IFNAME="${NIC}"
+    --env RAY_DISABLE_DASHBOARD=1
+)
+
+if [ "${ROCM_COMPAT}" = "1" ]; then
+    log "Mode: ROCM_COMPAT=1 (interactive shell — using --rocm + LD_LIBRARY_PATH strip)"
+    # Wrap the vLLM command in a bash one-liner that strips /.singularity.d/libs
+    # from LD_LIBRARY_PATH before exec-ing vLLM (avoids GLIBC_2.38 mismatch).
+    VLLM_CMD_STR="${VLLM_ARGS[*]}"
+    "${SING_CMD}" exec \
+        --rocm \
+        --bind "${SCRATCH}" \
+        "${SING_ENV_ARGS[@]}" \
+        "${SIF}" \
+        bash -c '
+            export LD_LIBRARY_PATH="$(
+                printf "%s" "${LD_LIBRARY_PATH:-}" \
+                | tr ":" "\n" | grep -v "^/.singularity.d" \
+                | tr "\n" ":" | sed "s/:$//"
+            )"
+            exec '"${VLLM_CMD_STR}"'
+        '
+else
+    log "Mode: batch (--bind /dev/kfd /dev/dri)"
+    "${SING_CMD}" exec \
+        --bind /dev/kfd \
+        --bind /dev/dri \
+        --bind "${SCRATCH}" \
+        "${SING_ENV_ARGS[@]}" \
+        "${SIF}" \
+        "${VLLM_ARGS[@]}"
+fi

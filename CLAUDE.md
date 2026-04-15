@@ -343,7 +343,7 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
   ```
   Note: `--bind /dev/kfd` and `--bind /dev/dri` are **not** needed when using `--rocm` — it handles those automatically. The pipeline Slurm scripts (`scripts/slurm_stage1.sh`, `scripts/slurm_stage3.sh`) use `--rocm`. Do **not** use `--bind /dev/kfd --bind /dev/dri` without `--rocm`; the bind makes the device file visible but the cgroup still blocks access.
 
-  **Exception — vLLM SIF (Docker-based, ROCm baked in)**: see the dedicated section below. The vLLM SIF uses `--bind /dev/kfd --bind /dev/dri` (no `--rocm`) to avoid a glibc clash.
+  **Exception — vLLM SIF (Docker-based, ROCm baked in)**: see the dedicated section below. The vLLM SIF uses `--rocm` + strips `/.singularity.d/libs` from `LD_LIBRARY_PATH` to get device access without the glibc clash. `serve.sh` handles this automatically (`ROCM_COMPAT=1` is the default).
 
 - **ROCm vLLM — use the SIF, not a pip wheel**: The standard `pip install vllm` gives a CUDA build that fails on AMD GPUs. On the cluster, vLLM runs from a pre-built Singularity SIF (`vllm/build_sif.sh` → `vllm/serve.sh`); no pip install needed. The `gpu_memory_utilization` and `dtype` settings in `vllm/serve.sh` are tuned for MI250X.
 
@@ -351,13 +351,14 @@ For a new source type (not `hf_dataset` or `local_jsonl`):
 
   The vLLM server runs from a pre-built Docker image converted to SIF (`vllm/build_sif.sh` → `vllm/serve.sh`). The rules are different from the plain `python:3.11-slim` SIF used by the pipeline itself.
 
-  **1. Do NOT use `--rocm` with the vLLM SIF.**
-  The vLLM Docker image already has ROCm baked in (`/opt/rocm` inside the container, torch wheels with `+rocm`). `--rocm` injects host ROCm libs into `/.singularity.d/libs/` and prepends that path to `LD_LIBRARY_PATH`. Those host libs were compiled against glibc 2.38+ but the container is Ubuntu 22.04 (glibc 2.35). Result: `ImportError: GLIBC_2.38 not found` on `import torch`. Use `--bind /dev/kfd --bind /dev/dri` instead — device access works fine for `sbatch` and direct `srun singularity exec`.
+  **1. Use `--rocm` + strip the injected libs — for ALL job types on LUMI.**
+  Naively, `--rocm` looks dangerous for the vLLM SIF: the image has ROCm baked in, and `--rocm` injects host ROCm libs (compiled against glibc 2.38+) into `/.singularity.d/libs/`, prepending that path to `LD_LIBRARY_PATH`. The container is Ubuntu 22.04 (glibc 2.35), so those host libs cause `ImportError: GLIBC_2.38 not found` on `import torch`. However, `--bind /dev/kfd --bind /dev/dri` without `--rocm` does **not** work on LUMI — cgroups v2 blocks device access in both interactive **and** batch contexts. The fix: use `--rocm` to get device delegation, then immediately strip `/.singularity.d/libs` from `LD_LIBRARY_PATH` inside the container so that the container's own ROCm copy is used instead of the injected host libs. `serve.sh` does this automatically with `ROCM_COMPAT=1` (now the default).
 
-  **2. `--bind /dev/kfd` works for batch; `--rocm` needed only for `srun --pty bash`.**
-  `/dev/kfd` has permissions `crw-rw-rw-` (world-writable) yet `open()` returns `EPERM` without `--rocm` when launched from an interactive `srun --pty bash` shell. This is the cgroups v2 device controller — the Singularity child cgroup doesn't inherit the job's device allowlist in that context. For `sbatch` and `srun singularity exec` (direct, not via a shell), `--bind /dev/kfd` is sufficient. If you need `--rocm` in an interactive shell, strip `/.singularity.d/libs` from `LD_LIBRARY_PATH` inside the container to avoid the glibc clash:
+  **2. `--bind /dev/kfd` does NOT work on LUMI — cgroups v2 blocks it everywhere.**
+  `/dev/kfd` has permissions `crw-rw-rw-` (world-writable) yet `open()` returns `EPERM` in both interactive `srun --pty bash` sessions and `sbatch` jobs. This is the cgroups v2 device controller — Singularity child cgroups don't inherit the job's device allowlist. `--rocm` tells Singularity to handle AMD device delegation itself and is required in all contexts. The `serve.sh` `ROCM_COMPAT=1` mode handles both issues at once:
   ```bash
-  export LD_LIBRARY_PATH="$(echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | grep -v '^/.singularity.d' | tr '\n' ':' | sed 's/:$//')"
+  # ROCM_COMPAT=1 is now the default; this is equivalent:
+  bash vllm/serve.sh --model Qwen/Qwen3-30B-A3B-Thinking-2507 --tensor-parallel-size 2
   ```
 
   **3. Match the Docker image tag GFX arch to the host GPU.**

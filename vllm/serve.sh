@@ -26,10 +26,13 @@
 #   MAX_MODEL_LEN max context length   (default: unset → model default)
 #   SCRATCH      base scratch path     (default: /scratch/project_462000963)
 #   NIC          override auto-detected NIC name (e.g. eth0, hsn0, ib0)
-#   ROCM_COMPAT  set to 1 when running from an interactive srun --pty bash shell.
-#                Uses --rocm for cgroup device delegation and strips the injected
-#                host libs from LD_LIBRARY_PATH to avoid GLIBC_2.38 mismatch.
-#                Not needed (and should not be set) for sbatch / slurm_serve.sh.
+#   ROCM_COMPAT  1 (default): use --rocm for cgroup device delegation.  Strips
+#                /.singularity.d/libs from LD_LIBRARY_PATH to avoid GLIBC_2.38
+#                mismatch (host libs injected by --rocm need glibc 2.38+ but the
+#                container is Ubuntu 22.04 / glibc 2.35).  Required on LUMI for
+#                both interactive srun sessions AND sbatch jobs.
+#                0: use --bind /dev/kfd --bind /dev/dri instead.  Only works on
+#                clusters where Slurm propagates device cgroups to Singularity.
 # =============================================================================
 
 set -euo pipefail
@@ -47,7 +50,7 @@ GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.92}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 HF_HOME="${HF_HOME:-${SCRATCH}/hf_cache}"
 NIC="${NIC:-}"   # auto-detected below if not set
-ROCM_COMPAT="${ROCM_COMPAT:-0}"
+ROCM_COMPAT="${ROCM_COMPAT:-1}"
 
 # ── Parse --model / --tensor-parallel-size flags ─────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -206,16 +209,16 @@ echo
 #
 # Two modes (controlled by ROCM_COMPAT):
 #
-# ROCM_COMPAT=0 (default) — sbatch / srun singularity exec:
-#   --bind /dev/kfd --bind /dev/dri; no lib injection.
-#   Cgroup delegation is set up by Slurm directly for the singularity process.
-#
-# ROCM_COMPAT=1 — interactive srun --pty bash session:
-#   --rocm handles cgroup device delegation inside the interactive shell.
+# ROCM_COMPAT=1 (default) — required on LUMI for both interactive and sbatch:
+#   --rocm handles AMD KFD/DRI device delegation regardless of cgroup context.
 #   --rocm also injects host ROCm libs into /.singularity.d/libs/; those libs
-#   need glibc 2.38+ but this container is Ubuntu 22.04 (glibc 2.35), so we
-#   strip /.singularity.d out of LD_LIBRARY_PATH via a bash wrapper before
-#   exec-ing the actual vLLM server.
+#   need glibc 2.38+ but the vLLM container is Ubuntu 22.04 (glibc 2.35), so
+#   we strip /.singularity.d/ from LD_LIBRARY_PATH via a bash wrapper before
+#   exec-ing the actual vLLM server.  The container's own ROCm copy is used.
+#
+# ROCM_COMPAT=0 — only for clusters where Slurm propagates device cgroups
+#   to Singularity natively.  Uses --bind /dev/kfd --bind /dev/dri; no lib
+#   injection.  Does NOT work on LUMI (cgroups v2 blocks /dev/kfd open()).
 #
 # Key env vars forwarded to container:
 #   VLLM_HOST_IP          — which IP vLLM advertises for worker coordination
@@ -235,7 +238,7 @@ SING_ENV_ARGS=(
 )
 
 if [ "${ROCM_COMPAT}" = "1" ]; then
-    log "Mode: ROCM_COMPAT=1 (interactive shell — using --rocm + LD_LIBRARY_PATH strip)"
+    log "Mode: ROCM_COMPAT=1 (--rocm + LD_LIBRARY_PATH strip)"
     # Wrap the vLLM command in a bash one-liner that strips /.singularity.d/libs
     # from LD_LIBRARY_PATH before exec-ing vLLM (avoids GLIBC_2.38 mismatch).
     VLLM_CMD_STR="${VLLM_ARGS[*]}"

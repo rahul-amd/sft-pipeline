@@ -55,7 +55,6 @@ log "Registered as $(hostname):${PORT} → ${RENDEZVOUS_DIR}/${SLURM_ARRAY_TASK_
 
 # ── Non-coordinator tasks: just run vLLM ─────────────────────────────────────
 if [ "${SLURM_ARRAY_TASK_ID}" -ne 0 ]; then
-    # ROCM_COMPAT left at default (0) — correct for sbatch jobs.
     exec bash vllm/serve.sh
 fi
 

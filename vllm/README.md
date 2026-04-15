@@ -16,11 +16,11 @@ bash vllm/build_sif.sh
 sbatch vllm/slurm_serve.sh
 tail -f logs/vllm_serve_<jobid>.log
 
-# 2b. Interactive — from inside an srun --pty bash shell, set ROCM_COMPAT=1
+# 2b. Interactive — from inside an srun --pty bash shell
 srun --account=project_462000963 --partition=standard-g \
      --nodes=1 --ntasks=1 --gpus-per-node=1 --mem=128G \
      --time=4:00:00 --pty bash
-ROCM_COMPAT=1 bash vllm/serve.sh --model Qwen/Qwen3-30B-A3B-Thinking-2507 \
+bash vllm/serve.sh --model Qwen/Qwen3-30B-A3B-Thinking-2507 \
     --tensor-parallel-size 1 --max-model-len 8192
 ```
 
@@ -52,7 +52,7 @@ All flags can also be set as environment variables:
 | `HF_HOME`      | —                         | `${SCRATCH}/hf_cache`          |
 | `NIC`          | —                         | auto-detected                  |
 | `SIF`          | —                         | `${SINCONS_DIR}/vllm_rocm.sif` |
-| `ROCM_COMPAT`  | —                         | `0` (see below)                |
+| `ROCM_COMPAT`  | —                         | `1` (see below)                |
 
 ---
 
@@ -93,7 +93,7 @@ A full node has 8 chips = **16 GCDs**.
 
 ```bash
 # 30B MoE example (fits on 1 GCD with max-model-len cap)
-ROCM_COMPAT=1 bash vllm/serve.sh \
+bash vllm/serve.sh \
     --model Qwen/Qwen3-30B-A3B-Thinking-2507 \
     --tensor-parallel-size 1 \
     --max-model-len 8192
@@ -104,25 +104,21 @@ bash vllm/serve.sh --model Qwen/Qwen2.5-72B-Instruct --tensor-parallel-size 8
 
 ---
 
-## Interactive vs batch mode (`ROCM_COMPAT`)
+## `ROCM_COMPAT` — device delegation on LUMI
 
-On LUMI, cgroups v2 restricts `/dev/kfd` access differently depending on how
-Singularity is launched:
+On LUMI, cgroups v2 blocks `/dev/kfd` access from inside Singularity containers
+in **all** job contexts (interactive and batch).  `--bind /dev/kfd --bind /dev/dri`
+makes the device file visible but the cgroup still prevents `open()`.
 
-| How you run serve.sh | `ROCM_COMPAT` | Singularity flags |
-|---|---|---|
-| `sbatch vllm/slurm_serve.sh` | `0` (default) | `--bind /dev/kfd --bind /dev/dri` |
-| `srun singularity exec ...` (direct) | `0` (default) | `--bind /dev/kfd --bind /dev/dri` |
-| `srun --pty bash` → `bash vllm/serve.sh` | **`1`** | `--rocm` + LD_LIBRARY_PATH strip |
+`ROCM_COMPAT=1` (the default) uses `--rocm` to let Singularity handle AMD device
+delegation, then strips the injected host ROCm libs from `LD_LIBRARY_PATH` inside
+the container before starting vLLM.  This is necessary because `--rocm` injects
+host libs compiled for glibc 2.38+, but the vLLM container is Ubuntu 22.04
+(glibc 2.35) — without the strip, `import torch` fails with `GLIBC_2.38 not found`.
 
-**Why the difference**: In a `srun --pty bash` interactive shell, Singularity's
-child cgroup does not inherit the job's device allowlist, so `/dev/kfd` returns
-`EPERM` even though the file shows `crw-rw-rw-`.  `--rocm` fixes cgroup
-delegation, but it also injects host ROCm libs into `/.singularity.d/libs/`,
-which need glibc 2.38+.  The container is Ubuntu 22.04 (glibc 2.35), so
-`import torch` fails with `GLIBC_2.38 not found`.  `ROCM_COMPAT=1` adds a
-bash wrapper that strips `/.singularity.d/libs` from `LD_LIBRARY_PATH` before
-starting vLLM, resolving both issues.
+In short: `ROCM_COMPAT=1` fixes two problems at once.  There is no job type on
+LUMI where `ROCM_COMPAT=0` works.  Only set it to `0` on other clusters where
+Slurm propagates device cgroups to Singularity natively.
 
 ---
 
@@ -229,19 +225,21 @@ sbatch --export=ALL,MODEL=Qwen/Qwen2.5-72B-Instruct,TP=8 \
 
 **`RuntimeError: No HIP GPUs are available` inside the container**
 
-You are running from an interactive `srun --pty bash` shell.  The cgroup device
-controller blocks `/dev/kfd` even though `rocm-smi` shows the GPU.  Fix:
+The cgroup device controller is blocking `/dev/kfd`.  This happens in **both**
+interactive (`srun --pty bash`) and batch (`sbatch`) contexts on LUMI.
+`ROCM_COMPAT=1` is now the default in `serve.sh`; if you're still seeing this,
+check that you haven't overridden it to `0`:
 
 ```bash
-ROCM_COMPAT=1 bash vllm/serve.sh --model <model> --tensor-parallel-size 1
+ROCM_COMPAT=1 bash vllm/serve.sh --model <model> --tensor-parallel-size 2
 ```
 
 **`ImportError: GLIBC_2.38 not found`**
 
-You are using `--rocm` with this SIF.  The SIF has ROCm baked in (Ubuntu 22.04,
-glibc 2.35); `--rocm` injects host libs that require glibc 2.38+.  Use
-`ROCM_COMPAT=1` (which handles the strip automatically) instead of passing
-`--rocm` manually.
+You have `ROCM_COMPAT=0` set.  That path uses `--bind /dev/kfd --bind /dev/dri`
+without `--rocm`, which doesn't grant GPU access on LUMI.  Removing `ROCM_COMPAT`
+(or setting it to `1`) fixes both issues: `--rocm` for device access, lib strip
+to avoid the glibc mismatch.
 
 **`OSError: [Errno 99] Cannot assign requested address`**
 
@@ -275,8 +273,6 @@ confirmed by `torch.cuda.is_available()` and `torch.cuda.get_device_name(0)`.
 
 Lower `GPU_MEM_UTIL` or cap the KV cache with `--max-model-len`:
 ```bash
-ROCM_COMPAT=1 bash vllm/serve.sh --model <model> \
-    --tensor-parallel-size 1 --max-model-len 8192
-GPU_MEM_UTIL=0.85 ROCM_COMPAT=1 bash vllm/serve.sh --model <model> \
-    --tensor-parallel-size 1
+bash vllm/serve.sh --model <model> --tensor-parallel-size 2 --max-model-len 8192
+GPU_MEM_UTIL=0.85 bash vllm/serve.sh --model <model> --tensor-parallel-size 2
 ```

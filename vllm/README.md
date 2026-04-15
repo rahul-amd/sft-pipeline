@@ -163,6 +163,19 @@ all N nodes to be free simultaneously.
 This design avoids a second `sbatch` submission, which matters when you are
 close to your per-user job limit.
 
+### One-time setup: install nginx on scratch
+
+nginx runs directly on the compute node host (outside any container), so it
+needs to be installed on the shared filesystem.  Run once from a login node:
+
+```bash
+conda create -p /scratch/project_462000963/users/aralikatte/sft-nginx \
+    -c conda-forge nginx -y
+```
+
+The conda-forge build uses RPATH (`$ORIGIN/../lib`) so no `LD_LIBRARY_PATH`
+is needed.  Override the install path via `NGINX_PREFIX=` if needed.
+
 ### Usage
 
 ```bash

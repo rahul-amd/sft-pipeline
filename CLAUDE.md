@@ -88,8 +88,8 @@ sft-pipeline/
 │   ├── build_sif.sh             ← build Singularity SIF from rocm/vllm Docker image
 │   ├── serve.sh                 ← start vLLM server from SIF (interactive or via Slurm)
 │   ├── slurm_serve.sh           ← Slurm batch wrapper around serve.sh (single node)
-│   ├── slurm_serve_array.sh     ← job array: one vLLM worker per task
-│   └── slurm_nginx.sh           ← nginx coordinator for job array workers
+│   ├── slurm_serve_array.sh     ← job array: one vLLM worker per task; task 0 runs nginx
+│   └── slurm_nginx.sh           ← standalone nginx coordinator (alternative/fallback)
 ├── tests/
 │   ├── conftest.py              ← shared fixtures + make_prompt_record/make_response_record
 │   ├── unit/

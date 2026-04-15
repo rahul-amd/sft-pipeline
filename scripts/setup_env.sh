@@ -292,23 +292,22 @@ if $INITIAL_SETUP && _in_container; then
     fi
     echo
 
-    # ── Install system tools via conda ───────────────────────────────────────
-    # nginx is used by vllm/slurm_serve_multi.sh as the load balancer for
-    # multi-node vLLM deployments.  It is a binary, not a pip package, so it
-    # lives here rather than in requirements.txt / pyproject.toml.
-    section "Phase 2 — system tools (nginx)"
-    log "Installing nginx from conda-forge ..."
-    conda install -n "${CONDA_ENV}" -c conda-forge nginx -y
-    python - <<'EOF'
-import subprocess, sys
-result = subprocess.run(["nginx", "-v"], capture_output=True, text=True)
-version = (result.stdout + result.stderr).strip()
-if result.returncode != 0 and not version:
-    print("  nginx: NOT FOUND — conda install may have failed", file=sys.stderr)
-    sys.exit(1)
-print(f"  nginx OK: {version}")
-EOF
-    ok "nginx installed"
+    # ── nginx: separate conda prefix on scratch ───────────────────────────────
+    # nginx is the load balancer for vllm/slurm_serve_array.sh.  It runs on
+    # the compute node host (outside any Singularity container), so it needs to
+    # live on the shared scratch filesystem — NOT inside this overlay, which
+    # is read-only when opened by multiple array tasks simultaneously.
+    #
+    # Install it once from a login node (outside this script):
+    #   SCRATCH=/scratch/project_462000963
+    #   conda create -p ${SCRATCH}/users/aralikatte/sft-nginx -c conda-forge nginx -y
+    #
+    # slurm_serve_array.sh looks for it at ${SCRATCH}/users/aralikatte/sft-nginx/bin/nginx
+    # (overridable via NGINX_PREFIX=).
+    section "Phase 2 — system tools"
+    log "nginx is installed separately on scratch (not in this overlay)."
+    log "  If not yet installed, run from a login node:"
+    log "    conda create -p \${SCRATCH}/users/aralikatte/sft-nginx -c conda-forge nginx -y"
     echo
 
     ok "Phase 2 complete."

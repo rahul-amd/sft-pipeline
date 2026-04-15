@@ -137,9 +137,18 @@ done
 echo
 
 # ── Phase 3: generate nginx config and start nginx ───────────────────────────
-if ! command -v nginx >/dev/null 2>&1; then
-    err "nginx not found in PATH."
-    err "Install it:  conda install -c conda-forge nginx"
+# nginx is installed in a dedicated conda prefix on scratch (host-accessible,
+# no container needed).  One-time setup from a login node:
+#   conda create -p ${SCRATCH}/users/aralikatte/sft-nginx -c conda-forge nginx -y
+#
+# conda-forge nginx uses RPATH ($ORIGIN/../lib) so no LD_LIBRARY_PATH needed.
+NGINX_PREFIX="${NGINX_PREFIX:-${SCRATCH}/users/aralikatte/sft-nginx}"
+NGINX_BIN="${NGINX_PREFIX}/bin/nginx"
+
+if [ ! -x "${NGINX_BIN}" ]; then
+    err "nginx not found at ${NGINX_BIN}."
+    err "Install it once from a login node:"
+    err "  conda create -p ${NGINX_PREFIX} -c conda-forge nginx -y"
     err ""
     err "The ${N_WORKERS} vLLM backends are still running and can be used directly:"
     for B in "${BACKENDS[@]}"; do err "  http://${B}/v1"; done
@@ -147,54 +156,68 @@ if ! command -v nginx >/dev/null 2>&1; then
     exit 0
 fi
 
-NGINX_CONF="$(mktemp /tmp/nginx_vllm_XXXXXX.conf)"
-NGINX_PID_FILE="/tmp/nginx_vllm_${SLURM_ARRAY_JOB_ID}.pid"
-NGINX_LOG_DIR="logs"
+NGINX_CONF="${SCRATCH}/users/aralikatte/nginx_${SLURM_ARRAY_JOB_ID}.conf"
+NGINX_LOG_DIR="$(pwd)/logs"
+NGINX_TMP="${SCRATCH}/users/aralikatte/nginx_tmp_${SLURM_ARRAY_JOB_ID}"
+mkdir -p "${NGINX_TMP}"
 
-{
-    echo "worker_processes auto;"
-    echo "pid ${NGINX_PID_FILE};"
-    echo "error_log ${NGINX_LOG_DIR}/nginx_${SLURM_ARRAY_JOB_ID}_error.log warn;"
-    echo ""
-    echo "events {"
-    echo "    worker_connections 4096;"
-    echo "}"
-    echo ""
-    echo "http {"
-    echo "    access_log ${NGINX_LOG_DIR}/nginx_${SLURM_ARRAY_JOB_ID}_access.log;"
-    echo ""
-    echo "    upstream vllm_backends {"
-    echo "        least_conn;   # prefer least-busy backend (better than RR for LLMs)"
-    for B in "${BACKENDS[@]}"; do
-        echo "        server ${B};"
-    done
-    echo "    }"
-    echo ""
-    echo "    server {"
-    echo "        listen ${LB_PORT};"
-    echo ""
-    echo "        location / {"
-    echo "            proxy_pass         http://vllm_backends;"
-    echo "            proxy_http_version 1.1;"
-    echo "            proxy_set_header   Connection \"\";   # upstream keep-alive"
-    echo "            proxy_set_header   Host \$host;"
-    echo "            proxy_set_header   X-Real-IP \$remote_addr;"
-    echo ""
-    echo "            # Long timeouts: thinking models can take minutes per request."
-    echo "            proxy_connect_timeout 60s;"
-    echo "            proxy_send_timeout    600s;"
-    echo "            proxy_read_timeout    600s;"
-    echo ""
-    echo "            # Don't buffer streaming responses (SSE / chunked transfer)."
-    echo "            proxy_buffering    off;"
-    echo "            proxy_cache        off;"
-    echo "        }"
-    echo "    }"
-    echo "}"
-} > "${NGINX_CONF}"
+cat > "${NGINX_CONF}" <<NGINXEOF
+worker_processes auto;
+error_log ${NGINX_LOG_DIR}/nginx_${SLURM_ARRAY_JOB_ID}_error.log warn;
+daemon off;
 
-nginx -c "${NGINX_CONF}"
-log "nginx started (pid $(cat "${NGINX_PID_FILE}"))"
+events {
+    worker_connections 4096;
+}
+
+http {
+    access_log ${NGINX_LOG_DIR}/nginx_${SLURM_ARRAY_JOB_ID}_access.log;
+
+    client_body_temp_path  ${NGINX_TMP}/client_body;
+    proxy_temp_path        ${NGINX_TMP}/proxy;
+    fastcgi_temp_path      ${NGINX_TMP}/fastcgi;
+    uwsgi_temp_path        ${NGINX_TMP}/uwsgi;
+    scgi_temp_path         ${NGINX_TMP}/scgi;
+
+    upstream vllm_backends {
+        least_conn;
+$(for B in "${BACKENDS[@]}"; do echo "        server ${B};"; done)
+    }
+
+    server {
+        listen ${LB_PORT};
+
+        location / {
+            proxy_pass         http://vllm_backends;
+            proxy_http_version 1.1;
+            proxy_set_header   Connection "";
+            proxy_set_header   Host \$host;
+            proxy_set_header   X-Real-IP \$remote_addr;
+
+            proxy_connect_timeout 60s;
+            proxy_send_timeout    600s;
+            proxy_read_timeout    600s;
+
+            proxy_buffering    off;
+            proxy_cache        off;
+        }
+    }
+}
+NGINXEOF
+
+log "Starting nginx (${NGINX_BIN}) ..."
+"${NGINX_BIN}" -c "${NGINX_CONF}" &
+NGINX_PID=$!
+
+sleep 2
+if ! kill -0 "${NGINX_PID}" 2>/dev/null; then
+    err "nginx exited immediately — check ${NGINX_LOG_DIR}/nginx_${SLURM_ARRAY_JOB_ID}_error.log"
+    err "The ${N_WORKERS} vLLM backends are still running and can be used directly:"
+    for B in "${BACKENDS[@]}"; do err "  http://${B}/v1"; done
+    wait "${VLLM_PID}"
+    exit 1
+fi
+log "nginx started (pid ${NGINX_PID}, listening on :${LB_PORT})"
 echo
 
 HEAD_NODE="$(hostname)"
@@ -208,5 +231,5 @@ log "Cancel with:  scancel ${SLURM_ARRAY_JOB_ID}"
 log "================================================================"
 echo
 
-# ── Keep alive: wait for vLLM to exit (i.e. until job is cancelled) ──────────
-wait "${VLLM_PID}"
+# ── Keep alive: wait for vLLM and nginx to exit (until job is cancelled) ─────
+wait "${VLLM_PID}" "${NGINX_PID}"

@@ -39,10 +39,11 @@ tenacity>=8.3
 # Export
 orjson>=3.10
 
-# ── System tools (installed via conda, not pip) ──────────────────────────────
-# nginx — load balancer for multi-node vLLM (vllm/slurm_serve_multi.sh)
-#   conda install -c conda-forge nginx
-#   (setup_env.sh Phase 2 does this automatically)
+# ── System tools (installed separately, not via pip or the pipeline overlay) ─
+# nginx — load balancer for vllm/slurm_serve_array.sh (task 0 runs it on the host).
+# Needs its own conda prefix on scratch so it's accessible outside Singularity:
+#   conda create -p /scratch/project_462000963/users/aralikatte/sft-nginx \
+#       -c conda-forge nginx -y
 
 # ── Optional extras ──────────────────────────────────────────────────────────
 # GPU inference (CUDA — laptop dev):

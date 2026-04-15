@@ -42,6 +42,22 @@ LB_PORT="${LB_PORT:-9000}"
 PORT=$(( ${PORT_BASE:-8000} + SLURM_ARRAY_TASK_ID ))
 export PORT
 
+# ── TP and model defaults ─────────────────────────────────────────────────────
+# Must match --gpus-per-node above.  Exported so serve.sh inherits them.
+export TP="${TP:-2}"
+export MODEL="${MODEL:-Qwen/Qwen3-30B-A3B-Thinking-2507}"
+
+# ── Restrict GPU visibility to the GPUs Slurm allocated ──────────────────────
+# When --rocm is used, Singularity bypasses Slurm's cgroup GPU restriction and
+# the container sees all GCDs on the node.  Slurm sets SLURM_JOB_GPUS (or
+# SLURM_STEP_GPUS) to the allocated GPU indices (e.g. "0,1").  Forwarding this
+# as ROCR_VISIBLE_DEVICES ensures vLLM only uses the allocated GPUs.
+if [ -n "${SLURM_JOB_GPUS:-}" ]; then
+    export ROCR_VISIBLE_DEVICES="${SLURM_JOB_GPUS}"
+elif [ -n "${SLURM_STEP_GPUS:-}" ]; then
+    export ROCR_VISIBLE_DEVICES="${SLURM_STEP_GPUS}"
+fi
+
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 err() { echo "[$(date '+%H:%M:%S')] ✗ $*" >&2; }
 

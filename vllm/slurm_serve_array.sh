@@ -163,6 +163,7 @@ mkdir -p "${NGINX_TMP}"
 
 cat > "${NGINX_CONF}" <<NGINXEOF
 worker_processes auto;
+pid        /tmp/nginx_${SLURM_ARRAY_JOB_ID}.pid;
 error_log ${NGINX_LOG_DIR}/nginx_${SLURM_ARRAY_JOB_ID}_error.log warn;
 daemon off;
 

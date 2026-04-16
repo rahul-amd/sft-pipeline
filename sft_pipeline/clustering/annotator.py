@@ -206,22 +206,26 @@ async def _run_async(
     """Drive all annotation tasks in a single event loop."""
     from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(base_url=api_base, api_key=api_key)
-    semaphore = asyncio.Semaphore(concurrency)
-    counter = [0, 0]   # [done, failed]
-    total = len(records)
+    # Use async-with so the client (and its underlying httpx connection pool)
+    # is closed before asyncio.run() tears down the event loop.  Without this,
+    # httpx schedules aclose() tasks that run after the loop is closed, causing
+    # "RuntimeError: Event loop is closed" noise in the logs.
+    async with AsyncOpenAI(base_url=api_base, api_key=api_key) as client:
+        semaphore = asyncio.Semaphore(concurrency)
+        counter = [0, 0]   # [done, failed]
+        total = len(records)
 
-    tasks = [
-        asyncio.create_task(
-            _annotate_one(client, model, rec, semaphore, max_tokens, temperature, counter, total)
-        )
-        for rec in records
-    ]
+        tasks = [
+            asyncio.create_task(
+                _annotate_one(client, model, rec, semaphore, max_tokens, temperature, counter, total)
+            )
+            for rec in records
+        ]
 
-    results: dict[str, dict] = {}
-    for coro in asyncio.as_completed(tasks):
-        pid, ann = await coro
-        results[pid] = ann
+        results: dict[str, dict] = {}
+        for coro in asyncio.as_completed(tasks):
+            pid, ann = await coro
+            results[pid] = ann
 
     return results
 

@@ -230,6 +230,97 @@ def estimate(
 
 
 # ---------------------------------------------------------------------------
+# annotate
+# ---------------------------------------------------------------------------
+
+@app.command()
+def annotate(
+    config: str = typer.Option(..., "--config", "-c", help="Path to YAML config file"),
+) -> None:
+    """
+    Annotate prompts via an external OpenAI-compatible API (no GPU needed).
+
+    Reads all prompts from stage1_collect.output_dir (and stage2_generate.output_dir
+    if it exists), calls the configured vLLM annotation endpoint, and writes a
+    checkpoint to {stage3_cluster.output_dir}/annotations.parquet.
+
+    Safe to interrupt and resume — the checkpoint is updated every
+    stage3_cluster.annotation_checkpoint_every records, and already-annotated
+    prompts are skipped on restart.
+
+    The checkpoint file is the same one that run_stage3() reads automatically,
+    so when you later run the full Stage 3 (with clustering) it will pick up
+    the pre-computed annotations and skip re-annotating.
+
+    Typical usage:
+      sft-pipeline annotate --config config/stage3_annotate.yaml
+    """
+    cfg = _load(config)
+    _setup_logging(cfg.global_.log_level)
+    _apply_global_env(cfg)
+
+    s3 = cfg.stage3_cluster
+    if not s3.annotation_enabled:
+        console.print(
+            "[yellow]annotation_enabled is false in config — nothing to do.\n"
+            "Set stage3_cluster.annotation_enabled: true to enable.[/yellow]"
+        )
+        raise typer.Exit(0)
+
+    from sft_pipeline.clustering.annotator import annotate_prompts
+    from sft_pipeline.storage import ensure_dir, iter_jsonl_dir
+
+    stage1_dir = Path(cfg.stage1_collect.output_dir)
+    stage2_dir = Path(cfg.stage2_generate.output_dir)
+    out_dir = Path(s3.output_dir)
+    ann_checkpoint = out_dir / "annotations.parquet"
+    ensure_dir(out_dir)
+
+    # Collect prompt_id + prompt text from stage1 (and stage2 if present)
+    prompt_records: list[dict] = []
+    seen_ids: set[str] = set()
+    for source_dir in (stage1_dir, stage2_dir):
+        if not source_dir.exists():
+            console.print(f"[dim]  {source_dir} not found — skipping[/dim]")
+            continue
+        n_before = len(prompt_records)
+        for rec in iter_jsonl_dir(source_dir):
+            pid = rec.get("prompt_id")
+            if pid and pid not in seen_ids:
+                prompt_records.append({"prompt_id": pid, "prompt": rec.get("prompt", "")})
+                seen_ids.add(pid)
+        console.print(f"  {source_dir}: {len(prompt_records) - n_before:,} prompts loaded")
+
+    if not prompt_records:
+        console.print(f"[red]No prompts found in {stage1_dir} or {stage2_dir}.[/red]")
+        raise typer.Exit(1)
+
+    console.rule("[bold cyan]Annotation")
+    console.print(
+        f"  [bold]{len(prompt_records):,}[/bold] prompts total\n"
+        f"  model         = {s3.annotation_model}\n"
+        f"  api_base      = {s3.annotation_api_base}\n"
+        f"  concurrency   = {s3.annotation_concurrency}\n"
+        f"  checkpoint    = {ann_checkpoint}\n"
+        f"  save every    = {s3.annotation_checkpoint_every:,} records\n"
+    )
+
+    annotate_prompts(
+        prompt_records=prompt_records,
+        model=s3.annotation_model,
+        api_base=s3.annotation_api_base,
+        api_key=s3.annotation_api_key,
+        concurrency=s3.annotation_concurrency,
+        max_tokens=s3.annotation_max_tokens,
+        temperature=s3.annotation_temperature,
+        checkpoint_path=ann_checkpoint,
+        checkpoint_every=s3.annotation_checkpoint_every,
+    )
+
+    console.print(f"\n[bold green]✓ Annotation complete.[/bold green]  Checkpoint: {ann_checkpoint}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

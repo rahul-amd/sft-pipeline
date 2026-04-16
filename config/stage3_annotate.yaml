@@ -1,0 +1,117 @@
+# =============================================================================
+# Stage 3 Annotation-Only Run — LLM annotation via external vLLM server.
+#
+# Runs ONLY the annotation step of Stage 3.  No embedding, no FAISS, no
+# clustering — just async HTTP calls to the configured vLLM endpoint.
+# Requires no GPUs and a single CPU node.
+#
+# Usage:
+#   sft-pipeline annotate --config config/stage3_annotate.yaml
+#
+#   Or via Slurm (1 CPU node, no GPU allocation):
+#   sbatch scripts/slurm_annotate.sh
+#   sbatch scripts/slurm_annotate.sh config/stage3_annotate.yaml
+#
+# How it integrates with the rest of Stage 3:
+#   The annotation checkpoint is written to:
+#     {stage3_cluster.output_dir}/annotations.parquet
+#   This is the exact same file that run_stage3() reads when it reaches
+#   Step C' (LLM annotation).  Run this now, and when clustering finishes
+#   later, run_stage3() will load the checkpoint and skip already-annotated
+#   prompts automatically.
+#
+# Resume:
+#   Interrupt and re-run at any time.  Already-annotated prompts are skipped
+#   on restart — the checkpoint is saved every annotation_checkpoint_every
+#   records so you lose at most that many annotations on a crash.
+#
+# Prerequisites:
+#   - Stage 1 complete: runs/research_stage1_001d/stage1/ must exist
+#   - vLLM server running at annotation_api_base (see vllm/serve.sh)
+# =============================================================================
+
+global:
+  device: "cpu"          # no GPU — annotation is pure async HTTP
+  ray_address: null      # no Ray cluster needed
+  # Must match stage3_cluster.yaml so the annotation checkpoint is written
+  # to the right directory (it will be read by run_stage3() later).
+  run_id: "research_stage3_001"
+  base_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/{run_id}"
+  hf_home: "/scratch/project_462000963/hf_cache"
+  seed: 42
+
+# ---------------------------------------------------------------------------
+# Stage 1 — disabled; output_dir is read by `sft-pipeline annotate` to find
+# all part-*.jsonl shards whose prompts need annotation.
+# ---------------------------------------------------------------------------
+stage1_collect:
+  enabled: false
+  distributed: false
+  datasets: []
+  output_dir: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/research_stage1_001d/stage1"
+
+# ---------------------------------------------------------------------------
+# Stage 2 — disabled; set output_dir if you have stage2 prompts to annotate.
+# If the directory doesn't exist, it is silently skipped.
+# ---------------------------------------------------------------------------
+stage2_generate:
+  enabled: false
+  output_dir: "{base_path}/stage2"
+
+# ---------------------------------------------------------------------------
+# Stage 3 — only the annotation_* fields are used by `sft-pipeline annotate`.
+# Everything else (embedding, FAISS, clustering) is ignored.
+# ---------------------------------------------------------------------------
+stage3_cluster:
+  enabled: false         # the full stage3 is NOT run; only annotation is
+  distributed: false
+  # Required by config schema but unused in annotation-only mode:
+  n_embedding_workers: 1
+  embedding_model: "BAAI/bge-m3"
+  embedding_batch_size: 32
+  faiss_index_type: "IVFFlat"
+  faiss_nlist: 1000
+  faiss_nprobe: 50
+  faiss_training_sample: 500000
+  clustering_algorithm: "hdbscan"
+  n_clusters: 100000
+  difficulty_easy_max_tokens: 50
+  difficulty_hard_min_tokens: 200
+
+  # ── Annotation ────────────────────────────────────────────────────────────
+  annotation_enabled: true
+  annotation_model: "Qwen/Qwen3-30B-A3B-Thinking-2507"
+
+  # Point at your running vLLM server.  If you have multiple replicas behind
+  # nginx (slurm_serve_array.sh), use the load-balancer URL and raise
+  # annotation_concurrency accordingly (rule of thumb: ~64 per replica).
+  annotation_api_base: "http://nid005388:9000/v1"
+  annotation_api_key: "none"
+
+  # Single vLLM instance → concurrency ≈ 64.
+  # Two instances behind nginx → ~128.  Four → ~256.
+  annotation_concurrency: 64
+
+  annotation_max_tokens: 1024
+  annotation_temperature: 0.2
+
+  # Save a checkpoint every N newly annotated records.
+  # Lower = more frequent saves = less re-work on crash, but slightly more I/O.
+  annotation_checkpoint_every: 10000
+
+  # Output paths — only output_dir matters here (checkpoint goes there).
+  embeddings_dir: "{base_path}/stage3/embeddings"
+  faiss_index_path: "{base_path}/stage3/faiss.index"
+  output_dir: "{base_path}/stage3"
+
+# ---------------------------------------------------------------------------
+# Stages 4–6 — disabled
+# ---------------------------------------------------------------------------
+stage4_sample:
+  enabled: false
+
+stage5_inference:
+  enabled: false
+
+stage6_filter:
+  enabled: false

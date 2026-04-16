@@ -31,9 +31,9 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --time=48:00:00
+#SBATCH --time=3:00:00
 #SBATCH --account=project_462000963
-#SBATCH --partition=small          # CPU-only partition — no GPU allocation needed
+#SBATCH --partition=dev-g          # CPU-only partition — no GPU allocation needed
 #SBATCH --output=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-annotate.out
 #SBATCH --error=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-annotate.err
 

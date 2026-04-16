@@ -32,7 +32,7 @@
 
 global:
   device: "cpu"          # no GPU — annotation is pure async HTTP
-  ray_address: null      # no Ray cluster needed
+  ray_address: "auto"    # not used (no distributed embedding), but field requires a string
   # Must match stage3_cluster.yaml so the annotation checkpoint is written
   # to the right directory (it will be read by run_stage3() later).
   run_id: "research_stage3_001"

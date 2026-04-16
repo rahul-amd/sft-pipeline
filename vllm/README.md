@@ -186,7 +186,7 @@ sbatch vllm/slurm_serve_array.sh
 sbatch --array=0-7 vllm/slurm_serve_array.sh
 
 # Different model or context length
-MAX_MODEL_LEN=8192 sbatch vllm/slurm_serve_array.sh
+sbatch --export=ALL,TP=2,MODEL=Qwen/Qwen3-30B-A3B-Thinking-2507,MAX_MODEL_LEN=8192 vllm/slurm_serve_array.sh
 ```
 
 Once task 0 is running and all backends are healthy, the URL appears in its log:

@@ -27,7 +27,7 @@
 #SBATCH --gpus-per-node=2
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=1-00:00:00
+#SBATCH --time=2-00:00:00
 #SBATCH --account=project_462000963
 #SBATCH --partition=standard-g
 #SBATCH --job-name=vllm_worker

@@ -91,7 +91,7 @@ stage3_cluster:
   annotation_model: "Qwen/Qwen3-30B-A3B-Thinking-2507"
   # Point at the nginx load balancer (slurm_serve_multi.sh), not a single node.
   # 16 replicas (4 nodes × 4 instances) → concurrency = 16 × 64 = 1024.
-  annotation_api_base: "http://nid005361:9000/v1"
+  annotation_api_base: "http://nid005388:9000/v1"
   annotation_api_key: "none"
   annotation_concurrency: 1024
   annotation_max_tokens: 1024

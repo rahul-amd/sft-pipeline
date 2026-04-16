@@ -90,7 +90,7 @@ stage3_cluster:
 
   # Single vLLM instance → concurrency ≈ 64.
   # Two instances behind nginx → ~128.  Four → ~256.
-  annotation_concurrency: 64
+  annotation_concurrency: 1024
 
   annotation_max_tokens: 1024
   annotation_temperature: 0.2

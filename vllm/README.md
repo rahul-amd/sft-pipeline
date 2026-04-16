@@ -33,7 +33,9 @@ bash vllm/serve.sh --model <HF-model-id>  [options]
 
 Options:
   --model                  HuggingFace model id (required)
-  --tensor-parallel-size N number of GPUs to use (default: 8)
+  --tensor-parallel-size N tensor-parallel size / GPUs per TP group (default: 8)
+  --data-parallel-size N   data-parallel size (default: 1; use with --enable-expert-parallel)
+  --enable-expert-parallel enable MoE expert parallelism — EP = TP × DP
   --max-model-len N        max sequence length / context window (default: model default)
   --port N                 HTTP port (default: 8000)
   --host ADDR              bind address (default: 0.0.0.0)
@@ -41,18 +43,20 @@ Options:
 
 All flags can also be set as environment variables:
 
-| Env var        | Flag equivalent           | Default                        |
-|----------------|---------------------------|--------------------------------|
-| `MODEL`        | `--model`                 | (required)                     |
-| `TP`           | `--tensor-parallel-size`  | `8`                            |
-| `MAX_MODEL_LEN`| `--max-model-len`         | unset (model default)          |
-| `PORT`         | `--port`                  | `8000`                         |
-| `BIND_HOST`    | `--host`                  | `0.0.0.0`                      |
-| `GPU_MEM_UTIL` | —                         | `0.92`                         |
-| `HF_HOME`      | —                         | `${SCRATCH}/hf_cache`          |
-| `NIC`          | —                         | auto-detected                  |
-| `SIF`          | —                         | `${SINCONS_DIR}/vllm_rocm.sif` |
-| `ROCM_COMPAT`  | —                         | `1` (see below)                |
+| Env var        | Flag equivalent             | Default                        |
+|----------------|-----------------------------|--------------------------------|
+| `MODEL`        | `--model`                   | (required)                     |
+| `TP`           | `--tensor-parallel-size`    | `8`                            |
+| `ENABLE_EP`    | `--enable-expert-parallel`  | `0` (disabled)                 |
+| `DP`           | `--data-parallel-size`      | `1`                            |
+| `MAX_MODEL_LEN`| `--max-model-len`           | unset (model default)          |
+| `PORT`         | `--port`                    | `8000`                         |
+| `BIND_HOST`    | `--host`                    | `0.0.0.0`                      |
+| `GPU_MEM_UTIL` | —                           | `0.92`                         |
+| `HF_HOME`      | —                           | `${SCRATCH}/hf_cache`          |
+| `NIC`          | —                           | auto-detected                  |
+| `SIF`          | —                           | `${SINCONS_DIR}/vllm_rocm.sif` |
+| `ROCM_COMPAT`  | —                           | `1` (see below)                |
 
 ---
 
@@ -79,27 +83,40 @@ a mismatch at startup and print a clear error before any GPU work starts.
 
 ---
 
-## Model sizes and tensor parallelism
+## Model sizes, tensor parallelism, and expert parallelism
 
 Each AMD MI250X chip has **2 GCDs** (each GCD ≈ 64 GB HBM2e).
 A full node has 8 chips = **16 GCDs**.
 
+**Dense models** — use TP only:
+
 | Model size | Recommended TP | `--gpus-per-node` |
 |------------|---------------|-------------------|
 | 7B         | 1             | 1                 |
-| 30B MoE    | 1             | 1                 |
 | 72B        | 8             | 8                 |
-| 122B MoE   | 16            | 16                |
+
+**MoE models** — use `ENABLE_EP=1` to shard experts across GPUs.
+EP = TP × DP; more GPUs → more expert shards → higher throughput.
+
+| Model      | TP | DP | EP | `--gpus-per-node` | Notes |
+|------------|----|----|----|--------------------|-------|
+| 30B MoE    | 2  | 1  | 2  | 2                  | fits one node with default array |
+| 30B MoE    | 2  | 4  | 8  | 8                  | half a node, max EP for 30B |
+| 122B MoE   | 8  | 2  | 16 | 16                 | full node |
 
 ```bash
-# 30B MoE example (fits on 1 GCD with max-model-len cap)
-bash vllm/serve.sh \
-    --model Qwen/Qwen3-30B-A3B-Thinking-2507 \
-    --tensor-parallel-size 1 \
-    --max-model-len 8192
-
-# 72B example
+# Dense 72B
 bash vllm/serve.sh --model Qwen/Qwen2.5-72B-Instruct --tensor-parallel-size 8
+
+# MoE 30B — EP across 2 GCDs (TP only, no extra DP)
+ENABLE_EP=1 bash vllm/serve.sh \
+    --model Qwen/Qwen3-30B-A3B-Thinking-2507 \
+    --tensor-parallel-size 2
+
+# MoE 30B — EP=8 (TP=2, DP=4, 8 GPUs per worker)
+ENABLE_EP=1 DP=4 bash vllm/serve.sh \
+    --model Qwen/Qwen3-30B-A3B-Thinking-2507 \
+    --tensor-parallel-size 2
 ```
 
 ---
@@ -179,14 +196,20 @@ is needed.  Override the install path via `NGINX_PREFIX=` if needed.
 ### Usage
 
 ```bash
-# Default: 16 workers (array tasks 0–15), 2 GPUs each — one command
+# Default: 64 workers (array tasks 0–63), TP=2, no EP — dense model or MoE without EP
 sbatch vllm/slurm_serve_array.sh
 
 # 8 workers
 sbatch --array=0-7 vllm/slurm_serve_array.sh
 
-# Different model or context length
-sbatch --export=ALL,TP=2,ENABLE_EP=1,MODEL=Qwen/Qwen3-30B-A3B-Thinking-2507,MAX_MODEL_LEN=8192 vllm/slurm_serve_array.sh
+# MoE model: EP across TP only (2 GPUs/worker, EP=2) — same --gpus-per-node=2
+ENABLE_EP=1 sbatch vllm/slurm_serve_array.sh
+
+# MoE model: TP=2, DP=4 → EP=8, 8 GPUs per worker
+ENABLE_EP=1 DP=4 sbatch --gpus-per-node=8 vllm/slurm_serve_array.sh
+
+# Cap context window
+MAX_MODEL_LEN=8192 sbatch vllm/slurm_serve_array.sh
 ```
 
 Once task 0 is running and all backends are healthy, the URL appears in its log:
@@ -205,7 +228,9 @@ annotation_concurrency: 1024   # N_WORKERS × 64
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MODEL` | `Qwen/Qwen3-30B-A3B-Thinking-2507` | HF model id |
-| `TP` | `2` | Tensor-parallel size (GCDs per replica) |
+| `TP` | `2` | Tensor-parallel size (GCDs per TP group) |
+| `ENABLE_EP` | `0` | `1` to enable expert parallelism (MoE models) |
+| `DP` | `1` | Data-parallel size; total GPUs/worker = TP × DP |
 | `MAX_MODEL_LEN` | unset | Max sequence length |
 | `PORT_BASE` | `8000` | Base port; actual port = `PORT_BASE + task_id` |
 | `LB_PORT` | `9000` | nginx listen port on task-0 node |
@@ -215,9 +240,14 @@ Pass overrides via environment or `--export`:
 ```bash
 MAX_MODEL_LEN=8192 sbatch vllm/slurm_serve_array.sh
 
+# Dense 72B, 4 workers, 8 GPUs each
 sbatch --export=ALL,MODEL=Qwen/Qwen2.5-72B-Instruct,TP=8 \
        --array=0-3 \
        vllm/slurm_serve_array.sh
+
+# MoE 30B with EP=8, 8 workers, 8 GPUs each
+ENABLE_EP=1 TP=2 DP=4 sbatch --gpus-per-node=8 --array=0-7 \
+    vllm/slurm_serve_array.sh
 ```
 
 ---

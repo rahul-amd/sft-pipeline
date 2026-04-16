@@ -1,11 +1,14 @@
 #!/bin/bash
 # =============================================================================
-# Job array: one vLLM worker per task, 1 node × 2 GPUs each.
+# Job array: one vLLM worker per task, 1 node per task.
 # Task 0 additionally acts as the nginx coordinator — no separate job needed.
 #
 # Submit with:
-#   sbatch vllm/slurm_serve_array.sh                  # 16 workers (default)
+#   sbatch vllm/slurm_serve_array.sh                  # 16 workers, TP=2 (default)
 #   sbatch --array=0-7 vllm/slurm_serve_array.sh      # 8 workers
+#
+#   # Expert parallelism for MoE models (EP = TP × DP; GPUs per worker = TP × DP):
+#   TP=2 DP=4 sbatch --gpus-per-node=8 vllm/slurm_serve_array.sh   # EP=8, 8 GPUs/worker
 #
 # Task 0 starts vLLM in the background, waits for all workers to register and
 # pass /health, then starts nginx on port LB_PORT.  The load balancer URL is
@@ -14,6 +17,11 @@
 # Environment overrides:
 #   MODEL         HF model id          (default: Qwen/Qwen3-30B-A3B-Thinking-2507)
 #   TP            tensor-parallel size (default: 2)
+#   DP            data-parallel size   (default: 1, i.e. EP disabled)
+#                 MoE models: set DP > 1 to enable expert parallelism.
+#                 vLLM computes EP = TP × DP automatically.
+#                 Total GPUs per worker = TP × DP.
+#                 Must also pass --gpus-per-node=(TP × DP) to sbatch when DP > 1.
 #   MAX_MODEL_LEN max sequence length  (default: unset → model default)
 #   PORT_BASE     base HTTP port       (default: 8000); actual port = PORT_BASE + SLURM_ARRAY_TASK_ID
 #                 Two tasks on the same node get different ports automatically.
@@ -25,6 +33,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-node=2
+# ↑ Default: TP=2, DP=1 (no EP).  Override when using DP > 1:
+#   TP=2 DP=4 sbatch --gpus-per-node=8 vllm/slurm_serve_array.sh   # EP=8
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=2-00:00:00
@@ -42,10 +52,25 @@ LB_PORT="${LB_PORT:-9000}"
 PORT=$(( ${PORT_BASE:-8000} + SLURM_ARRAY_TASK_ID ))
 export PORT
 
-# ── TP and model defaults ─────────────────────────────────────────────────────
-# Must match --gpus-per-node above.  Exported so serve.sh inherits them.
+# ── TP, DP and model defaults ─────────────────────────────────────────────────
+# Exported so serve.sh inherits them.
+# --gpus-per-node must equal TP × DP.
 export TP="${TP:-2}"
+export DP="${DP:-1}"
 export MODEL="${MODEL:-Qwen/Qwen3-30B-A3B-Thinking-2507}"
+
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
+err() { echo "[$(date '+%H:%M:%S')] ✗ $*" >&2; }
+
+# Advisory check: warn if allocated GPU count doesn't match TP × DP.
+EXPECTED_GPUS=$(( TP * DP ))
+if [ -n "${SLURM_JOB_GPUS:-}" ]; then
+    ALLOC_GPUS=$(echo "${SLURM_JOB_GPUS}" | tr ',' '\n' | wc -l)
+    if [ "${ALLOC_GPUS}" -ne "${EXPECTED_GPUS}" ]; then
+        log "Warning: allocated ${ALLOC_GPUS} GPU(s) but TP=${TP} × DP=${DP} expects ${EXPECTED_GPUS}."
+        log "  Re-submit with: TP=${TP} DP=${DP} sbatch --gpus-per-node=${EXPECTED_GPUS} vllm/slurm_serve_array.sh"
+    fi
+fi
 
 # ── Restrict GPU visibility to the GPUs Slurm allocated ──────────────────────
 # When --rocm is used, Singularity bypasses Slurm's cgroup GPU restriction and
@@ -57,9 +82,6 @@ if [ -n "${SLURM_JOB_GPUS:-}" ]; then
 elif [ -n "${SLURM_STEP_GPUS:-}" ]; then
     export ROCR_VISIBLE_DEVICES="${SLURM_STEP_GPUS}"
 fi
-
-log() { echo "[$(date '+%H:%M:%S')] $*"; }
-err() { echo "[$(date '+%H:%M:%S')] ✗ $*" >&2; }
 
 # ── Rendezvous: advertise this worker's address ───────────────────────────────
 # Task 0 reads these files to build the nginx upstream config.

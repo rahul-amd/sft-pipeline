@@ -6,15 +6,22 @@
 #
 # Usage:
 #   bash vllm/serve.sh --model <HF-model-id>  [--tensor-parallel-size N]
+#                                              [--data-parallel-size N]
 #
 #   # Examples
 #   bash vllm/serve.sh --model Qwen/Qwen2.5-7B-Instruct
 #   bash vllm/serve.sh --model Qwen/Qwen2.5-72B-Instruct --tensor-parallel-size 8
 #   MODEL=Qwen/Qwen3.5-122B-A10B TP=16 bash vllm/serve.sh
+#   # MoE with expert parallelism: TP=2, DP=4 → EP=8, 8 GPUs per worker
+#   MODEL=Qwen/Qwen3-30B-A3B-Thinking-2507 TP=2 DP=4 bash vllm/serve.sh
 #
 # Environment overrides:
 #   MODEL        HuggingFace model id (required unless --model is passed)
 #   TP           tensor-parallel size  (default: 8, one per MI250X GCD pair)
+#   DP           data-parallel size    (default: 1, i.e. disabled)
+#                MoE models: set DP > 1 to enable expert parallelism.
+#                vLLM computes EP = TP × DP automatically.
+#                Total GPUs per worker = TP × DP.
 #   PORT         server port           (default: 8000)
 #   BIND_HOST    bind address          (default: 0.0.0.0)
 #                NOTE: do NOT use HOST — it is a reserved shell variable on
@@ -44,6 +51,7 @@ SIF="${SIF:-${SINCONS_DIR}/vllm_rocm.sif}"
 
 MODEL="${MODEL:-}"
 TP="${TP:-8}"
+DP="${DP:-1}"
 PORT="${PORT:-8000}"
 BIND_HOST="${BIND_HOST:-0.0.0.0}"   # NOT HOST — that env var is set by the OS on Cray/LUMI nodes
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.92}"
@@ -57,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --model)                MODEL="$2";         shift 2 ;;
         --tensor-parallel-size) TP="$2";            shift 2 ;;
+        --data-parallel-size)   DP="$2";            shift 2 ;;
         --max-model-len)        MAX_MODEL_LEN="$2"; shift 2 ;;
         --port)                 PORT="$2";          shift 2 ;;
         --host)                 BIND_HOST="$2";     shift 2 ;;
@@ -103,6 +112,10 @@ VLLM_ARGS=(
     --trust-remote-code
 )
 
+if [ "${DP}" -gt 1 ]; then
+    VLLM_ARGS+=(--data-parallel-size "${DP}" --enable-expert-parallel)
+fi
+
 if [ -n "${MAX_MODEL_LEN}" ]; then
     VLLM_ARGS+=(--max-model-len "${MAX_MODEL_LEN}")
 fi
@@ -112,6 +125,7 @@ echo
 log "SIF              : ${SIF}"
 log "Model            : ${MODEL}"
 log "Tensor parallel  : ${TP}"
+log "Data parallel    : ${DP}$( [ "${DP}" -gt 1 ] && echo " (EP = TP × DP = $(( TP * DP )))" || echo " (EP disabled)" )"
 log "Max seq len      : ${MAX_MODEL_LEN:-(model default)}"
 log "Bind host        : ${BIND_HOST}"
 log "Port             : ${PORT}"

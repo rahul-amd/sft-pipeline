@@ -30,7 +30,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --mem=200G
 #SBATCH --time=3:00:00
 #SBATCH --account=project_462000963
 #SBATCH --partition=dev-g          # CPU-only partition — no GPU allocation needed

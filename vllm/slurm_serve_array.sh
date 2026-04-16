@@ -30,7 +30,7 @@
 #   GPU_MEM_UTIL  GPU memory fraction  (default: 0.92)
 #   SCRATCH       base scratch path    (default: /scratch/project_462000963)
 # =============================================================================
-#SBATCH --array=0-15
+#SBATCH --array=0-63
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-node=2

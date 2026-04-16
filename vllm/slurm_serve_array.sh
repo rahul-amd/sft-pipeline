@@ -7,8 +7,10 @@
 #   sbatch vllm/slurm_serve_array.sh                  # 16 workers, TP=2 (default)
 #   sbatch --array=0-7 vllm/slurm_serve_array.sh      # 8 workers
 #
-#   # Expert parallelism for MoE models (EP = TP × DP; GPUs per worker = TP × DP):
-#   TP=2 DP=4 sbatch --gpus-per-node=8 vllm/slurm_serve_array.sh   # EP=8, 8 GPUs/worker
+#   # MoE: EP across TP only (2 GPUs/worker, EP=2):
+#   ENABLE_EP=1 sbatch vllm/slurm_serve_array.sh
+#   # MoE: EP with extra DP (8 GPUs/worker, EP=8):
+#   ENABLE_EP=1 TP=2 DP=4 sbatch --gpus-per-node=8 vllm/slurm_serve_array.sh
 #
 # Task 0 starts vLLM in the background, waits for all workers to register and
 # pass /health, then starts nginx on port LB_PORT.  The load balancer URL is
@@ -17,11 +19,10 @@
 # Environment overrides:
 #   MODEL         HF model id          (default: Qwen/Qwen3-30B-A3B-Thinking-2507)
 #   TP            tensor-parallel size (default: 2)
-#   DP            data-parallel size   (default: 1, i.e. EP disabled)
-#                 MoE models: set DP > 1 to enable expert parallelism.
-#                 vLLM computes EP = TP × DP automatically.
-#                 Total GPUs per worker = TP × DP.
-#                 Must also pass --gpus-per-node=(TP × DP) to sbatch when DP > 1.
+#   ENABLE_EP     1 to enable expert parallelism (default: 0; set for MoE models)
+#   DP            data-parallel size   (default: 1)
+#                 Only meaningful when ENABLE_EP=1. Total GPUs = TP × DP.
+#                 Pass --gpus-per-node=(TP × DP) to sbatch when DP > 1.
 #   MAX_MODEL_LEN max sequence length  (default: unset → model default)
 #   PORT_BASE     base HTTP port       (default: 8000); actual port = PORT_BASE + SLURM_ARRAY_TASK_ID
 #                 Two tasks on the same node get different ports automatically.
@@ -33,8 +34,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-node=2
-# ↑ Default: TP=2, DP=1 (no EP).  Override when using DP > 1:
-#   TP=2 DP=4 sbatch --gpus-per-node=8 vllm/slurm_serve_array.sh   # EP=8
+# ↑ Default: TP=2, DP=1.  For MoE + extra DP, override at submit time:
+#   ENABLE_EP=1 TP=2 DP=4 sbatch --gpus-per-node=8 vllm/slurm_serve_array.sh
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=2-00:00:00
@@ -57,6 +58,7 @@ export PORT
 # --gpus-per-node must equal TP × DP.
 export TP="${TP:-2}"
 export DP="${DP:-1}"
+export ENABLE_EP="${ENABLE_EP:-0}"
 export MODEL="${MODEL:-Qwen/Qwen3-30B-A3B-Thinking-2507}"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -68,7 +70,7 @@ if [ -n "${SLURM_JOB_GPUS:-}" ]; then
     ALLOC_GPUS=$(echo "${SLURM_JOB_GPUS}" | tr ',' '\n' | wc -l)
     if [ "${ALLOC_GPUS}" -ne "${EXPECTED_GPUS}" ]; then
         log "Warning: allocated ${ALLOC_GPUS} GPU(s) but TP=${TP} × DP=${DP} expects ${EXPECTED_GPUS}."
-        log "  Re-submit with: TP=${TP} DP=${DP} sbatch --gpus-per-node=${EXPECTED_GPUS} vllm/slurm_serve_array.sh"
+        log "  Re-submit with: ENABLE_EP=${ENABLE_EP} TP=${TP} DP=${DP} sbatch --gpus-per-node=${EXPECTED_GPUS} vllm/slurm_serve_array.sh"
     fi
 fi
 

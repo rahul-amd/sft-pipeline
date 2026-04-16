@@ -313,6 +313,7 @@ def annotate_prompts(
 
     t0 = time.monotonic()
     newly_done = 0
+    already_done = len(prompt_records) - len(remaining)  # records loaded from checkpoint
 
     # Process in chunks so we checkpoint periodically without losing progress
     for chunk_start in range(0, len(remaining), checkpoint_every):
@@ -320,8 +321,8 @@ def annotate_prompts(
         chunk_end = chunk_start + len(chunk)
         logger.info(
             "Annotation: chunk %d–%d / %d ...",
-            len(annotation_map) - (len(prompt_records) - len(remaining)) + chunk_start,
-            len(annotation_map) - (len(prompt_records) - len(remaining)) + chunk_end,
+            already_done + chunk_start,
+            already_done + chunk_end,
             len(prompt_records),
         )
 

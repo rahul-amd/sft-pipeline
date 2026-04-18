@@ -1,0 +1,3 @@
+# Force LF line endings for shell scripts — prevents Windows autocrlf from
+# introducing \r\n which breaks shebang lines under Linux/Singularity exec.
+*.sh text eol=lf

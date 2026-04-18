@@ -85,7 +85,7 @@ stage3_cluster:
   # Point at your running vLLM server.  If you have multiple replicas behind
   # nginx (slurm_serve_array.sh), use the load-balancer URL and raise
   # annotation_concurrency accordingly (rule of thumb: ~64 per replica).
-  annotation_api_base: "http://nid005388:9000/v1"
+  annotation_api_base: "http://nid007475:9000/v1"
   annotation_api_key: "none"
 
   # Rule of thumb: ~64 per vLLM replica.

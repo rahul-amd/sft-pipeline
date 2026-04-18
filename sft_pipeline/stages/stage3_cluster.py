@@ -23,6 +23,7 @@ Distributed:  each worker checks for a per-worker sentinel file
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -211,7 +212,12 @@ def _embed_distributed(
 # Main stage entry point
 # ---------------------------------------------------------------------------
 
-def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
+def run_stage3(
+    cfg: PipelineConfig,
+    cm: CheckpointManager,
+    dump_annotations_path: Path | None = None,
+    import_annotations_path: Path | None = None,
+) -> None:
     s1 = cfg.stage1_collect
     s2 = cfg.stage2_generate
     s3 = cfg.stage3_cluster
@@ -350,19 +356,111 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     # ------------------------------------------------------------------
     # Step C': LLM annotation (optional)
-    # Sends each prompt to an OpenAI-compatible API server and returns a
-    # JSON annotation {domain, topics, difficulty, language}.  LLM values
-    # take priority over heuristics when both are present.
+    # Three modes:
+    #   dump   — write annotation requests as JSONL and exit (offline workflow)
+    #   import — read pre-computed responses from JSONL; fall back online for misses
+    #   online — call the API directly (original behaviour)
     # ------------------------------------------------------------------
+    annotation_records = [
+        {"prompt_id": pid, "prompt": prompts_text[i]}
+        for i, pid in enumerate(ids)
+    ]
     annotation_map: dict[str, dict] = {}
-    if s3.annotation_enabled:
+
+    if dump_annotations_path is not None:
+        # ── Dump mode ──────────────────────────────────────────────────
+        # Write one OpenAI-compatible request per prompt and exit.  The
+        # caller is expected to run inference elsewhere and then re-run
+        # Stage 3 with --import-annotations to continue.
+        from sft_pipeline.clustering.annotator import build_annotation_request
+
+        dump_annotations_path = Path(dump_annotations_path)
+        dump_annotations_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "Stage3: dumping %d annotation requests → %s",
+            len(annotation_records), dump_annotations_path,
+        )
+        with open(dump_annotations_path, "w", encoding="utf-8") as fh:
+            for rec in annotation_records:
+                fh.write(json.dumps(build_annotation_request(rec)) + "\n")
+        logger.info(
+            "Stage3: annotation dump complete (%d records). "
+            "Re-run with --import-annotations <results.jsonl> to continue.",
+            len(annotation_records),
+        )
+        return  # exit cleanly — output JSONL not written yet
+
+    elif import_annotations_path is not None:
+        # ── Import mode ────────────────────────────────────────────────
+        # Parse pre-computed raw responses from JSONL.  For any prompt_id
+        # absent from the file, fall back to online inference (if enabled)
+        # or use heuristic defaults with a loud warning.
+        from sft_pipeline.clustering.annotator import parse_and_validate_annotation
+
+        import_annotations_path = Path(import_annotations_path)
+        logger.info("Stage3: importing annotation results from %s", import_annotations_path)
+
+        results_map: dict[str, str] = {}
+        with open(import_annotations_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                results_map[obj["prompt_id"]] = obj["response"]
+
+        missing_ids: list[str] = []
+        for rec in annotation_records:
+            pid = rec["prompt_id"]
+            if pid in results_map:
+                annotation_map[pid] = parse_and_validate_annotation(results_map[pid])
+            else:
+                missing_ids.append(pid)
+
+        if missing_ids:
+            logger.warning(
+                "Stage3: %d prompt_id(s) missing from import file — "
+                "these will be handled separately.",
+                len(missing_ids),
+            )
+            if s3.annotation_enabled:
+                logger.warning(
+                    "Stage3: annotation_enabled=true — running online inference "
+                    "for %d missing prompt(s).",
+                    len(missing_ids),
+                )
+                from sft_pipeline.clustering.annotator import annotate_prompts
+
+                missing_set = set(missing_ids)
+                missing_records = [r for r in annotation_records if r["prompt_id"] in missing_set]
+                ann_checkpoint = Path(s3.output_dir) / "annotations.parquet"
+                online_map = annotate_prompts(
+                    prompt_records=missing_records,
+                    model=s3.annotation_model,
+                    api_base=s3.annotation_api_base,
+                    api_key=s3.annotation_api_key,
+                    concurrency=s3.annotation_concurrency,
+                    max_tokens=s3.annotation_max_tokens,
+                    temperature=s3.annotation_temperature,
+                    checkpoint_path=ann_checkpoint,
+                    checkpoint_every=s3.annotation_checkpoint_every,
+                )
+                annotation_map.update(online_map)
+            else:
+                logger.warning(
+                    "Stage3: annotation_enabled=false — using heuristic defaults "
+                    "(domain='other', difficulty='medium') for %d missing prompt(s). "
+                    "Set annotation_enabled: true in config to enable online fallback.",
+                    len(missing_ids),
+                )
+
+        logger.info("Stage3: import complete — %d records annotated", len(annotation_map))
+
+    elif s3.annotation_enabled:
+        # ── Online mode (original behaviour) ──────────────────────────
         from sft_pipeline.clustering.annotator import annotate_prompts
 
         ann_checkpoint = Path(s3.output_dir) / "annotations.parquet"
-        annotation_records = [
-            {"prompt_id": pid, "prompt": prompts_text[i]}
-            for i, pid in enumerate(ids)
-        ]
         logger.info(
             "Stage3: LLM annotation enabled — %d prompts → %s  (concurrency=%d)",
             len(annotation_records), s3.annotation_api_base, s3.annotation_concurrency,
@@ -379,6 +477,7 @@ def run_stage3(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             checkpoint_every=s3.annotation_checkpoint_every,
         )
         logger.info("Stage3: annotation complete — %d records", len(annotation_map))
+
     else:
         logger.info("Stage3: LLM annotation disabled (annotation_enabled: false)")
 

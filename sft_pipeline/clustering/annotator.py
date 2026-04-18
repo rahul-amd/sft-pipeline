@@ -204,13 +204,27 @@ async def _run_async(
     temperature: float,
 ) -> dict[str, dict]:
     """Drive all annotation tasks in a single event loop."""
+    import httpx
     from openai import AsyncOpenAI
+
+    # httpx defaults to max_connections=100 (some versions) or 1000.  Either
+    # way, high-concurrency runs (e.g. 4096 against 64 vLLM workers) need the
+    # pool sized to match — otherwise requests queue inside httpx and workers
+    # are underutilised.  We also raise the timeout: large thinking models can
+    # take 30–60 s per request; the httpx default (5 s) is too aggressive.
+    http_client = httpx.AsyncClient(
+        limits=httpx.Limits(
+            max_connections=concurrency + 128,
+            max_keepalive_connections=concurrency,
+        ),
+        timeout=httpx.Timeout(timeout=120.0),
+    )
 
     # Use async-with so the client (and its underlying httpx connection pool)
     # is closed before asyncio.run() tears down the event loop.  Without this,
     # httpx schedules aclose() tasks that run after the loop is closed, causing
     # "RuntimeError: Event loop is closed" noise in the logs.
-    async with AsyncOpenAI(base_url=api_base, api_key=api_key) as client:
+    async with AsyncOpenAI(base_url=api_base, api_key=api_key, http_client=http_client) as client:
         semaphore = asyncio.Semaphore(concurrency)
         counter = [0, 0]   # [done, failed]
         total = len(records)
@@ -266,6 +280,37 @@ def _save_checkpoint(annotation_map: dict[str, dict], path: Path) -> None:
     ]
     table = pa.Table.from_pylist(rows, schema=_CHECKPOINT_SCHEMA)
     pq.write_table(table, path)
+
+
+# ---------------------------------------------------------------------------
+# Public helpers for offline annotation workflow
+# ---------------------------------------------------------------------------
+
+def build_annotation_request(record: dict) -> dict:
+    """Build an OpenAI-compatible request dict for a single prompt record.
+
+    Returns a dict suitable for writing to a JSONL file that can be sent to any
+    OpenAI-compatible inference server::
+
+        {"prompt_id": "sha256:...", "messages": [{"role": "system", ...}, {"role": "user", ...}]}
+    """
+    return {
+        "prompt_id": record["prompt_id"],
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": _truncate_prompt(record["prompt"])},
+        ],
+    }
+
+
+def parse_and_validate_annotation(response_text: str) -> dict:
+    """Parse a raw LLM response text into a validated annotation dict.
+
+    Handles thinking-model output (<think>...</think> blocks), markdown fences,
+    and partial JSON — identical to the parsing done during online annotation.
+    Returns validated defaults for any missing or invalid fields.
+    """
+    return _validate_annotation(_parse_annotation(response_text))
 
 
 # ---------------------------------------------------------------------------

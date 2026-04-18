@@ -128,10 +128,32 @@ STAGE_NAMES = [
 def run_stage(
     config: str = typer.Option(..., "--config", "-c", help="Path to YAML config file"),
     stage: str = typer.Argument(help=f"Stage name: {', '.join(STAGE_NAMES)}"),
+    dump_annotations: Optional[Path] = typer.Option(
+        None, "--dump-annotations",
+        help=(
+            "[stage3_cluster only] Write annotation requests to PATH as JSONL "
+            "(OpenAI-compatible messages format) and exit. "
+            "Run inference elsewhere, then re-run with --import-annotations."
+        ),
+    ),
+    import_annotations: Optional[Path] = typer.Option(
+        None, "--import-annotations",
+        help=(
+            "[stage3_cluster only] Read pre-computed annotation responses from PATH "
+            "(JSONL with prompt_id + response fields). Falls back to online inference "
+            "for any prompt_ids missing from the file (requires annotation_enabled: true)."
+        ),
+    ),
 ) -> None:
     """Run a single pipeline stage by name."""
     if stage not in STAGE_NAMES:
         console.print(f"[red]Unknown stage '{stage}'. Valid: {', '.join(STAGE_NAMES)}[/red]")
+        raise typer.Exit(1)
+
+    if (dump_annotations or import_annotations) and stage != "stage3_cluster":
+        console.print(
+            "[red]--dump-annotations and --import-annotations are only valid for stage3_cluster[/red]"
+        )
         raise typer.Exit(1)
 
     cfg = _load(config)
@@ -142,12 +164,22 @@ def run_stage(
 
     with CheckpointManager(cfg.global_.checkpoint_db) as cm:
         console.rule(f"[bold blue]{stage}")
-        _dispatch_stage(stage, cfg, cm)
+        _dispatch_stage(
+            stage, cfg, cm,
+            dump_annotations_path=dump_annotations,
+            import_annotations_path=import_annotations,
+        )
 
     console.print(f"\n[bold green]{stage} complete.[/bold green]")
 
 
-def _dispatch_stage(stage: str, cfg, cm) -> None:
+def _dispatch_stage(
+    stage: str,
+    cfg,
+    cm,
+    dump_annotations_path: Optional[Path] = None,
+    import_annotations_path: Optional[Path] = None,
+) -> None:
     if stage == "stage1_collect":
         from sft_pipeline.stages.stage1_collect import run_stage1
         run_stage1(cfg, cm)
@@ -156,7 +188,9 @@ def _dispatch_stage(stage: str, cfg, cm) -> None:
         run_stage2(cfg, cm)
     elif stage == "stage3_cluster":
         from sft_pipeline.stages.stage3_cluster import run_stage3
-        run_stage3(cfg, cm)
+        run_stage3(cfg, cm,
+                   dump_annotations_path=dump_annotations_path,
+                   import_annotations_path=import_annotations_path)
     elif stage == "stage4_sample":
         from sft_pipeline.stages.stage4_sample import run_stage4
         run_stage4(cfg, cm)

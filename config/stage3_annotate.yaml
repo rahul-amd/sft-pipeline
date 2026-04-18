@@ -88,9 +88,9 @@ stage3_cluster:
   annotation_api_base: "http://nid005388:9000/v1"
   annotation_api_key: "none"
 
-  # Single vLLM instance → concurrency ≈ 64.
-  # Two instances behind nginx → ~128.  Four → ~256.
-  annotation_concurrency: 1024
+  # Rule of thumb: ~64 per vLLM replica.
+  # 64 replicas × 64 = 4096.
+  annotation_concurrency: 4096
 
   annotation_max_tokens: 1024
   annotation_temperature: 0.2

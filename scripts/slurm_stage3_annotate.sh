@@ -77,13 +77,13 @@ SING="singularity exec \
 # Extract api_base from config and do a quick /health check.
 API_BASE=$(grep 'annotation_api_base:' "${PROJECT_DIR}/${PIPELINE_CONFIG}" \
     | awk '{print $2}' | tr -d '"' | head -1)
-HEALTH_URL="${API_BASE%/v1}/health"
+MODELS_URL="${API_BASE}/models"
 
-log "Checking vLLM server at $HEALTH_URL ..."
-if curl --silent --fail --max-time 10 "$HEALTH_URL" > /dev/null 2>&1; then
+log "Checking vLLM server at $MODELS_URL ..."
+if curl --silent --fail --max-time 10 "$MODELS_URL" > /dev/null 2>&1; then
     log "vLLM server is reachable."
 else
-    log "WARNING: vLLM server health check failed ($HEALTH_URL)."
+    log "WARNING: vLLM server health check failed ($MODELS_URL)."
     log "         Make sure the server is running before submitting this job."
     log "         Continuing anyway — annotation will fail immediately if unreachable."
 fi

@@ -254,14 +254,21 @@ def run_stage3(
         dump_annotations_path = Path(dump_annotations_path)
         dump_annotations_path.parent.mkdir(parents=True, exist_ok=True)
 
+        logger.info(
+            "Stage3 --dump-annotations: streaming prompts from %s + %s → %s",
+            stage1_dir, stage2_dir, dump_annotations_path,
+        )
+
         n_written = 0
         with open(dump_annotations_path, "w", encoding="utf-8") as fh:
             for rec in _all_prompts_iter(stage1_dir, stage2_dir):
                 fh.write(json.dumps(build_annotation_request(rec)) + "\n")
                 n_written += 1
+                if n_written % 100_000 == 0:
+                    logger.info("Stage3 --dump-annotations: %d records written ...", n_written)
 
         logger.info(
-            "Stage3 --dump-annotations: wrote %d annotation requests → %s\n"
+            "Stage3 --dump-annotations: done — %d annotation requests → %s\n"
             "Re-run with --import-annotations <results.jsonl> to continue.",
             n_written, dump_annotations_path,
         )

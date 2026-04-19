@@ -47,6 +47,11 @@ logger = logging.getLogger(__name__)
 STAGE = "stage3_cluster"
 
 
+def _all_prompts_iter(stage1_dir: Path, stage2_dir: Path):
+    yield from iter_jsonl_dir(stage1_dir)
+    yield from iter_jsonl_dir(stage2_dir)
+
+
 # ---------------------------------------------------------------------------
 # Distributed embedding helper
 # ---------------------------------------------------------------------------
@@ -230,11 +235,41 @@ def run_stage3(
 
     cm.mark_stage_started(STAGE)
 
+    stage1_dir = Path(s1.output_dir)
+    stage2_dir = Path(s2.output_dir)
+
+    # ------------------------------------------------------------------
+    # Dump mode fast-path: only needs the raw prompt list — skip all
+    # embedding, FAISS, and clustering work.
+    # ------------------------------------------------------------------
+    if dump_annotations_path is not None:
+        from sft_pipeline.clustering.annotator import build_annotation_request
+
+        stage1_shards = list(stage1_dir.glob("part-*.jsonl"))
+        if not stage1_shards:
+            raise FileNotFoundError(
+                f"Stage 3 --dump-annotations: no part-*.jsonl shards found in {stage1_dir}."
+            )
+
+        dump_annotations_path = Path(dump_annotations_path)
+        dump_annotations_path.parent.mkdir(parents=True, exist_ok=True)
+
+        n_written = 0
+        with open(dump_annotations_path, "w", encoding="utf-8") as fh:
+            for rec in _all_prompts_iter(stage1_dir, stage2_dir):
+                fh.write(json.dumps(build_annotation_request(rec)) + "\n")
+                n_written += 1
+
+        logger.info(
+            "Stage3 --dump-annotations: wrote %d annotation requests → %s\n"
+            "Re-run with --import-annotations <results.jsonl> to continue.",
+            n_written, dump_annotations_path,
+        )
+        return
+
     # ------------------------------------------------------------------
     # Step A: Embed all prompts from Stages 1 and 2
     # ------------------------------------------------------------------
-    stage1_dir = Path(s1.output_dir)
-    stage2_dir = Path(s2.output_dir)
 
     # Validate that at least the Stage 1 input directory has shards before
     # we start a potentially multi-hour embedding job.
@@ -249,8 +284,7 @@ def run_stage3(
     logger.info("Stage3: found %d Stage 1 shard(s) in %s", len(stage1_shards), stage1_dir)
 
     def _all_prompts():
-        yield from iter_jsonl_dir(stage1_dir)
-        yield from iter_jsonl_dir(stage2_dir)
+        yield from _all_prompts_iter(stage1_dir, stage2_dir)
 
     emb_shards = list(emb_dir.glob("embeddings_*.parquet"))
     if emb_shards:
@@ -367,30 +401,7 @@ def run_stage3(
     ]
     annotation_map: dict[str, dict] = {}
 
-    if dump_annotations_path is not None:
-        # ── Dump mode ──────────────────────────────────────────────────
-        # Write one OpenAI-compatible request per prompt and exit.  The
-        # caller is expected to run inference elsewhere and then re-run
-        # Stage 3 with --import-annotations to continue.
-        from sft_pipeline.clustering.annotator import build_annotation_request
-
-        dump_annotations_path = Path(dump_annotations_path)
-        dump_annotations_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(
-            "Stage3: dumping %d annotation requests → %s",
-            len(annotation_records), dump_annotations_path,
-        )
-        with open(dump_annotations_path, "w", encoding="utf-8") as fh:
-            for rec in annotation_records:
-                fh.write(json.dumps(build_annotation_request(rec)) + "\n")
-        logger.info(
-            "Stage3: annotation dump complete (%d records). "
-            "Re-run with --import-annotations <results.jsonl> to continue.",
-            len(annotation_records),
-        )
-        return  # exit cleanly — output JSONL not written yet
-
-    elif import_annotations_path is not None:
+    if import_annotations_path is not None:
         # ── Import mode ────────────────────────────────────────────────
         # Parse pre-computed raw responses from JSONL.  For any prompt_id
         # absent from the file, fall back to online inference (if enabled)

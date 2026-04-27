@@ -317,7 +317,7 @@ def run_stage3(
                 # Normalize: if the response was stored as a parsed JSON object
                 # rather than a raw string, serialize it back so parse_and_validate
                 # can handle it uniformly.
-                results_map[obj["prompt_id"]] = json.dumps(raw) if isinstance(raw, dict) else raw
+                results_map[obj["prompt_id"]] = raw if isinstance(raw, str) else json.dumps(raw)
                 n_loaded += 1
                 if n_loaded % 100_000 == 0:
                     logger.info("Stage3: loaded %d responses from import file ...", n_loaded)
@@ -539,7 +539,7 @@ def run_stage3(
                 # Normalize: if the response was stored as a parsed JSON object
                 # rather than a raw string, serialize it back so parse_and_validate
                 # can handle it uniformly.
-                results_map[obj["prompt_id"]] = json.dumps(raw) if isinstance(raw, dict) else raw
+                results_map[obj["prompt_id"]] = raw if isinstance(raw, str) else json.dumps(raw)
                 n_loaded += 1
                 if n_loaded % 100_000 == 0:
                     logger.info("Stage3: loaded %d responses from import file ...", n_loaded)

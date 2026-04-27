@@ -419,6 +419,7 @@ def run_stage3(
         logger.info("Stage3: importing annotation results from %s", import_annotations_path)
 
         results_map: dict[str, str] = {}
+        n_loaded = 0
         with open(import_annotations_path, encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
@@ -426,14 +427,23 @@ def run_stage3(
                     continue
                 obj = json.loads(line)
                 results_map[obj["prompt_id"]] = obj["response"]
+                n_loaded += 1
+                if n_loaded % 100_000 == 0:
+                    logger.info("Stage3: loaded %d responses from import file ...", n_loaded)
+        logger.info("Stage3: loaded %d responses from import file", n_loaded)
 
         missing_ids: list[str] = []
+        n_parsed = 0
         for rec in annotation_records:
             pid = rec["prompt_id"]
             if pid in results_map:
                 annotation_map[pid] = parse_and_validate_annotation(results_map[pid])
+                n_parsed += 1
+                if n_parsed % 100_000 == 0:
+                    logger.info("Stage3: parsed %d / %d annotations ...", n_parsed, n_loaded)
             else:
                 missing_ids.append(pid)
+        logger.info("Stage3: parsed %d annotations, %d missing", n_parsed, len(missing_ids))
 
         if missing_ids:
             logger.warning(

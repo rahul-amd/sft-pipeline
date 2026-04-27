@@ -144,9 +144,9 @@ def _validate_annotation(ann: dict) -> dict:
     language = ann.get("language", "en")
     summary = ann.get("summary", "")
     return {
-        "domain": domain if domain in _VALID_DOMAINS else "other",
+        "domain": domain if isinstance(domain, str) and domain in _VALID_DOMAINS else "other",
         "topics": topics if isinstance(topics, list) else [],
-        "difficulty": difficulty if difficulty in _VALID_DIFFICULTIES else "medium",
+        "difficulty": difficulty if isinstance(difficulty, str) and difficulty in _VALID_DIFFICULTIES else "medium",
         "language": language if isinstance(language, str) and len(language) <= 10 else "en",
         "summary": summary if isinstance(summary, str) else "",
     }

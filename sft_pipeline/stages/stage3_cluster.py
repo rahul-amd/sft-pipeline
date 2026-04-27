@@ -434,16 +434,29 @@ def run_stage3(
 
         missing_ids: list[str] = []
         n_parsed = 0
+        n_empty = 0
         for rec in annotation_records:
             pid = rec["prompt_id"]
             if pid in results_map:
-                annotation_map[pid] = parse_and_validate_annotation(results_map[pid])
-                n_parsed += 1
-                if n_parsed % 100_000 == 0:
-                    logger.info("Stage3: parsed %d / %d annotations ...", n_parsed, n_loaded)
+                raw = results_map[pid]
+                if not raw or not raw.strip():
+                    # Empty response — leave out of annotation_map so Step D
+                    # falls back to the heuristic cluster labels naturally.
+                    n_empty += 1
+                else:
+                    annotation_map[pid] = parse_and_validate_annotation(raw)
+                    n_parsed += 1
+                    if n_parsed % 100_000 == 0:
+                        logger.info("Stage3: parsed %d / %d annotations ...", n_parsed, n_loaded)
             else:
                 missing_ids.append(pid)
-        logger.info("Stage3: parsed %d annotations, %d missing", n_parsed, len(missing_ids))
+        if n_empty:
+            logger.warning(
+                "Stage3: %d empty responses in import file — "
+                "heuristic cluster labels will be used for those prompts.",
+                n_empty,
+            )
+        logger.info("Stage3: parsed %d annotations, %d empty, %d missing", n_parsed, n_empty, len(missing_ids))
 
         if missing_ids:
             logger.warning(

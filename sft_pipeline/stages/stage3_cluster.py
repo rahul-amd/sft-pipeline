@@ -355,6 +355,13 @@ def run_stage3(
             n_parsed, n_empty, n_missing,
         )
 
+        # Persist annotations to Parquet so the work survives the process and
+        # a subsequent online annotation run picks them up as a checkpoint.
+        from sft_pipeline.clustering.annotator import _save_checkpoint
+        ann_checkpoint = Path(s3.output_dir) / "annotations.parquet"
+        _save_checkpoint(annotation_map, ann_checkpoint)
+        logger.info("Stage3: saved %d annotations to %s", len(annotation_map), ann_checkpoint)
+
         # Remove old shards so ShardedJSONLWriter starts fresh at part-000000
         # rather than appending after the existing ones.
         for old_shard in existing_shards:

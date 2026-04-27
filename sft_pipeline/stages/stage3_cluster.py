@@ -275,6 +275,111 @@ def run_stage3(
         return
 
     # ------------------------------------------------------------------
+    # Import mode fast-path: skip embedding/FAISS/clustering when stage3
+    # output already exists — load cluster labels from disk instead.
+    # ------------------------------------------------------------------
+    if import_annotations_path is not None:
+        existing_shards = list(out_dir.glob("part-*.jsonl"))
+        if not existing_shards:
+            raise FileNotFoundError(
+                f"Stage 3 --import-annotations: no existing stage3 output found in {out_dir}.\n"
+                "Run stage3_cluster without --import-annotations first to produce embeddings "
+                "and cluster labels, then re-run with --import-annotations to merge LLM responses."
+            )
+
+        from sft_pipeline.clustering.annotator import parse_and_validate_annotation
+
+        logger.info(
+            "Stage3 --import-annotations: loading cluster labels from %d existing shard(s) in %s",
+            len(existing_shards), out_dir,
+        )
+        cluster_map: dict[str, dict] = {}
+        for rec in iter_jsonl_dir(out_dir):
+            cluster_map[rec["prompt_id"]] = {
+                "domain": rec.get("domain"),
+                "difficulty": rec.get("difficulty"),
+                "cluster_id": rec.get("cluster_id", -1),
+            }
+        logger.info("Stage3: loaded %d cluster labels from existing output", len(cluster_map))
+
+        import_annotations_path = Path(import_annotations_path)
+        logger.info("Stage3: importing annotation results from %s", import_annotations_path)
+
+        results_map: dict[str, str] = {}
+        n_loaded = 0
+        with open(import_annotations_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                results_map[obj["prompt_id"]] = obj["response"]
+                n_loaded += 1
+                if n_loaded % 100_000 == 0:
+                    logger.info("Stage3: loaded %d responses from import file ...", n_loaded)
+        logger.info("Stage3: loaded %d responses from import file", n_loaded)
+
+        annotation_map: dict[str, dict] = {}
+        n_parsed = 0
+        n_empty = 0
+        n_missing = 0
+        for pid in cluster_map:
+            raw = results_map.get(pid)
+            if raw is None:
+                n_missing += 1
+            elif not raw.strip():
+                n_empty += 1
+            else:
+                annotation_map[pid] = parse_and_validate_annotation(raw)
+                n_parsed += 1
+                if n_parsed % 100_000 == 0:
+                    logger.info("Stage3: parsed %d annotations ...", n_parsed)
+
+        if n_empty:
+            logger.warning(
+                "Stage3: %d empty responses — heuristic cluster labels will be used for those prompts.",
+                n_empty,
+            )
+        if n_missing:
+            logger.warning(
+                "Stage3: %d prompt_id(s) missing from import file — "
+                "heuristic cluster labels will be used for those prompts.",
+                n_missing,
+            )
+        logger.info(
+            "Stage3: parsed %d annotations, %d empty, %d missing",
+            n_parsed, n_empty, n_missing,
+        )
+
+        total_written = 0
+        with ShardedJSONLWriter(out_dir, shard_size_mb=300) as writer:
+            for rec in _all_prompts_iter(stage1_dir, stage2_dir):
+                pid = rec["prompt_id"]
+                cluster_info = cluster_map.get(pid, {})
+                ann = annotation_map.get(pid, {})
+                enriched = {
+                    **rec,
+                    "domain": (ann.get("domain")
+                               or cluster_info.get("domain")
+                               or rec.get("domain", "general")),
+                    "difficulty": (ann.get("difficulty")
+                                   or cluster_info.get("difficulty", "medium")),
+                    "cluster_id": cluster_info.get("cluster_id", -1),
+                    "topics": ann.get("topics", []),
+                    "language": ann.get("language", "en"),
+                    "summary": ann.get("summary", ""),
+                }
+                writer.write(enriched)
+                total_written += 1
+
+        cm.mark_stage_complete(STAGE, output_count=total_written)
+        logger.info(
+            "Stage3 --import-annotations complete: %d prompts written to %s",
+            total_written, out_dir,
+        )
+        return
+
+    # ------------------------------------------------------------------
     # Step A: Embed all prompts from Stages 1 and 2
     # ------------------------------------------------------------------
 

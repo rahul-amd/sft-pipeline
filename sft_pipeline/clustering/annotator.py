@@ -106,13 +106,17 @@ def _parse_annotation(text: str) -> dict:
     # Strip markdown code fences if present (```json ... ```)
     text = re.sub(r"^```(?:json)?\s*", "", text).rstrip("`").strip()
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
     except json.JSONDecodeError:
         pass
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if m:
         try:
-            return json.loads(m.group())
+            parsed = json.loads(m.group())
+            if isinstance(parsed, dict):
+                return parsed
         except json.JSONDecodeError:
             pass
     return {}

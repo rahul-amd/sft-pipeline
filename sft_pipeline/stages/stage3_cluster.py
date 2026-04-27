@@ -355,6 +355,12 @@ def run_stage3(
             n_parsed, n_empty, n_missing,
         )
 
+        # Remove old shards so ShardedJSONLWriter starts fresh at part-000000
+        # rather than appending after the existing ones.
+        for old_shard in existing_shards:
+            old_shard.unlink()
+        logger.info("Stage3: removed %d old shard(s), writing fresh output ...", len(existing_shards))
+
         total_written = 0
         with ShardedJSONLWriter(out_dir, shard_size_mb=300) as writer:
             for rec in _all_prompts_iter(stage1_dir, stage2_dir):

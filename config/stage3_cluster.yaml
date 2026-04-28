@@ -87,7 +87,12 @@ stage3_cluster:
   # Scale with the number of vLLM replicas: concurrency = replicas × per_replica_concurrency.
   # Rule of thumb: ~64 per replica (each backend can batch ~64 slow thinking-model requests).
   # ---------------------------------------------------------------------------
-  annotation_enabled: true
+  # annotation_enabled: false here — run clustering only, write part-*.jsonl,
+  # then import LLM annotations separately via:
+  #   sft-pipeline run-stage stage3_cluster \
+  #       --config config/stage3_cluster.yaml \
+  #       --import-annotations /path/to/responses.jsonl
+  annotation_enabled: false
   annotation_model: "Qwen/Qwen3-30B-A3B-Thinking-2507"
   # Point at the nginx load balancer (slurm_serve_multi.sh), not a single node.
   # 16 replicas (4 nodes × 4 instances) → concurrency = 16 × 64 = 1024.

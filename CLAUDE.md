@@ -18,8 +18,13 @@ Builds a 7-stage automated pipeline to produce **5M high-quality prompt–respon
 
 ## Project Status
 
-As of 2026-04-13: **Stages 1–6 fully implemented. All 77 tests passing** (flash-kmeans tests skip when GPU/library unavailable).
+As of 2026-04-28: **Stages 1–3 fully run in production. Stages 4–6 implemented but not yet run.**
 
+- Stage 1 complete: `runs/research_stage1_001d/` — 14.8M prompts from 45 HF datasets
+- Stage 3 complete: `runs/research_stage3_001/` — embeddings, 100k clusters, LLM annotations imported
+- Stages 4–6 ready to run; Stage 4 pending domain distribution review via viz app
+
+All 77 tests passing (flash-kmeans tests skip when GPU/library unavailable):
 ```
 tests/unit/          — 64 tests (config, checkpoint, storage, parser, filters, stage1_extract)
 tests/unit/clustering/ — 11 flash-kmeans tests (skip without CUDA + flash-kmeans)
@@ -45,7 +50,8 @@ sft-pipeline/
 │   ├── dev.yaml                 ← laptop overrides (CPU/CUDA, small scale)
 │   ├── prod.yaml                ← cluster overrides (ROCm, 7M prompts, 64 replicas)
 │   ├── stage1_research.yaml     ← Stage 1 only; 45 public HF research datasets
-│   └── stage3_cluster.yaml      ← Stage 3 cluster run config (distributed embedding)
+│   ├── stage3_cluster.yaml      ← Stage 3 cluster run config (distributed embedding + clustering, annotation_enabled: false)
+│   └── stage3_annotate.yaml     ← Stage 3 annotation-only run (async LLM calls, CPU, no GPU)
 ├── sft_pipeline/
 │   ├── config.py                ← Pydantic v2 models + YAML loader
 │   ├── checkpoint.py            ← DuckDB checkpoint tracker
@@ -82,6 +88,7 @@ sft-pipeline/
 │   ├── install_flash_kmeans.sh  ← flash-kmeans install with ROCm/Triton support
 │   ├── slurm_stage1.sh          ← Slurm batch: Stage 1 distributed collection
 │   ├── slurm_stage3.sh          ← Slurm batch: Stage 3 distributed embedding + clustering
+│   ├── slurm_stage3_annotate.sh ← Slurm batch: Stage 3 annotation-only (CPU node, no GPU)
 │   └── test_ray.sh              ← minimal Ray smoke test (single node)
 ├── vllm/
 │   ├── README.md                ← vLLM ROCm SIF usage guide
@@ -112,9 +119,9 @@ sft-pipeline/
     ├── .streamlit/
     │   └── config.toml      ← Streamlit server config
     ├── pages/
-    │   ├── 1_Stats.py       ← domain/source/difficulty charts
+    │   ├── 1_Stats.py       ← full-data distributions, cross-tab heatmaps, topics-by-domain
     │   ├── 2_Prompts.py     ← searchable prompt table
-    │   ├── 3_Clusters.py    ← UMAP scatter plot
+    │   ├── 3_Clusters.py    ← cluster size histogram, clusters-per-domain, top-clusters table
     │   └── 4_Answers.py     ← prompt+reasoning+answer viewer
     ├── components/
     │   ├── data_loader.py   ← st.cache_data snapshot loader (mtime-busted)
@@ -269,6 +276,26 @@ After clustering, each prompt is annotated with `{domain, difficulty, topics, la
 - **`<think>` block stripping** — thinking models wrap reasoning before the JSON; `annotator.py` strips `<think>…</think>` before parsing.
 - **Graceful fallback** — API errors and JSON parse failures return validated defaults (`domain="other"`, `difficulty="medium"`) and never crash the pipeline.
 - **Prompt truncation** — keeps only the last 512 whitespace-split tokens of each prompt to stay within the model's context window while preserving the actual question.
+
+**Offline annotation workflow** (run inference on a separate cluster):
+```bash
+# 1. Dump annotation requests as OpenAI-compatible JSONL
+sft-pipeline run-stage stage3_cluster \
+    --config config/stage3_cluster.yaml \
+    --dump-annotations /path/to/requests.jsonl
+# Each line: {"prompt_id": "sha256:...", "messages": [{"role": "system", ...}, {"role": "user", ...}]}
+
+# 2. Run inference elsewhere, produce responses.jsonl:
+# Each line: {"prompt_id": "sha256:...", "response": {annotation dict or raw string}}
+
+# 3. Import responses back — merges with cluster labels, rewrites part-*.jsonl
+sft-pipeline run-stage stage3_cluster \
+    --config config/stage3_cluster.yaml \
+    --import-annotations /path/to/responses.jsonl
+```
+The import path is a fast-path: it loads cluster labels from existing `part-*.jsonl`, merges annotation results, deletes the old shards, and writes fresh ones. No re-embedding or re-clustering.
+
+Empty responses and missing `prompt_id`s fall back to the heuristic cluster labels (`domain`, `difficulty`) already in the cluster output. After import, annotations are also saved to `annotations.parquet` as a checkpoint.
 
 ---
 
@@ -450,8 +477,9 @@ See `viz/README.md` for full usage. Quick reference:
 pip install -r viz/requirements.txt
 
 # 2. Export snapshot after any stage completes
-python viz/export.py --run-dir /path/to/run          # default: 50k sample
+python viz/export.py --run-dir /path/to/run          # default: 50k sample for browser
 python viz/export.py --run-dir /path/to/run --sample 100000
+python viz/export.py --run-dir /path/to/run --umap   # also compute UMAP (slow)
 
 # 3. Launch
 streamlit run viz/app.py
@@ -460,14 +488,21 @@ streamlit run viz/app.py
 cloudflared tunnel --url http://localhost:8501
 ```
 
-**How export.py discovers data:**
-- Looks for `{run_dir}/stage3/part-*.jsonl` first (enriched prompts with domain/difficulty/cluster_id)
-- Falls back to `{run_dir}/stage1/part-*.jsonl` if Stage 3 not done
-- Loads `{run_dir}/stage3/embeddings/embeddings_*.parquet` and runs UMAP if present
+**How export.py works:**
+- Prefers `{run_dir}/stage3/part-*.jsonl`; falls back to `{run_dir}/stage1/part-*.jsonl`
+- Computes **full-data aggregate stats** (distributions, cross-tabs, cluster analysis) over all records via shard-by-shard Polars — peak memory ≈ one shard at a time. Stored in `meta.json["stats"]`.
+- Uses **reservoir sampling** for the browser snapshot (O(sample) memory regardless of dataset size)
+- UMAP is opt-in (`--umap`); off by default
 - Joins Stage 5 responses and Stage 6 filter results if present
 - Writes `viz/data/snapshot.parquet` + `viz/data/meta.json`
 
-**Cache invalidation**: `data_loader.py` passes `snapshot.parquet`'s mtime as an argument to `@st.cache_data`, so re-running export automatically invalidates the cache on next app load. No restart needed.
+**Pages:**
+- `1_Stats.py` — domain/difficulty/language/source distributions (full-data counts), Domain×Difficulty and Domain×Language cross-tab heatmaps (normalised + absolute count on hover), topics overall and per-domain
+- `2_Prompts.py` — searchable/filterable prompt table (sample only)
+- `3_Clusters.py` — cluster size histogram, clusters dominated per domain, top-50 clusters table
+- `4_Answers.py` — prompt + reasoning + answer viewer (after Stage 5)
+
+**Cache invalidation**: `data_loader.py` passes `snapshot.parquet`'s mtime to `@st.cache_data`, so re-running export invalidates the cache automatically. No restart needed.
 
 **`viz/data/` is gitignored** — snapshots are not committed.
 

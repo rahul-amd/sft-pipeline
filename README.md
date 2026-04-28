@@ -97,6 +97,93 @@ sft-pipeline estimate --config config/prod.yaml
 sft-pipeline run --config config/prod.yaml --set stage5_inference.n_replicas=32
 ```
 
+## Running Stages Individually
+
+Each stage can be run independently with `sft-pipeline run-stage <stage> --config <config>`. Dedicated configs exist for the stages that have been run in production; use them when available.
+
+### Stage 1 — Prompt Collection
+
+```bash
+# Collect from 45 public HuggingFace research datasets
+export HF_TOKEN=hf_...   # required for gated datasets (e.g. lmsys-chat-1m)
+sft-pipeline run-stage stage1_collect --config config/stage1_research.yaml
+
+# Output: {base_path}/stage1/part-*.jsonl
+```
+
+`stage1_research.yaml` targets `run_id: research_stage1_001d` on the cluster scratch filesystem. It sets `max_examples` per source for fast iteration; remove to collect all available data.
+
+On the cluster, Stage 1 runs distributed across 32 Ray workers via Slurm:
+```bash
+sbatch scripts/slurm_stage1.sh
+```
+
+### Stage 3 — Clustering (two-step workflow)
+
+Stage 3 is split into two separate runs: first cluster the prompts, then annotate them with an LLM. This decoupling lets clustering run on GPU nodes while annotation runs on CPU nodes against an external vLLM server.
+
+**Step 1 — Embed + cluster (requires GPUs + Ray cluster):**
+```bash
+sbatch scripts/slurm_stage3.sh
+# Uses config/stage3_cluster.yaml
+# Output: {base_path}/stage3/part-*.jsonl  (cluster labels, heuristic domain/difficulty)
+#         {base_path}/stage3/embeddings/   (sharded float16 Parquet)
+#         {base_path}/stage3/faiss.index
+```
+
+`stage3_cluster.yaml` runs distributed embedding across 32 Ray workers (one per GPU) then torch_kmeans clustering into 100,000 clusters. `annotation_enabled: false` — annotation is handled separately below.
+
+**Step 2 — LLM annotation (offline import workflow):**
+
+If you have the annotation responses as a JSONL file (e.g. generated on another cluster):
+```bash
+sft-pipeline run-stage stage3_cluster \
+    --config config/stage3_cluster.yaml \
+    --import-annotations /path/to/responses.jsonl
+```
+
+The responses file is a JSONL where each line has `{"prompt_id": "sha256:...", "response": {...}}`. The `response` field is the raw LLM output or a pre-parsed annotation dict with keys `domain`, `difficulty`, `topics`, `language`, `summary`.
+
+To generate the annotation request file (then run inference elsewhere):
+```bash
+sft-pipeline run-stage stage3_cluster \
+    --config config/stage3_cluster.yaml \
+    --dump-annotations /path/to/requests.jsonl
+# Each line: {"prompt_id": "...", "messages": [{"role": "system", ...}, {"role": "user", ...}]}
+```
+
+To annotate online (vLLM server must be running):
+```bash
+# Start vLLM server first (see vllm/serve.sh or sbatch vllm/slurm_serve_array.sh)
+# Then run annotation-only with the CPU config:
+sft-pipeline annotate --config config/stage3_annotate.yaml
+# Or via Slurm (no GPU allocation):
+sbatch scripts/slurm_stage3_annotate.sh
+```
+
+`stage3_annotate.yaml` connects to a running vLLM server at `annotation_api_base` with concurrency 4096 (64 replicas × 64 each). It writes `{base_path}/stage3/annotations.parquet` as a resumable checkpoint, then a second `run-stage stage3_cluster --import-annotations` pass merges the results.
+
+### Visualization (after Stage 3)
+
+```bash
+# Install viz deps (separate from pipeline)
+pip install -r viz/requirements.txt
+
+# Export snapshot from the completed Stage 3 run
+python viz/export.py \
+    --run-dir /path/to/runs/research_stage3_001 \
+    --sample 50000
+
+# Launch Streamlit app
+streamlit run viz/app.py
+```
+
+The export computes full-data aggregate statistics (domain/difficulty/language/source distributions, cross-tab heatmaps, cluster analysis) over all 15M records via Polars and stores them in `viz/data/meta.json`. The Streamlit app reads these directly — no need to load 15M records at browse time.
+
+Add `--umap` to compute UMAP 2D coords for the sampled prompts (slow; requires `umap-learn` and embedding shards).
+
+---
+
 ## Configuration
 
 All pipeline parameters live in a single YAML file validated by Pydantic v2. Config files are layered:
@@ -106,7 +193,9 @@ All pipeline parameters live in a single YAML file validated by Pydantic v2. Con
 | `config/default.yaml` | Master config — all defaults documented |
 | `config/dev.yaml` | Laptop overrides (CPU/CUDA, small scale) |
 | `config/prod.yaml` | Cluster overrides (ROCm, 7M prompts, 64 replicas) |
-| `config/stage1_research.yaml` | Stage 1 only, 45 research datasets |
+| `config/stage1_research.yaml` | Stage 1 only; 45 public HF research datasets |
+| `config/stage3_cluster.yaml` | Stage 3 clustering; distributed embedding + torch_kmeans |
+| `config/stage3_annotate.yaml` | Stage 3 annotation only; async LLM calls, no GPU |
 
 Placeholders `{run_id}` and `{base_path}` are resolved throughout string fields at load time.
 

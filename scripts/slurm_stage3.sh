@@ -27,7 +27,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gpus-per-node=8
 #SBATCH --mem=200G
-#SBATCH --time=8:00:00
+#SBATCH --time=2:00:00
 #SBATCH --account=project_462000963
 #SBATCH --partition=standard-g
 #SBATCH --output=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-stage3.out

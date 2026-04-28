@@ -66,9 +66,10 @@ def score_difficulty(prompt: str) -> str:
     """Assign a difficulty tier. Returns 'easy', 'medium', or 'hard'."""
     tokens = prompt.split()
     n_tokens = len(tokens)
-    if n_tokens >= 200 or _MULTI_STEP_PATTERNS.search(prompt):
+    multi_step = _MULTI_STEP_PATTERNS.search(prompt) is not None
+    if n_tokens >= 200 or multi_step:
         return "hard"
-    if n_tokens <= 50 and not _MULTI_STEP_PATTERNS.search(prompt):
+    if n_tokens <= 50 and not multi_step:
         return "easy"
     return "medium"
 
@@ -448,6 +449,9 @@ def cluster_prompts(
                 "difficulty": score_difficulty(prompts[i]),
                 "cluster_id": cid,
             })
+            if (i + 1) % 1_000_000 == 0:
+                logger.info("cluster_prompts: labelled %d / %d", i + 1, N)
+        logger.info("cluster_prompts: done — %d records labelled", N)
         return results
 
     # --- centroid-based path (hdbscan / kmeans) ---

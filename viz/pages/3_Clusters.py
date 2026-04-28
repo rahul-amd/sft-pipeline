@@ -1,4 +1,4 @@
-"""Cluster Scatter — UMAP 2D projection coloured by domain or cluster."""
+"""Cluster Analysis — size distribution, domain breakdown, top clusters."""
 from __future__ import annotations
 
 import sys
@@ -6,184 +6,127 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import plotly.express as px
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
-from components.data_loader import get_snapshot, has_stage
-from components.filters import render_filters
+from components.data_loader import get_snapshot
 from components.theme import PLOTLY_COLORS, PLOTLY_LAYOUT, apply_theme
 
 st.set_page_config(page_title="Clusters — SFT Pipeline", layout="wide")
 apply_theme()
-st.title("Cluster Explorer")
+st.title("Cluster Analysis")
 
 df, meta = get_snapshot()
+stats         = meta.get("stats", {})
+cluster_stats = stats.get("cluster_stats", {})
 
-if not has_stage(meta, "umap") or "umap_x" not in df.columns or df["umap_x"].isna().all():
+if not cluster_stats:
     st.info(
-        "UMAP coordinates are not available in this snapshot.\n\n"
-        "They are computed automatically by `export.py` once Stage 3 embeddings exist. "
+        "Cluster statistics are not available in this snapshot.\n\n"
         "Re-run the export after Stage 3 completes:\n\n"
         "```bash\npython viz/export.py --run-dir /path/to/run\n```"
     )
     st.stop()
 
-plot_df = df.dropna(subset=["umap_x", "umap_y"]).copy()
-filtered = render_filters(plot_df, show_difficulty=True, show_search=False)
+n_clusters  = cluster_stats.get("n_clusters", 0)
+top_clusters = cluster_stats.get("top_clusters", [])
+cpd          = cluster_stats.get("clusters_per_domain", {})
+size_hist    = cluster_stats.get("size_histogram", {})
+total        = meta.get("total_prompts", len(df))
 
-# ── Sidebar controls ──────────────────────────────────────────────────────────
-with st.sidebar:
-    st.divider()
-    st.subheader("Plot Controls")
-    color_by = st.radio("Colour by", ["domain", "cluster_id", "difficulty"], index=0)
-    point_size = st.slider("Point size", 1, 8, 3)
-    opacity = st.slider("Opacity", 0.1, 1.0, 0.6, step=0.05)
-    max_points = st.slider("Max points shown", 5_000, min(50_000, len(filtered)), min(20_000, len(filtered)), step=5_000)
 
-# Subsample for rendering performance
-if len(filtered) > max_points:
-    plot_sample = filtered.sample(max_points, random_state=42)
-    st.caption(f"Showing {max_points:,} of {len(filtered):,} filtered points (random subsample).")
-else:
-    plot_sample = filtered
-    st.caption(f"Showing all {len(filtered):,} filtered points.")
+def _hist_median(bin_edges: list, counts: list) -> float:
+    if not counts:
+        return 0.0
+    n = sum(counts)
+    half = n / 2
+    cumulative = 0
+    for i, count in enumerate(counts):
+        cumulative += count
+        if cumulative >= half:
+            lo = bin_edges[i]
+            hi = bin_edges[i + 1]
+            excess = cumulative - count
+            frac = (half - excess) / count if count else 0
+            return lo + frac * (hi - lo)
+    return 0.0
 
-# Build hover text
-plot_sample = plot_sample.copy()
 
-has_difficulty = "difficulty" in plot_sample.columns and plot_sample["difficulty"].notna().any()
-has_language   = "language"   in plot_sample.columns and plot_sample["language"].notna().any()
-has_topics     = "topics"     in plot_sample.columns and plot_sample["topics"].str.strip().any()
-has_summary    = "summary"    in plot_sample.columns and plot_sample["summary"].str.strip().any()
+sizes_from_top = [c["size"] for c in top_clusters]
+max_size    = max(sizes_from_top) if sizes_from_top else 0
+median_size = _hist_median(size_hist.get("bin_edges", []), size_hist.get("counts", []))
 
-# Line 1: source | domain  [difficulty · language]
-header = plot_sample["source"] + " | " + plot_sample["domain"]
-if has_difficulty and has_language:
-    header = header + "  [" + plot_sample["difficulty"].fillna("") + " · " + plot_sample["language"].fillna("") + "]"
-elif has_difficulty:
-    header = header + "  [" + plot_sample["difficulty"].fillna("") + "]"
-elif has_language:
-    header = header + "  [" + plot_sample["language"].fillna("") + "]"
+# ── Metrics ─────────────────────────────────────────────────────────────────
+st.markdown("<br>", unsafe_allow_html=True)
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Total clusters",          f"{n_clusters:,}")
+m2.metric("Median cluster size",     f"{median_size:.0f}")
+m3.metric("Largest cluster",         f"{max_size:,}")
+m4.metric("Avg prompts / cluster",   f"{total / n_clusters:,.0f}" if n_clusters else "—")
+st.markdown("<br>", unsafe_allow_html=True)
 
-hover = header
+# ── Row 1: size histogram + clusters per domain ──────────────────────────────
+col_hist, col_domain = st.columns(2)
 
-# Line 2: topics (if present)
-if has_topics:
-    hover = hover + "<br><i>" + plot_sample["topics"].fillna("").str.slice(0, 80) + "</i>"
+with col_hist:
+    st.subheader("Cluster Size Distribution")
+    bin_edges   = size_hist.get("bin_edges", [])
+    hist_counts = size_hist.get("counts", [])
+    if bin_edges and hist_counts:
+        bin_labels = [f"{bin_edges[i]}–{bin_edges[i+1]-1}" for i in range(len(hist_counts))]
+        fig = go.Figure(go.Bar(
+            x=bin_labels, y=hist_counts,
+            marker_color=PLOTLY_COLORS[0],
+            hovertemplate="Size %{x}<br>%{y:,} clusters<extra></extra>",
+        ))
+        fig.update_layout(
+            **PLOTLY_LAYOUT, height=320, showlegend=False,
+            margin=dict(l=0, r=0, t=10, b=10),
+            xaxis_title="Cluster size (# prompts)",
+            yaxis_title="Number of clusters",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Size histogram not available.")
 
-# Line 3: summary or truncated prompt
-if has_summary:
-    snippet = plot_sample["summary"].fillna("").str.strip()
-    no_summary = snippet == ""
-    snippet[no_summary] = plot_sample.loc[no_summary, "prompt"].str.slice(0, 120) + "…"
-    hover = hover + "<br>" + snippet
-else:
-    hover = hover + "<br>" + plot_sample["prompt"].str.slice(0, 120) + "…"
+with col_domain:
+    st.subheader("Clusters by Dominant Domain")
+    if cpd:
+        cpd_sorted = sorted(cpd.items(), key=lambda x: -x[1])
+        labels = [k for k, _ in cpd_sorted]
+        values = [v for _, v in cpd_sorted]
+        fig = go.Figure(go.Bar(
+            x=values[::-1], y=labels[::-1], orientation="h",
+            marker_color=PLOTLY_COLORS[1],
+            hovertemplate="%{y}: %{x:,} clusters<extra></extra>",
+        ))
+        fig.update_layout(
+            **PLOTLY_LAYOUT, height=max(300, len(labels) * 34), showlegend=False,
+            margin=dict(l=0, r=0, t=10, b=10),
+            xaxis_title="Clusters",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Domain breakdown not available.")
 
-plot_sample["hover"] = hover
-
-color_col = color_by if color_by in plot_sample.columns and plot_sample[color_by].notna().any() else "domain"
-
-fig = px.scatter(
-    plot_sample,
-    x="umap_x",
-    y="umap_y",
-    color=color_col,
-    color_discrete_sequence=PLOTLY_COLORS,
-    hover_name="hover",
-    hover_data={"umap_x": False, "umap_y": False, "hover": False},
-    opacity=opacity,
-    labels={"umap_x": "", "umap_y": ""},
-)
-fig.update_traces(marker=dict(size=point_size))
-# Split axis settings into separate calls to avoid duplicate-kwarg conflict
-# with **PLOTLY_LAYOUT (which must not contain xaxis/yaxis keys).
-fig.update_layout(
-    **PLOTLY_LAYOUT,
-    height=660,
-    legend=dict(
-        itemsizing="constant",
-        bgcolor="rgba(13,18,36,0.8)",
-        bordercolor="#1e293b",
-        borderwidth=1,
-        font=dict(size=12),
-    ),
-    margin=dict(l=0, r=0, t=10, b=0),
-    hoverlabel=dict(
-        bgcolor="#0d1224",
-        bordercolor="#334155",
-        font=dict(family="Inter, sans-serif", size=12, color="#e2e8f0"),
-    ),
-)
-fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False)
-fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
-
-event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
-
-# Show prompt for clicked point
-if event and hasattr(event, "selection") and event.selection.get("points"):
-    pt = event.selection["points"][0]
-    pt_idx = pt.get("point_index")
-    if pt_idx is not None:
-        row = plot_sample.iloc[pt_idx]
-        st.divider()
-        st.subheader("Selected Point")
-        c1, c2 = st.columns([3, 1])
-        with c1:
-            st.text_area("Prompt", value=row["prompt"], height=200, disabled=True, label_visibility="visible")
-        with c2:
-            st.markdown(
-                f"""
-                <div style="display:flex;flex-direction:column;gap:0.5rem;padding-top:0.25rem;">
-                  <div>
-                    <span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Source</span><br>
-                    <span style="color:#e2e8f0;font-size:0.85rem;">{row['source']}</span>
-                  </div>
-                  <div>
-                    <span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Domain</span><br>
-                    <span style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);padding:2px 8px;border-radius:4px;font-size:0.8rem;">{row['domain']}</span>
-                  </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            if row.get("difficulty"):
-                colour = {"easy": "rgba(52,211,153,0.15)", "medium": "rgba(251,191,36,0.15)", "hard": "rgba(248,113,113,0.15)"}.get(row["difficulty"], "rgba(99,102,241,0.15)")
-                text_c = {"easy": "#34d399", "medium": "#fbbf24", "hard": "#f87171"}.get(row["difficulty"], "#818cf8")
-                st.markdown(
-                    f'<div><span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Difficulty</span><br>'
-                    f'<span style="background:{colour};color:{text_c};padding:2px 8px;border-radius:4px;font-size:0.8rem;">{row["difficulty"]}</span></div>',
-                    unsafe_allow_html=True,
-                )
-            if has_language and row.get("language"):
-                st.markdown(
-                    f'<div><span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Language</span><br>'
-                    f'<span style="color:#e2e8f0;font-size:0.85rem;">{row["language"]}</span></div>',
-                    unsafe_allow_html=True,
-                )
-            if has_topics and row.get("topics", "").strip():
-                tags = "".join(
-                    f'<span style="background:rgba(34,211,238,0.1);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);'
-                    f'padding:2px 6px;border-radius:4px;font-size:0.75rem;margin:2px 2px 2px 0;display:inline-block;">'
-                    f'{t.strip()}</span>'
-                    for t in row["topics"].split(",") if t.strip()
-                )
-                st.markdown(
-                    f'<div><span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Topics</span><br>'
-                    f'<div style="margin-top:4px;">{tags}</div></div>',
-                    unsafe_allow_html=True,
-                )
-            if has_summary and row.get("summary", "").strip():
-                st.markdown(
-                    f'<div style="padding:0.5rem 0.7rem;background:rgba(99,102,241,0.08);border-left:3px solid #6366f1;border-radius:0 6px 6px 0;">'
-                    f'<span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Summary</span><br>'
-                    f'<span style="color:#94a3b8;font-size:0.82rem;font-style:italic;">{row["summary"]}</span>'
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-            if row.get("cluster_id") is not None:
-                st.markdown(
-                    f'<div><span style="color:#475569;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">Cluster</span><br>'
-                    f'<span style="color:#e2e8f0;font-size:0.85rem;">#{int(row["cluster_id"])}</span></div>',
-                    unsafe_allow_html=True,
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
+# ── Row 2: top clusters table ────────────────────────────────────────────────
+if top_clusters:
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("Top 50 Clusters by Size")
+    top_df = pd.DataFrame(top_clusters).rename(columns={
+        "cluster_id": "Cluster ID",
+        "size":       "Prompts",
+        "domain":     "Dominant Domain",
+    })
+    top_df["% of total"] = (top_df["Prompts"] / total * 100).round(3)
+    st.dataframe(
+        top_df, use_container_width=True, hide_index=True,
+        column_config={
+            "Cluster ID":      st.column_config.NumberColumn(format="%d"),
+            "Prompts":         st.column_config.NumberColumn(format="%d"),
+            "% of total":      st.column_config.NumberColumn(format="%.3f%%"),
+            "Dominant Domain": st.column_config.TextColumn(),
+        },
+    )

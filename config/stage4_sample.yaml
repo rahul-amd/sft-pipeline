@@ -1,0 +1,104 @@
+# =============================================================================
+# Stage 4 Sample — Quota-enforced sampling + near-dedup from Stage 3 output
+#
+# Usage:
+#   sft-pipeline run-stage stage4_sample --config config/stage4_sample.yaml
+#
+# What this run does:
+#   - Reads the enriched JSONL from Stage 3 (domain, difficulty, cluster_id)
+#   - Loads sentence embeddings for cosine near-dedup
+#   - Enforces domain × difficulty quotas to produce a balanced ~7M prompt set
+#   - Writes deduplicated, sorted output ready for Stage 5 inference
+#
+# Prerequisites:
+#   - Stage 3 complete: runs/research_stage3_001/stage3/part-*.jsonl must exist
+#   - Embeddings present: runs/research_stage3_001/stage3/embeddings/
+#
+# Tuning domain_quotas:
+#   Run viz/export.py --pdf first to see the actual domain distribution.
+#   The quotas below are a starting point — adjust so that every domain has
+#   enough supply (stage3 count × quota ≥ target count per domain).
+#   If a domain has fewer prompts than its quota target, Stage 4 will use
+#   all available prompts for that domain and redistribute the slack.
+# =============================================================================
+
+global:
+  device: "rocm"
+  run_id: "research_stage3_001"
+  base_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/{run_id}"
+  hf_home: "/scratch/project_462000963/hf_cache"
+  seed: 42
+
+# ---------------------------------------------------------------------------
+# Stages 1–3 — disabled; output_dirs point at the completed Stage 3 run so
+# Stage 4 knows where to find part-*.jsonl and embeddings/.
+# ---------------------------------------------------------------------------
+stage1_collect:
+  enabled: false
+  distributed: false
+  datasets: []
+  output_dir: "{base_path}/stage1"
+
+stage2_generate:
+  enabled: false
+  output_dir: "{base_path}/stage2"
+
+stage3_cluster:
+  enabled: false
+  embeddings_dir: "{base_path}/stage3/embeddings"
+  faiss_index_path: "{base_path}/stage3/faiss.index"
+  output_dir: "{base_path}/stage3"
+
+# ---------------------------------------------------------------------------
+# Stage 4 — sampling
+# ---------------------------------------------------------------------------
+stage4_sample:
+  enabled: true
+
+  # Target size for Stage 5 inference.
+  # ~7M → ~5M after ~30% quality filtering in Stage 6.
+  total_prompts: 7000000
+
+  # ── Domain quotas ─────────────────────────────────────────────────────────
+  # Must sum to exactly 1.0.
+  # Adjust these based on the domain distribution chart in the PDF report.
+  # Rule: if a domain has N prompts in Stage 3 and its target is
+  #   total_prompts × quota = 7M × quota,
+  # you need N ≥ that number. Check the domain bar chart before running.
+  domain_quotas:
+    math:        0.20
+    code:        0.18
+    science:     0.15
+    reasoning:   0.12
+    writing:     0.10
+    knowledge:   0.10
+    language:    0.08
+    instruction: 0.05
+    other:       0.02
+
+  # ── Difficulty quotas ─────────────────────────────────────────────────────
+  # Must sum to exactly 1.0.
+  # Skew toward medium/hard to maximise learning signal.
+  # Check the difficulty distribution chart in the PDF to see if your data
+  # can actually supply 30% hard (2.1M hard prompts needed).
+  difficulty_quotas:
+    easy:   0.20
+    medium: 0.50
+    hard:   0.30
+
+  # ── Near-dedup ────────────────────────────────────────────────────────────
+  # Cosine similarity threshold above which two prompts are considered
+  # near-duplicates. Higher = more aggressive dedup (fewer prompts kept).
+  # 0.92 is a good default; lower to 0.88 if output is still too small.
+  dedup_cosine_threshold: 0.92
+
+  output_dir: "{base_path}/stage4"
+
+# ---------------------------------------------------------------------------
+# Stages 5–6 — disabled in this run
+# ---------------------------------------------------------------------------
+stage5_inference:
+  enabled: false
+
+stage6_filter:
+  enabled: false

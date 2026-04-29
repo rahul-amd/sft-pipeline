@@ -283,6 +283,10 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
     DIFFICULTIES = ["easy", "medium", "hard"]
     DIFF_COLORS  = {"easy": "#2ecc71", "medium": "#f39c12", "hard": "#e74c3c"}
 
+    def _safe_label(s: str) -> str:
+        """Replace non-ASCII characters with '?' so DejaVu Sans doesn't emit glyph warnings."""
+        return s.encode("ascii", errors="replace").decode("ascii")
+
     def _annotation_page(pdf, title: str, body: str) -> None:
         """Insert a plain-text annotation page (title + body paragraph)."""
         fig, ax = plt.subplots(figsize=(11, 3))
@@ -294,15 +298,14 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
                 wrap=True, linespacing=1.6,
                 bbox=dict(boxstyle="round,pad=0.5", fc="#f7f7f7", ec="#cccccc"))
         fig.tight_layout()
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        _save(fig)
 
     total = stats.get("total", meta.get("total_prompts", 0))
 
     def _hbar(ax, labels, values, color=ACCENT, pct_total=None):
         """Horizontal bar chart, sorted descending."""
         order = sorted(range(len(labels)), key=lambda i: values[i])
-        labs  = [labels[i] for i in order]
+        labs  = [_safe_label(labels[i]) for i in order]
         vals  = [values[i] for i in order]
         bars  = ax.barh(labs, vals, color=color)
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
@@ -323,9 +326,9 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
 
         im = ax.imshow(normed, aspect="auto", cmap="Blues", vmin=0, vmax=1)
         ax.set_xticks(range(len(col_labels)))
-        ax.set_xticklabels(col_labels, rotation=40, ha="right", fontsize=8)
+        ax.set_xticklabels([_safe_label(c) for c in col_labels], rotation=40, ha="right", fontsize=8)
         ax.set_yticks(range(len(row_labels)))
-        ax.set_yticklabels(row_labels, fontsize=8)
+        ax.set_yticklabels([_safe_label(r) for r in row_labels], fontsize=8)
 
         for i in range(len(row_labels)):
             for j in range(len(col_labels)):
@@ -339,6 +342,14 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
                         fontsize=7, color=text_color)
 
         plt.colorbar(im, ax=ax, fraction=0.03, label="Row fraction")
+
+    n_pages = 0
+
+    def _save(fig):
+        nonlocal n_pages
+        pdf.savefig(fig, bbox_inches="tight")
+        n_pages += 1
+        plt.close(fig)
 
     with PdfPages(out_pdf) as pdf:
 
@@ -363,8 +374,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.text(0.5, y, text, transform=ax.transAxes,
                     ha="center", fontsize=size, fontweight=weight)
             y -= 0.06
-        pdf.savefig(fig, bbox_inches="tight")
-        plt.close(fig)
+        _save(fig)
 
         # ── Domain distribution ───────────────────────────────────────────
         _annotation_page(pdf, "Domain Distribution",
@@ -383,8 +393,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.set_title(f"Domain Distribution  (N={total:,})", fontsize=13, pad=10)
             ax.set_xlabel("Prompts")
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── Difficulty distribution ───────────────────────────────────────
         _annotation_page(pdf, "Difficulty Distribution",
@@ -409,8 +418,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
             ax.spines[["top", "right"]].set_visible(False)
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── Language distribution (top 30) ───────────────────────────────
         _annotation_page(pdf, "Language Distribution",
@@ -429,8 +437,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.set_title("Language Distribution (top 30)", fontsize=13, pad=10)
             ax.set_xlabel("Prompts")
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── Source dataset distribution (top 30) ─────────────────────────
         _annotation_page(pdf, "Source Dataset Distribution",
@@ -449,8 +456,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.set_title("Source Dataset Distribution (top 30)", fontsize=13, pad=10)
             ax.set_xlabel("Prompts")
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── Domain × Difficulty heatmap ───────────────────────────────────
         _annotation_page(pdf, "Domain × Difficulty Heatmap",
@@ -468,8 +474,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.set_title("Domain × Difficulty  (row-normalised; cell = % | count)",
                          fontsize=12, pad=10)
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── Domain × Language heatmap ─────────────────────────────────────
         _annotation_page(pdf, "Domain × Language Heatmap",
@@ -488,8 +493,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.set_title("Domain × Language  (row-normalised; cell = % | count)",
                          fontsize=12, pad=10)
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── Top topics overall ────────────────────────────────────────────
         _annotation_page(pdf, "Topics",
@@ -509,8 +513,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.set_title(f"Top {top_n} Topics (overall)", fontsize=13, pad=10)
             ax.set_xlabel("Prompts")
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── Top topics per domain ─────────────────────────────────────────
         tbd = stats.get("topics_by_domain", {})
@@ -549,8 +552,7 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
                     axes[idx // cols][idx % cols].axis("off")
 
                 fig.tight_layout()
-                pdf.savefig(fig, bbox_inches="tight")
-                plt.close(fig)
+                _save(fig)
 
         # ── Cluster size histogram ────────────────────────────────────────
         _annotation_page(pdf, "Cluster Analysis",
@@ -580,11 +582,11 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             )
             ax.set_xlabel("Prompts per cluster")
             ax.set_ylabel("Number of clusters")
+            ax.set_xticks(range(len(labels)))
             ax.set_xticklabels(labels, rotation=30, ha="right")
             ax.spines[["top", "right"]].set_visible(False)
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── Clusters per domain ───────────────────────────────────────────
         cpd = cs.get("clusters_per_domain", {})
@@ -597,15 +599,14 @@ def _export_pdf(stats: dict, meta: dict, out_pdf: Path) -> None:
             ax.set_title("Clusters Dominated per Domain", fontsize=13, pad=10)
             ax.set_xlabel("Clusters")
             fig.tight_layout()
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+            _save(fig)
 
         # ── PDF metadata ──────────────────────────────────────────────────
         d = pdf.infodict()
         d["Title"]   = "SFT Pipeline Data Distribution Report"
         d["Subject"] = f"Run: {meta.get('run_dir', '')}"
 
-    logger.info("PDF report → %s  (%d pages)", out_pdf, pdf.get_pagecount() if hasattr(pdf, 'get_pagecount') else "?")
+    logger.info("PDF report → %s  (%d pages)", out_pdf, n_pages)
 
 
 # ---------------------------------------------------------------------------

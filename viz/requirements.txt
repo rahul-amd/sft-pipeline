@@ -4,3 +4,4 @@ umap-learn>=0.5
 polars>=0.20
 pyarrow>=14.0
 pandas>=2.0
+matplotlib>=3.8

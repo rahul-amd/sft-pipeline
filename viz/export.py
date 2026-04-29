@@ -810,6 +810,10 @@ def main() -> None:
         help="Compute UMAP 2D coords for sampled prompts (slow; requires umap-learn)",
     )
     parser.add_argument(
+        "--refresh", action="store_true",
+        help="Force re-export even if meta.json already exists (re-scans all shards).",
+    )
+    parser.add_argument(
         "--pdf",
         nargs="?",
         const=str(Path(__file__).parent / "data" / "report.pdf"),
@@ -822,16 +826,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    export(
-        run_dir=Path(args.run_dir),
-        out_path=Path(args.out),
-        sample=args.sample,
-        seed=args.seed,
-        compute_umap=args.umap,
-    )
+    meta_path = Path(args.out).parent / "meta.json"
+
+    # Skip full re-export when --pdf is requested and meta.json already exists.
+    # Pass --refresh to force a re-scan even when meta.json is present.
+    if args.pdf and meta_path.exists() and not args.refresh:
+        logger.info("meta.json found — skipping snapshot re-export (pass --refresh to force).")
+    else:
+        export(
+            run_dir=Path(args.run_dir),
+            out_path=Path(args.out),
+            sample=args.sample,
+            seed=args.seed,
+            compute_umap=args.umap,
+        )
 
     if args.pdf:
-        meta_path = Path(args.out).parent / "meta.json"
         if not meta_path.exists():
             logger.error("meta.json not found at %s — run export first.", meta_path)
             sys.exit(1)

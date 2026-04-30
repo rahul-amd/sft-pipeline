@@ -104,22 +104,22 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             n_available = len(cell_df)
 
             if n_available == 0:
-                logger.warning(
-                    "Stage4: no prompts for (%s, %s) — trying neighbouring difficulty",
-                    domain, diff,
-                )
+                logger.warning("Stage4: no prompts for (%s, %s) — skipping cell", domain, diff)
                 continue
 
-            # Sample with seed
-            n_sample = min(cell_target, n_available)
             cell_ids = cell_df["prompt_id"].to_list()
-            rng.shuffle(cell_ids)
-            sampled_ids.extend(cell_ids[:n_sample])
+            if n_available >= cell_target:
+                rng.shuffle(cell_ids)
+                sampled_ids.extend(cell_ids[:cell_target])
+            else:
+                logger.warning(
+                    "Stage4: (%s, %s): undersupplied (%d available < %d target)"
+                    " — sampling with replacement",
+                    domain, diff, n_available, cell_target,
+                )
+                sampled_ids.extend(rng.choices(cell_ids, k=cell_target))
 
-            logger.debug(
-                "Stage4: (%s, %s): target=%d available=%d sampled=%d",
-                domain, diff, cell_target, n_available, n_sample,
-            )
+            logger.debug("Stage4: (%s, %s): target=%d available=%d", domain, diff, cell_target, n_available)
 
     logger.info("Stage4: sampled %d prompts before dedup", len(sampled_ids))
 

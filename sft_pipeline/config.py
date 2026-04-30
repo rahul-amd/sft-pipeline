@@ -165,8 +165,10 @@ class Stage4Config(BaseModel):
             "knowledge": 0.10, "instruction": 0.05, "other": 0.02,
         }
     )
-    difficulty_quotas: dict[str, float] = Field(
-        default_factory=lambda: {"easy": 0.20, "medium": 0.50, "hard": 0.30}
+    difficulty_quotas: dict[str, dict[str, float]] = Field(
+        default_factory=lambda: {
+            "default": {"easy": 0.20, "medium": 0.50, "hard": 0.30}
+        }
     )
     dedup_cosine_threshold: float = Field(0.92, ge=0.0, le=1.0)
     output_dir: str = "{base_path}/stage4"
@@ -174,11 +176,16 @@ class Stage4Config(BaseModel):
     @model_validator(mode="after")
     def quotas_sum_to_one(self) -> Stage4Config:
         domain_sum = sum(self.domain_quotas.values())
-        difficulty_sum = sum(self.difficulty_quotas.values())
         if abs(domain_sum - 1.0) > 0.01:
             raise ValueError(f"domain_quotas must sum to 1.0, got {domain_sum:.3f}")
-        if abs(difficulty_sum - 1.0) > 0.01:
-            raise ValueError(f"difficulty_quotas must sum to 1.0, got {difficulty_sum:.3f}")
+        if "default" not in self.difficulty_quotas:
+            raise ValueError("difficulty_quotas must contain a 'default' key as fallback")
+        for domain, ratios in self.difficulty_quotas.items():
+            s = sum(ratios.values())
+            if abs(s - 1.0) > 0.01:
+                raise ValueError(
+                    f"difficulty_quotas['{domain}'] must sum to 1.0, got {s:.3f}"
+                )
         return self
 
 

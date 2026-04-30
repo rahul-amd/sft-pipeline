@@ -77,14 +77,29 @@ stage4_sample:
     other:       0.02
 
   # ── Difficulty quotas ─────────────────────────────────────────────────────
-  # Must sum to exactly 1.0.
-  # Skew toward medium/hard to maximise learning signal.
-  # Check the difficulty distribution chart in the PDF to see if your data
-  # can actually supply 30% hard (2.1M hard prompts needed).
+  # Per-domain difficulty breakdown. Each entry must sum to exactly 1.0.
+  # The "default" key is required and applies to any domain not listed here.
+  # Domains that need more hard examples (e.g. math, code) can be tuned
+  # independently without affecting other domains.
+  # Check the domain×difficulty cross-tab in the PDF before adjusting —
+  # if a cell is undersupplied Stage 4 warns with exact shortfall counts.
   difficulty_quotas:
-    easy:   0.20
-    medium: 0.50
-    hard:   0.30
+    default:
+      easy:   0.20
+      medium: 0.50
+      hard:   0.30
+    math:
+      easy:   0.10
+      medium: 0.40
+      hard:   0.50
+    code:
+      easy:   0.10
+      medium: 0.45
+      hard:   0.45
+    science:
+      easy:   0.15
+      medium: 0.50
+      hard:   0.35
 
   # ── Near-dedup ────────────────────────────────────────────────────────────
   # Cosine similarity threshold above which two prompts are considered

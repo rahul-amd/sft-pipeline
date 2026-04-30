@@ -78,7 +78,10 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     # ------------------------------------------------------------------
     total_target = s4.total_prompts
     domain_quotas = s4.domain_quotas
-    diff_quotas = s4.difficulty_quotas
+    diff_quotas_map = s4.difficulty_quotas  # domain → {easy/medium/hard → frac}
+
+    def _diff_quotas_for(domain: str) -> dict[str, float]:
+        return diff_quotas_map.get(domain) or diff_quotas_map["default"]
 
     sampled_ids: list[str] = []
     known_domains = set(df["domain"].unique().to_list())
@@ -98,7 +101,7 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             logger.warning("Stage4: no prompts for domain '%s' — skipping", domain)
             continue
 
-        for diff, diff_frac in diff_quotas.items():
+        for diff, diff_frac in _diff_quotas_for(domain).items():
             cell_target = int(domain_target * diff_frac)
             cell_df = domain_df.filter(pl.col("difficulty") == diff)
             n_available = len(cell_df)

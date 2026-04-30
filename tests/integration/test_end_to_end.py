@@ -107,9 +107,10 @@ stage4_sample:
     general: 0.20
     language: 0.0
   difficulty_quotas:
-    easy: 0.33
-    medium: 0.34
-    hard: 0.33
+    default:
+      easy: 0.33
+      medium: 0.34
+      hard: 0.33
   dedup_cosine_threshold: 0.95
   output_dir: "{tp}/stage4"
 

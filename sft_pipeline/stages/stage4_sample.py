@@ -161,14 +161,22 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     device = cfg.global_.device
 
     # ------------------------------------------------------------------
-    # Step D: Near-duplicate removal via cosine similarity
+    # Step D: Within-cluster near-duplicate removal
     # ------------------------------------------------------------------
     if emb_vectors is not None and len(sampled_ids) > 0:
-        logger.info("Stage4: starting cosine dedup on %d prompts (threshold=%.2f, device=%s) ...",
-                    len(sampled_ids), s4.dedup_cosine_threshold, device)
+        pid_to_cluster: dict[str, int] = dict(
+            zip(df["prompt_id"].to_list(), df["cluster_id"].cast(pl.Int64).to_list())
+        ) if "cluster_id" in df.columns else {}
+
+        logger.info(
+            "Stage4: within-cluster cosine dedup on %d prompts "
+            "(threshold=%.2f, device=%s) ...",
+            len(sampled_ids), s4.dedup_cosine_threshold, device,
+        )
         t0 = time.time()
-        sampled_ids = _remove_near_duplicates(
+        sampled_ids = _remove_near_duplicates_within_clusters(
             sampled_ids,
+            pid_to_cluster,
             emb_vectors,
             id_to_emb_idx,
             threshold=s4.dedup_cosine_threshold,
@@ -218,59 +226,98 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 # Deduplication helpers
 # ---------------------------------------------------------------------------
 
-def _remove_near_duplicates(
-    prompt_ids: list[str],
+def _remove_near_duplicates_within_clusters(
+    sampled_ids: list[str],
+    pid_to_cluster: dict[str, int],
     all_embeddings: np.ndarray,
     id_to_idx: dict[str, int],
     threshold: float,
-    batch_size: int = 50_000,
     device: str = "cpu",
+    log_every: int = 10_000,
 ) -> list[str]:
     """
-    Remove near-duplicates from prompt_ids using cosine similarity.
-    Returns a deduplicated list preserving order.
+    Within-cluster near-duplicate removal using torch cosine similarity.
+
+    For each cluster:
+      1. Compute pairwise cosine similarities among the cluster's sampled prompts.
+      2. Rank prompts by similarity to the cluster centroid (most central = highest priority).
+      3. Greedily keep the most central prompt; drop any subsequent prompt whose
+         cosine similarity to any kept prompt exceeds `threshold`.
+
+    This is O(C × K²) where C is the number of clusters and K is the average
+    cluster size (~70 for 7M prompts / 100K clusters) — fast on CPU and GPU.
     """
-    # Extract embeddings for the sampled set
-    valid_ids = [pid for pid in prompt_ids if pid in id_to_idx]
-    if not valid_ids:
-        return prompt_ids
+    import torch
 
-    vecs = np.array(
-        [all_embeddings[id_to_idx[pid]] for pid in valid_ids], dtype=np.float32
-    )
-    N, D = vecs.shape
-    logger.info("Stage4 dedup: building temp FAISS index for %d vectors (device=%s)", N, device)
+    torch_device = torch.device("cuda" if device in ("cuda", "rocm") else "cpu")
+    logger.info("Stage4 dedup: using device=%s", torch_device)
 
-    index = make_flat_index(vecs, device=device)
+    # Group sampled indices by cluster
+    cluster_to_indices: dict[int, list[int]] = defaultdict(list)
+    for idx, pid in enumerate(sampled_ids):
+        cid = pid_to_cluster.get(pid, -1)
+        cluster_to_indices[cid].append(idx)
 
-    keep_mask = np.ones(N, dtype=bool)
-    n_batches = (N + batch_size - 1) // batch_size
-    t_dedup = time.time()
-    for batch_idx, i in enumerate(range(0, N, batch_size), 1):
-        batch_end = min(i + batch_size, N)
-        batch_vecs = vecs[i:batch_end]
-        # k=6: first result is the point itself (distance 1.0)
-        distances, indices = index.search(batch_vecs, k=min(6, N))
-        for local_idx, (dists, nbrs) in enumerate(zip(distances, indices)):
-            global_idx = i + local_idx
-            if not keep_mask[global_idx]:
+    keep_mask = np.ones(len(sampled_ids), dtype=bool)
+    n_clusters = len(cluster_to_indices)
+    n_removed = 0
+    t0 = time.time()
+
+    for i, (cid, indices) in enumerate(cluster_to_indices.items()):
+        if len(indices) <= 1:
+            continue
+
+        pids = [sampled_ids[j] for j in indices]
+        valid = [(j, p) for j, p in zip(indices, pids) if p in id_to_idx]
+        if len(valid) <= 1:
+            continue
+
+        valid_indices, valid_pids = zip(*valid)
+
+        vecs = torch.tensor(
+            np.array([all_embeddings[id_to_idx[p]] for p in valid_pids], dtype=np.float32),
+            device=torch_device,
+        )
+        # L2-normalise so dot product = cosine similarity
+        vecs = vecs / vecs.norm(dim=1, keepdim=True).clamp(min=1e-8)
+
+        # Centroid similarity — higher means more central / more representative
+        centroid = vecs.mean(dim=0)
+        centroid = centroid / centroid.norm().clamp(min=1e-8)
+        centroid_sim = (vecs @ centroid).cpu().numpy()
+
+        # Pairwise cosine similarity matrix
+        sim_matrix = (vecs @ vecs.T).cpu().numpy()
+
+        # Greedy keep: process most-central first; drop anything too similar to a kept prompt
+        order = np.argsort(-centroid_sim)
+        local_keep = np.ones(len(valid_pids), dtype=bool)
+        for a in range(len(order)):
+            ia = order[a]
+            if not local_keep[ia]:
                 continue
-            for dist, nbr in zip(dists[1:], nbrs[1:]):  # skip self
-                if nbr == -1:
-                    break
-                if dist >= threshold and keep_mask[nbr]:
-                    # Remove the later-appearing duplicate
-                    if nbr > global_idx:
-                        keep_mask[nbr] = False
-        if batch_idx % 10 == 0 or batch_idx == n_batches:
-            removed_so_far = int((~keep_mask[:batch_end]).sum())
+            for b in range(a + 1, len(order)):
+                ib = order[b]
+                if local_keep[ib] and sim_matrix[ia, ib] >= threshold:
+                    local_keep[ib] = False
+
+        cluster_removed = int((~local_keep).sum())
+        n_removed += cluster_removed
+        for j, keep in enumerate(local_keep):
+            if not keep:
+                keep_mask[valid_indices[j]] = False
+
+        if (i + 1) % log_every == 0 or (i + 1) == n_clusters:
             logger.info(
-                "Stage4 dedup: batch %d/%d — %d removed so far (%.1f s)",
-                batch_idx, n_batches, removed_so_far, time.time() - t_dedup,
+                "Stage4 dedup: %d/%d clusters processed, %d removed so far (%.1f s)",
+                i + 1, n_clusters, n_removed, time.time() - t0,
             )
 
-    kept = [valid_ids[i] for i in range(N) if keep_mask[i]]
-    logger.info("Stage4 dedup: %d → %d (removed %d)", N, len(kept), N - len(kept))
+    kept = [pid for pid, keep in zip(sampled_ids, keep_mask) if keep]
+    logger.info(
+        "Stage4 dedup: %d → %d (removed %d near-duplicates within clusters)",
+        len(sampled_ids), len(kept), n_removed,
+    )
     return kept
 
 

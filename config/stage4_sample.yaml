@@ -86,20 +86,44 @@ stage4_sample:
   difficulty_quotas:
     default:
       easy:   0.20
-      medium: 0.50
-      hard:   0.30
-    math:
-      easy:   0.10
-      medium: 0.40
-      hard:   0.50
+      medium: 0.55
+      hard:   0.25
     code:
-      easy:   0.10
+      easy:   0.12
+      medium: 0.70
+      hard:   0.18
+    math:
+      easy:   0.08
       medium: 0.45
-      hard:   0.45
+      hard:   0.47
+    writing:
+      easy:   0.23
+      medium: 0.68
+      hard:   0.09
+    knowledge:
+      easy:   0.36
+      medium: 0.60
+      hard:   0.04
+    reasoning:
+      easy:   0.10
+      medium: 0.76
+      hard:   0.14
+    instruction:
+      easy:   0.20   # 21+76+4=101 in data; rounded down 1% on easy
+      medium: 0.76
+      hard:   0.04
+    other:
+      easy:   0.32
+      medium: 0.53
+      hard:   0.15
     science:
-      easy:   0.15
-      medium: 0.50
-      hard:   0.35
+      easy:   0.07
+      medium: 0.60
+      hard:   0.33
+    language:
+      easy:   0.42
+      medium: 0.53
+      hard:   0.05
 
   # ── Near-dedup ────────────────────────────────────────────────────────────
   # Cosine similarity threshold above which two prompts are considered

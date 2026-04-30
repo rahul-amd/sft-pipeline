@@ -382,6 +382,7 @@ def run_stage3(
                     "difficulty": (ann.get("difficulty")
                                    or cluster_info.get("difficulty", "medium")),
                     "cluster_id": cluster_info.get("cluster_id", -1),
+                    "centroid_sim": cluster_info.get("centroid_sim", 0.5),
                     "topics": ann.get("topics", []),
                     "language": ann.get("language", "en"),
                     "summary": ann.get("summary", ""),
@@ -668,6 +669,7 @@ def run_stage3(
                 "difficulty": (ann.get("difficulty")
                                or cluster_info.get("difficulty", "medium")),
                 "cluster_id": cluster_info.get("cluster_id", -1),
+                "centroid_sim": cluster_info.get("centroid_sim", 0.5),
                 # Fields only populated when annotation is enabled; empty/default otherwise
                 "topics": ann.get("topics", []),
                 "language": ann.get("language", "en"),

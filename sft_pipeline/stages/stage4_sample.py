@@ -2,14 +2,24 @@
 Stage 4 — Prompt Sampling under Compute Constraints.
 
 Reads the clustered prompt pool (Stage 3), enforces domain and difficulty
-quotas, removes near-duplicates via embedding cosine similarity, and
-sorts the final set by embedding similarity (KV-cache optimization).
+quotas using centroid-ordered round-robin sampling, and writes the final
+set of ~7M prompts ready for teacher-model inference.
 
-The output is a deterministic, deduplicated set of ~7M prompts ready
-for teacher-model inference.
+Sampling strategy per (domain, difficulty) cell:
+  - Group prompts by cluster_id.
+  - Per cluster: centroid representative (highest centroid_sim) first,
+    then most peripheral prompts (lowest centroid_sim) if more are needed.
+  - Round-robin across all clusters until cell quota is met.
+
+This naturally avoids sampling near-duplicates (which cluster near the
+centroid) while ensuring broad coverage across all clusters.
+
+If centroid_sim is absent from Stage 3 data (old runs), Stage 4 computes
+it from the embeddings, patches the Stage 3 shards in-place, and continues.
 """
 from __future__ import annotations
 
+import json
 import logging
 import random
 import time
@@ -21,7 +31,6 @@ import polars as pl
 
 from sft_pipeline.checkpoint import CheckpointManager
 from sft_pipeline.clustering.embedder import load_embeddings
-from sft_pipeline.clustering.faiss_index import make_flat_index
 from sft_pipeline.config import PipelineConfig
 from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl
 
@@ -42,6 +51,7 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     cm.mark_stage_started(STAGE)
 
     rng = random.Random(cfg.global_.seed)
+    device = cfg.global_.device
 
     # ------------------------------------------------------------------
     # Step A: Load all clustered prompts into a Polars DataFrame
@@ -67,15 +77,15 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     logger.info("Stage4: all shards loaded — %d candidate prompts in %.1f s", len(df), time.time() - t0)
 
     # Ensure required columns exist
-    for col, default in [("domain", "general"), ("difficulty", "medium")]:
+    for col, default in [("domain", "general"), ("difficulty", "medium"), ("cluster_id", -1)]:
         if col not in df.columns:
             df = df.with_columns(pl.lit(default).alias(col))
 
     # ------------------------------------------------------------------
-    # Step B: Load embeddings for dedup
+    # Step B: Load embeddings
     # ------------------------------------------------------------------
-    emb_ids: list[str] = []
     emb_vectors: np.ndarray | None = None
+    id_to_emb_idx: dict[str, int] = {}
     emb_shards = list(emb_dir.glob("embeddings_*.parquet")) if emb_dir.is_dir() else []
     if emb_shards:
         logger.info("Stage4: loading embeddings from %s (%d shards) ...", emb_dir, len(emb_shards))
@@ -87,11 +97,33 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             len(emb_ids), emb_vectors.shape, emb_vectors.dtype, time.time() - t0,
         )
     else:
-        logger.warning("Stage4: no embedding shards found in %s — skipping cosine dedup", emb_dir)
-        id_to_emb_idx = {}
+        logger.warning(
+            "Stage4: no embedding shards found in %s — centroid_sim will use defaults",
+            emb_dir,
+        )
 
     # ------------------------------------------------------------------
-    # Step C: Quota-enforced sampling per (domain, difficulty) cell
+    # Step B.5: Patch centroid_sim into Stage 3 shards if missing
+    # ------------------------------------------------------------------
+    needs_patch = (
+        "centroid_sim" not in df.columns
+        or df["centroid_sim"].is_null().any()
+    )
+    if needs_patch and emb_vectors is not None:
+        logger.info(
+            "Stage4: centroid_sim missing from Stage 3 data — computing and patching shards ..."
+        )
+        t0 = time.time()
+        df = _patch_centroid_sims(df, emb_vectors, id_to_emb_idx, stage3_dir, device=device)
+        logger.info("Stage4: centroid_sim patch complete (%.1f s)", time.time() - t0)
+    elif needs_patch:
+        logger.warning(
+            "Stage4: centroid_sim missing and no embeddings available — using default 0.5"
+        )
+        df = df.with_columns(pl.lit(0.5).cast(pl.Float32).alias("centroid_sim"))
+
+    # ------------------------------------------------------------------
+    # Step C: Centroid-ordered quota sampling per (domain, difficulty) cell
     # ------------------------------------------------------------------
     total_target = s4.total_prompts
     domain_quotas = s4.domain_quotas
@@ -100,9 +132,6 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     def _diff_quotas_for(domain: str) -> dict[str, float]:
         return diff_quotas_map.get(domain) or diff_quotas_map["default"]
 
-    sampled_ids: list[str] = []
-    known_domains = set(df["domain"].unique().to_list())
-
     # Normalise quota keys — if a domain in data doesn't appear in config, lump into 'general'
     def _resolve_domain(d: str) -> str:
         return d if d in domain_quotas else "general"
@@ -110,6 +139,8 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     df = df.with_columns(
         pl.col("domain").map_elements(_resolve_domain, return_dtype=pl.Utf8).alias("domain_resolved")
     )
+
+    sampled_ids: list[str] = []
 
     for domain, d_frac in domain_quotas.items():
         domain_target = int(total_target * d_frac)
@@ -131,7 +162,6 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                 )
                 continue
 
-            cell_ids = cell_df["prompt_id"].to_list()
             if n_available < cell_target:
                 logger.warning(
                     "Stage4: QUOTA MISS (%s, %s): %d available < %d target"
@@ -142,10 +172,13 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     100.0 * (cell_target - n_available) / cell_target,
                 )
 
-            rng.shuffle(cell_ids)
-            sampled_ids.extend(cell_ids[:cell_target])
+            cell_sampled = _sample_cell_with_centroid_ordering(cell_df, cell_target, rng)
+            sampled_ids.extend(cell_sampled)
 
-            logger.debug("Stage4: (%s, %s): target=%d available=%d", domain, diff, cell_target, n_available)
+            logger.debug(
+                "Stage4: (%s, %s): target=%d available=%d sampled=%d",
+                domain, diff, cell_target, n_available, len(cell_sampled),
+            )
 
     n_sampled = len(sampled_ids)
     if n_sampled < total_target:
@@ -156,44 +189,10 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             100.0 * (total_target - n_sampled) / total_target,
         )
     else:
-        logger.info("Stage4: sampled %d prompts before dedup", n_sampled)
-
-    device = cfg.global_.device
+        logger.info("Stage4: sampled %d prompts", n_sampled)
 
     # ------------------------------------------------------------------
-    # Step D: Within-cluster near-duplicate removal
-    # ------------------------------------------------------------------
-    if emb_vectors is not None and len(sampled_ids) > 0:
-        pid_to_cluster: dict[str, int] = dict(
-            zip(df["prompt_id"].to_list(), df["cluster_id"].cast(pl.Int64).to_list())
-        ) if "cluster_id" in df.columns else {}
-
-        logger.info(
-            "Stage4: within-cluster cosine dedup on %d prompts "
-            "(threshold=%.2f, device=%s) ...",
-            len(sampled_ids), s4.dedup_cosine_threshold, device,
-        )
-        t0 = time.time()
-        sampled_ids = _remove_near_duplicates_within_clusters(
-            sampled_ids,
-            pid_to_cluster,
-            emb_vectors,
-            id_to_emb_idx,
-            threshold=s4.dedup_cosine_threshold,
-            device=device,
-        )
-        logger.info("Stage4: %d prompts after cosine dedup (%.1f s)", len(sampled_ids), time.time() - t0)
-
-    # ------------------------------------------------------------------
-    # Step E: Sort by embedding similarity (KV-cache optimization)
-    # ------------------------------------------------------------------
-    if emb_vectors is not None and len(sampled_ids) > 0:
-        t0 = time.time()
-        sampled_ids = _sort_by_similarity(sampled_ids, emb_vectors, id_to_emb_idx, device=device)
-        logger.info("Stage4: prompts sorted by embedding similarity (%.1f s)", time.time() - t0)
-
-    # ------------------------------------------------------------------
-    # Step F: Write output
+    # Step D: Write output
     # ------------------------------------------------------------------
     sampled_set = set(sampled_ids)
     logger.info("Stage4: collecting %d sampled records from %d shards for output ...",
@@ -223,157 +222,180 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Deduplication helpers
+# Sampling helper
 # ---------------------------------------------------------------------------
 
-def _remove_near_duplicates_within_clusters(
-    sampled_ids: list[str],
-    pid_to_cluster: dict[str, int],
-    all_embeddings: np.ndarray,
-    id_to_idx: dict[str, int],
-    threshold: float,
-    device: str = "cpu",
-    log_every: int = 10_000,
+def _sample_cell_with_centroid_ordering(
+    cell_df: pl.DataFrame,
+    cell_target: int,
+    rng: random.Random,
 ) -> list[str]:
     """
-    Within-cluster near-duplicate removal using torch cosine similarity.
+    Sample up to cell_target prompts using centroid-ordered round-robin.
 
-    For each cluster:
-      1. Compute pairwise cosine similarities among the cluster's sampled prompts.
-      2. Rank prompts by similarity to the cluster centroid (most central = highest priority).
-      3. Greedily keep the most central prompt; drop any subsequent prompt whose
-         cosine similarity to any kept prompt exceeds `threshold`.
+    Per cluster:
+      - Round 1: the most central prompt (highest centroid_sim).
+      - Round 2+: remaining prompts from most peripheral inward
+        (ascending centroid_sim), maximising within-cluster diversity.
 
-    This is O(C × K²) where C is the number of clusters and K is the average
-    cluster size (~70 for 7M prompts / 100K clusters) — fast on CPU and GPU.
+    Clusters are shuffled once at the start so no cluster is
+    systematically favoured across domains/difficulties.
+    """
+    pids = cell_df["prompt_id"].to_list()
+    cids = cell_df["cluster_id"].cast(pl.Int64).to_list()
+    sims = (
+        cell_df["centroid_sim"].to_list()
+        if "centroid_sim" in cell_df.columns
+        else [0.5] * len(pids)
+    )
+
+    # Group by cluster_id
+    cluster_to_items: dict[int, list[tuple[str, float]]] = defaultdict(list)
+    for pid, cid, sim in zip(pids, cids, sims):
+        cluster_to_items[int(cid)].append((pid, float(sim)))
+
+    # Build per-cluster ordered queue:
+    #   [most_central, most_peripheral, 2nd_most_peripheral, ...]
+    cluster_queues: list[list[str]] = []
+    for cid in sorted(cluster_to_items.keys()):
+        items = cluster_to_items[cid]
+        items.sort(key=lambda x: -x[1])  # descending centroid_sim
+        if len(items) == 1:
+            cluster_queues.append([items[0][0]])
+        else:
+            # centroid representative first, then periphery → centre
+            centroid_pid = items[0][0]
+            rest_pids = [x[0] for x in reversed(items[1:])]  # ascending sim
+            cluster_queues.append([centroid_pid] + rest_pids)
+
+    # Shuffle cluster order for stochastic diversity
+    rng.shuffle(cluster_queues)
+
+    n_available = sum(len(q) for q in cluster_queues)
+    if n_available <= cell_target:
+        return [pid for q in cluster_queues for pid in q]
+
+    # Round-robin: take one from each cluster per round
+    sampled: list[str] = []
+    round_n = 0
+    while len(sampled) < cell_target:
+        added = 0
+        for q in cluster_queues:
+            if round_n < len(q):
+                sampled.append(q[round_n])
+                added += 1
+                if len(sampled) >= cell_target:
+                    break
+        if added == 0:
+            break
+        round_n += 1
+
+    return sampled
+
+
+# ---------------------------------------------------------------------------
+# centroid_sim patch helper (for Stage 3 data produced before centroid_sim
+# was added to cluster_prompts())
+# ---------------------------------------------------------------------------
+
+def _patch_centroid_sims(
+    df: pl.DataFrame,
+    all_embeddings: np.ndarray,
+    id_to_emb_idx: dict[str, int],
+    stage3_dir: Path,
+    device: str = "cpu",
+) -> pl.DataFrame:
+    """
+    Compute centroid_sim for all prompts and rewrite Stage 3 shards in-place.
+
+    Cluster centres are computed as the mean of L2-normalised embeddings for
+    all prompts assigned to that cluster.  Prompts whose embeddings are absent
+    receive a neutral default of 0.5.
     """
     import torch
+    import torch.nn.functional as F
 
     torch_device = torch.device("cuda" if device in ("cuda", "rocm") else "cpu")
-    logger.info("Stage4 dedup: using device=%s", torch_device)
 
-    # Group sampled indices by cluster
-    cluster_to_indices: dict[int, list[int]] = defaultdict(list)
-    for idx, pid in enumerate(sampled_ids):
-        cid = pid_to_cluster.get(pid, -1)
-        cluster_to_indices[cid].append(idx)
+    pids = df["prompt_id"].to_list()
+    cluster_ids = df["cluster_id"].cast(pl.Int64).to_list()
+    N = len(pids)
+    D = all_embeddings.shape[1]
 
-    keep_mask = np.ones(len(sampled_ids), dtype=bool)
-    n_clusters = len(cluster_to_indices)
-    n_removed = 0
-    t0 = time.time()
+    # Map each prompt to its embedding row index (-1 if absent)
+    pid_emb_idx = np.array(
+        [id_to_emb_idx.get(pid, -1) for pid in pids], dtype=np.int64
+    )
 
-    for i, (cid, indices) in enumerate(cluster_to_indices.items()):
-        if len(indices) <= 1:
-            continue
+    # Collect embedding indices per cluster
+    cluster_to_emb_indices: dict[int, list[int]] = defaultdict(list)
+    for i, cid in enumerate(cluster_ids):
+        if pid_emb_idx[i] >= 0:
+            cluster_to_emb_indices[int(cid)].append(int(pid_emb_idx[i]))
 
-        pids = [sampled_ids[j] for j in indices]
-        valid = [(j, p) for j, p in zip(indices, pids) if p in id_to_idx]
-        if len(valid) <= 1:
-            continue
+    # Compute per-cluster centres (mean of L2-normalised embeddings)
+    unique_cids = sorted(cluster_to_emb_indices.keys())
+    cid_to_center_idx = {cid: i for i, cid in enumerate(unique_cids)}
+    K = len(unique_cids)
+    logger.info("Stage4 patch: computing centres for %d clusters (device=%s) ...", K, torch_device)
 
-        valid_indices, valid_pids = zip(*valid)
+    centers = np.zeros((K, D), dtype=np.float32)
+    for ci_idx, (cid, emb_indices) in enumerate(cluster_to_emb_indices.items()):
+        ci = cid_to_center_idx[cid]
+        vecs = all_embeddings[emb_indices].astype(np.float32)
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        vecs /= np.maximum(norms, 1e-8)
+        center = vecs.mean(axis=0)
+        norm = np.linalg.norm(center)
+        centers[ci] = center / max(norm, 1e-8)
+        if (ci_idx + 1) % 10_000 == 0 or (ci_idx + 1) == K:
+            logger.info("Stage4 patch: computed centres for %d/%d clusters", ci_idx + 1, K)
 
-        vecs = torch.tensor(
-            np.array([all_embeddings[id_to_idx[p]] for p in valid_pids], dtype=np.float32),
-            device=torch_device,
-        )
-        # L2-normalise so dot product = cosine similarity
-        vecs = vecs / vecs.norm(dim=1, keepdim=True).clamp(min=1e-8)
+    # Compute centroid_sim in chunks via torch
+    from sft_pipeline.clustering.clusterer import compute_centroid_similarities
 
-        # Centroid similarity — higher means more central / more representative
-        centroid = vecs.mean(dim=0)
-        centroid = centroid / centroid.norm().clamp(min=1e-8)
-        centroid_sim = (vecs @ centroid).cpu().numpy()
-
-        # Pairwise cosine similarity matrix
-        sim_matrix = (vecs @ vecs.T).cpu().numpy()
-
-        # Greedy keep: process most-central first; drop anything too similar to a kept prompt
-        order = np.argsort(-centroid_sim)
-        local_keep = np.ones(len(valid_pids), dtype=bool)
-        for a in range(len(order)):
-            ia = order[a]
-            if not local_keep[ia]:
-                continue
-            for b in range(a + 1, len(order)):
-                ib = order[b]
-                if local_keep[ib] and sim_matrix[ia, ib] >= threshold:
-                    local_keep[ib] = False
-
-        cluster_removed = int((~local_keep).sum())
-        n_removed += cluster_removed
-        for j, keep in enumerate(local_keep):
-            if not keep:
-                keep_mask[valid_indices[j]] = False
-
-        if (i + 1) % log_every == 0 or (i + 1) == n_clusters:
-            logger.info(
-                "Stage4 dedup: %d/%d clusters processed, %d removed so far (%.1f s)",
-                i + 1, n_clusters, n_removed, time.time() - t0,
-            )
-
-    kept = [pid for pid, keep in zip(sampled_ids, keep_mask) if keep]
+    labels_for_sim = np.array(
+        [cid_to_center_idx.get(int(cid), 0) for cid in cluster_ids], dtype=np.int64
+    )
+    # Build embedding matrix for all prompts (zeros for missing)
+    valid_mask = pid_emb_idx >= 0
     logger.info(
-        "Stage4 dedup: %d → %d (removed %d near-duplicates within clusters)",
-        len(sampled_ids), len(kept), n_removed,
+        "Stage4 patch: building embedding matrix for %d prompts (%d have embeddings) ...",
+        N, int(valid_mask.sum()),
     )
-    return kept
+    emb_for_sim = np.zeros((N, D), dtype=np.float16)
+    emb_for_sim[valid_mask] = all_embeddings[pid_emb_idx[valid_mask]]
+    logger.info("Stage4 patch: embedding matrix ready — computing cosine sims ...")
 
-
-def _sort_by_similarity(
-    prompt_ids: list[str],
-    all_embeddings: np.ndarray,
-    id_to_idx: dict[str, int],
-    device: str = "cpu",
-) -> list[str]:
-    """
-    Greedy nearest-neighbour traversal to sort prompts by similarity.
-    Improves vLLM KV-cache utilization during inference.
-    Uses a simple greedy approach (not TSP-optimal) for tractability.
-    """
-    valid_ids = [pid for pid in prompt_ids if pid in id_to_idx]
-    if len(valid_ids) < 2:
-        return valid_ids
-
-    vecs = np.array(
-        [all_embeddings[id_to_idx[pid]] for pid in valid_ids], dtype=np.float32
+    centroid_sims = compute_centroid_similarities(
+        emb_for_sim, labels_for_sim, centers, device=device
     )
-    N = len(vecs)
-
-    # For very large sets, skip sorting (too slow) and just return as-is
-    if N > 500_000:
-        logger.info("Stage4: skipping similarity sort for N=%d (too large, >500K)", N)
-        return valid_ids
+    centroid_sims[~valid_mask] = 0.5  # neutral default for prompts without embeddings
 
     logger.info(
-        "Stage4: running greedy similarity sort on %d prompts (dim=%d, device=%s)",
-        N, vecs.shape[1], device,
+        "Stage4 patch: centroid_sim computed — min=%.3f mean=%.3f max=%.3f",
+        float(centroid_sims.min()), float(centroid_sims.mean()), float(centroid_sims.max()),
     )
-    index = make_flat_index(vecs, device=device)
 
-    visited = np.zeros(N, dtype=bool)
-    order = []
-    current = 0  # start from first prompt
-    visited[current] = True
-    order.append(current)
+    # Add column to df
+    df = df.with_columns(pl.Series("centroid_sim", centroid_sims.tolist()).cast(pl.Float32))
 
-    for _ in range(N - 1):
-        _, nbrs = index.search(vecs[current : current + 1], k=min(20, N))
-        moved = False
-        for nbr in nbrs[0]:
-            if nbr != -1 and not visited[nbr]:
-                current = int(nbr)
-                visited[current] = True
-                order.append(current)
-                moved = True
-                break
-        if not moved:
-            # Fall back to first unvisited
-            unvisited = np.where(~visited)[0]
-            if len(unvisited):
-                current = int(unvisited[0])
-                visited[current] = True
-                order.append(current)
+    # Rewrite Stage 3 shards in-place
+    pid_to_sim: dict[str, float] = dict(zip(pids, centroid_sims.tolist()))
+    shards = sorted(stage3_dir.glob("part-*.jsonl"))
+    logger.info("Stage4 patch: rewriting %d Stage 3 shards with centroid_sim ...", len(shards))
+    for i, shard in enumerate(shards, 1):
+        updated: list[dict] = []
+        for rec in iter_jsonl(shard):
+            sim = pid_to_sim.get(rec["prompt_id"])
+            if sim is not None:
+                rec["centroid_sim"] = sim
+            updated.append(rec)
+        with open(shard, "w", encoding="utf-8") as fh:
+            for rec in updated:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        if i % 20 == 0 or i == len(shards):
+            logger.info("Stage4 patch: rewrote %d/%d shards", i, len(shards))
 
-    return [valid_ids[i] for i in order]
+    logger.info("Stage4 patch: Stage 3 shards updated — centroid_sim will be present on next run")
+    return df

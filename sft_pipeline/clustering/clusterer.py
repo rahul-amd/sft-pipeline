@@ -379,6 +379,52 @@ def _assign_to_centroids(embeddings: np.ndarray, faiss_index) -> list[int]:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def compute_centroid_similarities(
+    embeddings: np.ndarray,   # (N, D) float16 or float32
+    labels: np.ndarray,       # (N,) int — cluster assignment per point
+    centers: np.ndarray,      # (K, D) float32 — cluster centroids
+    device: str = "cpu",
+    chunk_size: int = 500_000,
+) -> np.ndarray:
+    """
+    Cosine similarity of each embedding to its assigned cluster centroid.
+
+    Returns float32 array of shape (N,).  Labels < 0 (noise points in
+    HDBSCAN) are clamped to 0 and will receive the similarity to cluster 0
+    rather than NaN — callers should treat those values as unreliable.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    torch_device = torch.device("cuda" if device in ("cuda", "rocm") else "cpu")
+    N = len(embeddings)
+
+    C = F.normalize(
+        torch.from_numpy(centers.astype(np.float32)).to(torch_device), dim=1
+    )  # (K, D)
+
+    sims = np.empty(N, dtype=np.float32)
+    n_chunks = (N + chunk_size - 1) // chunk_size
+    for chunk_i, start in enumerate(range(0, N, chunk_size)):
+        end = min(start + chunk_size, N)
+        vecs = F.normalize(
+            torch.from_numpy(embeddings[start:end].astype(np.float32)).to(torch_device),
+            dim=1,
+        )  # (c, D)
+        lbls = torch.from_numpy(
+            np.clip(labels[start:end], 0, C.shape[0] - 1).astype(np.int64)
+        ).to(torch_device)
+        sims[start:end] = (vecs * C[lbls]).sum(dim=1).cpu().numpy()
+        if n_chunks > 4 and (
+            (chunk_i + 1) % max(1, n_chunks // 4) == 0 or (chunk_i + 1) == n_chunks
+        ):
+            logger.info(
+                "compute_centroid_similarities: %d/%d vectors (%.0f%%)", end, N, 100.0 * end / N
+            )
+
+    return sims
+
+
 def cluster_prompts(
     prompt_ids: list[str],
     prompts: list[str],
@@ -440,6 +486,9 @@ def cluster_prompts(
             members = [prompts[i] for i in cluster_members.get(k, [])]
             cluster_domain[k] = _infer_cluster_domain(members)
 
+        logger.info("cluster_prompts: computing centroid similarities ...")
+        centroid_sims = compute_centroid_similarities(embeddings, labels, centers, device=device)
+
         results: list[dict] = []
         for i, pid in enumerate(prompt_ids):
             cid = int(labels[i])
@@ -448,6 +497,7 @@ def cluster_prompts(
                 "domain": cluster_domain.get(cid, "general"),
                 "difficulty": score_difficulty(prompts[i]),
                 "cluster_id": cid,
+                "centroid_sim": float(centroid_sims[i]),
             })
             if (i + 1) % 1_000_000 == 0:
                 logger.info("cluster_prompts: labelled %d / %d", i + 1, N)
@@ -482,6 +532,10 @@ def cluster_prompts(
         members = [prompts[i] for i in centroid_members.get(cidx, [])]
         centroid_domain[cidx] = _infer_cluster_domain(members)
 
+    logger.info("cluster_prompts: computing centroid similarities ...")
+    centroid_assignments_arr = np.array(centroid_assignments, dtype=np.int64)
+    centroid_sims = compute_centroid_similarities(embeddings, centroid_assignments_arr, centroids, device=device)
+
     results = []
     for i, pid in enumerate(prompt_ids):
         cidx = centroid_assignments[i]
@@ -491,5 +545,6 @@ def cluster_prompts(
             "domain": centroid_domain.get(cidx, "general"),
             "difficulty": score_difficulty(prompts[i]),
             "cluster_id": cluster_label,
+            "centroid_sim": float(centroid_sims[i]),
         })
     return results

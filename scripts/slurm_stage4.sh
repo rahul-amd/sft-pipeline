@@ -38,8 +38,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-node=1
-#SBATCH --mem=256G
-#SBATCH --time=2:00:00
+#SBATCH --mem=200G
+#SBATCH --time=8:00:00
 #SBATCH --account=project_462000963
 #SBATCH --partition=dev-g
 #SBATCH --output=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-stage4.out

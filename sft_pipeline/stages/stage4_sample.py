@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import random
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from sft_pipeline.checkpoint import CheckpointManager
 from sft_pipeline.clustering.embedder import load_embeddings
 from sft_pipeline.clustering.faiss_index import make_flat_index
 from sft_pipeline.config import PipelineConfig
-from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl_dir
+from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +46,25 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     # ------------------------------------------------------------------
     # Step A: Load all clustered prompts into a Polars DataFrame
     # ------------------------------------------------------------------
-    logger.info("Stage4: loading clustered prompts from %s", stage3_dir)
-    records = list(iter_jsonl_dir(stage3_dir))
-    if not records:
+    shards = sorted(stage3_dir.glob("part-*.jsonl"))
+    if not shards:
         logger.error("Stage4: no prompts found in %s — was Stage 3 run?", stage3_dir)
         cm.mark_stage_failed(STAGE, "No input prompts")
         return
 
+    logger.info("Stage4: loading clustered prompts from %s (%d shards) ...", stage3_dir, len(shards))
+    t0 = time.time()
+    records: list[dict] = []
+    for i, shard in enumerate(shards, 1):
+        shard_records = list(iter_jsonl(shard))
+        records.extend(shard_records)
+        logger.info(
+            "Stage4: loaded shard %d/%d — %d records this shard, %d total (%.1f s)",
+            i, len(shards), len(shard_records), len(records), time.time() - t0,
+        )
+
     df = pl.DataFrame(records)
-    logger.info("Stage4: loaded %d candidate prompts", len(df))
+    logger.info("Stage4: all shards loaded — %d candidate prompts in %.1f s", len(df), time.time() - t0)
 
     # Ensure required columns exist
     for col, default in [("domain", "general"), ("difficulty", "medium")]:
@@ -67,8 +78,14 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     emb_vectors: np.ndarray | None = None
     emb_shards = list(emb_dir.glob("embeddings_*.parquet")) if emb_dir.is_dir() else []
     if emb_shards:
+        logger.info("Stage4: loading embeddings from %s (%d shards) ...", emb_dir, len(emb_shards))
+        t0 = time.time()
         emb_ids, emb_vectors = load_embeddings(emb_dir)
         id_to_emb_idx = {pid: i for i, pid in enumerate(emb_ids)}
+        logger.info(
+            "Stage4: embeddings loaded — %d vectors, shape %s, dtype %s (%.1f s)",
+            len(emb_ids), emb_vectors.shape, emb_vectors.dtype, time.time() - t0,
+        )
     else:
         logger.warning("Stage4: no embedding shards found in %s — skipping cosine dedup", emb_dir)
         id_to_emb_idx = {}
@@ -147,6 +164,9 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     # Step D: Near-duplicate removal via cosine similarity
     # ------------------------------------------------------------------
     if emb_vectors is not None and len(sampled_ids) > 0:
+        logger.info("Stage4: starting cosine dedup on %d prompts (threshold=%.2f, device=%s) ...",
+                    len(sampled_ids), s4.dedup_cosine_threshold, device)
+        t0 = time.time()
         sampled_ids = _remove_near_duplicates(
             sampled_ids,
             emb_vectors,
@@ -154,24 +174,31 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             threshold=s4.dedup_cosine_threshold,
             device=device,
         )
-        logger.info("Stage4: %d prompts after cosine dedup", len(sampled_ids))
+        logger.info("Stage4: %d prompts after cosine dedup (%.1f s)", len(sampled_ids), time.time() - t0)
 
     # ------------------------------------------------------------------
     # Step E: Sort by embedding similarity (KV-cache optimization)
     # ------------------------------------------------------------------
     if emb_vectors is not None and len(sampled_ids) > 0:
+        t0 = time.time()
         sampled_ids = _sort_by_similarity(sampled_ids, emb_vectors, id_to_emb_idx, device=device)
-        logger.info("Stage4: prompts sorted by embedding similarity")
+        logger.info("Stage4: prompts sorted by embedding similarity (%.1f s)", time.time() - t0)
 
     # ------------------------------------------------------------------
     # Step F: Write output
     # ------------------------------------------------------------------
     sampled_set = set(sampled_ids)
-    # Build a lookup for full records
+    logger.info("Stage4: collecting %d sampled records from %d shards for output ...",
+                len(sampled_set), len(shards))
+    t0 = time.time()
     id_to_record: dict[str, dict] = {}
-    for rec in iter_jsonl_dir(stage3_dir):
-        if rec["prompt_id"] in sampled_set:
-            id_to_record[rec["prompt_id"]] = rec
+    for i, shard in enumerate(shards, 1):
+        for rec in iter_jsonl(shard):
+            if rec["prompt_id"] in sampled_set:
+                id_to_record[rec["prompt_id"]] = rec
+        if i % 20 == 0 or i == len(shards):
+            logger.info("Stage4: scanned %d/%d shards, collected %d records (%.1f s)",
+                        i, len(shards), len(id_to_record), time.time() - t0)
 
     total_written = 0
     with ShardedJSONLWriter(out_dir, shard_size_mb=300) as writer:
@@ -217,7 +244,9 @@ def _remove_near_duplicates(
     index = make_flat_index(vecs, device=device)
 
     keep_mask = np.ones(N, dtype=bool)
-    for i in range(0, N, batch_size):
+    n_batches = (N + batch_size - 1) // batch_size
+    t_dedup = time.time()
+    for batch_idx, i in enumerate(range(0, N, batch_size), 1):
         batch_end = min(i + batch_size, N)
         batch_vecs = vecs[i:batch_end]
         # k=6: first result is the point itself (distance 1.0)
@@ -233,6 +262,12 @@ def _remove_near_duplicates(
                     # Remove the later-appearing duplicate
                     if nbr > global_idx:
                         keep_mask[nbr] = False
+        if batch_idx % 10 == 0 or batch_idx == n_batches:
+            removed_so_far = int((~keep_mask[:batch_end]).sum())
+            logger.info(
+                "Stage4 dedup: batch %d/%d — %d removed so far (%.1f s)",
+                batch_idx, n_batches, removed_so_far, time.time() - t_dedup,
+            )
 
     kept = [valid_ids[i] for i in range(N) if keep_mask[i]]
     logger.info("Stage4 dedup: %d → %d (removed %d)", N, len(kept), N - len(kept))

@@ -104,24 +104,39 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             n_available = len(cell_df)
 
             if n_available == 0:
-                logger.warning("Stage4: no prompts for (%s, %s) — skipping cell", domain, diff)
+                logger.warning(
+                    "Stage4: QUOTA MISS (%s, %s): 0 available, target=%d"
+                    " — cell skipped entirely. Adjust quotas in config.",
+                    domain, diff, cell_target,
+                )
                 continue
 
             cell_ids = cell_df["prompt_id"].to_list()
-            if n_available >= cell_target:
-                rng.shuffle(cell_ids)
-                sampled_ids.extend(cell_ids[:cell_target])
-            else:
+            if n_available < cell_target:
                 logger.warning(
-                    "Stage4: (%s, %s): undersupplied (%d available < %d target)"
-                    " — sampling with replacement",
+                    "Stage4: QUOTA MISS (%s, %s): %d available < %d target"
+                    " — shortfall of %d prompts (%.1f%% of cell target)."
+                    " Adjust domain_quotas / difficulty_quotas in config.",
                     domain, diff, n_available, cell_target,
+                    cell_target - n_available,
+                    100.0 * (cell_target - n_available) / cell_target,
                 )
-                sampled_ids.extend(rng.choices(cell_ids, k=cell_target))
+
+            rng.shuffle(cell_ids)
+            sampled_ids.extend(cell_ids[:cell_target])
 
             logger.debug("Stage4: (%s, %s): target=%d available=%d", domain, diff, cell_target, n_available)
 
-    logger.info("Stage4: sampled %d prompts before dedup", len(sampled_ids))
+    n_sampled = len(sampled_ids)
+    if n_sampled < total_target:
+        logger.warning(
+            "Stage4: sampled %d prompts — shortfall of %d vs target %d (%.1f%%)."
+            " Check QUOTA MISS warnings above and adjust config quotas.",
+            n_sampled, total_target - n_sampled, total_target,
+            100.0 * (total_target - n_sampled) / total_target,
+        )
+    else:
+        logger.info("Stage4: sampled %d prompts before dedup", n_sampled)
 
     device = cfg.global_.device
 

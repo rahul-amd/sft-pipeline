@@ -284,3 +284,86 @@ class TestFilterOrdering:
         a = "I don't know"   # boilerplate — must trigger before contradiction
         result = check_heuristic(_rec(r, a), cfg)
         assert result.reason == "boilerplate_answer"
+
+
+# ===========================================================================
+# 6. raw_response path (Stage 5 format — no separate reasoning/answer fields)
+# ===========================================================================
+
+def _raw_rec(raw_response: str) -> dict:
+    return {"prompt": "What is 2 + 2?", "raw_response": raw_response}
+
+
+_GOOD_RAW = (
+    "<think>\n"
+    + _GOOD_REASONING
+    + "\n</think>\n<answer>\n"
+    + _GOOD_ANSWER
+    + "\n</answer>"
+)
+
+
+class TestRawResponsePath:
+    def test_good_raw_response_passes(self, cfg):
+        result = check_heuristic(_raw_rec(_GOOD_RAW), cfg)
+        assert result.passed
+
+    def test_repetitive_raw_response_fails(self, cfg):
+        rep_raw = "the answer is four " * 200   # high repetition, 800 tokens
+        result = check_heuristic(_raw_rec(rep_raw), cfg)
+        assert not result.passed
+        assert result.reason.startswith("low_info_density")
+
+    def test_empty_raw_response_no_crash(self, cfg):
+        """Empty raw_response has no tokens — TTR check skipped, no error."""
+        result = check_heuristic(_raw_rec(""), cfg)
+        assert "low_info_density" not in result.reason
+
+    def test_boilerplate_skipped_for_raw(self, cfg):
+        """
+        Boilerplate check requires parsed answer field.
+        A raw_response that looks like a boilerplate answer should NOT be
+        rejected for boilerplate (we can't isolate just the answer portion).
+        """
+        raw = "I don't know the answer to your question. " * 20  # repetitive but not parsed
+        result = check_heuristic(_raw_rec(raw), cfg)
+        # Will fail low_info_density, but NOT boilerplate_answer
+        assert result.reason != "boilerplate_answer"
+
+    def test_contradiction_skipped_for_raw(self, cfg):
+        """Contradiction check requires separate reasoning/answer — skipped for raw."""
+        # Build a raw response that would look contradictory if parsed,
+        # but since it's raw it should only be evaluated on TTR
+        raw = (
+            _GOOD_REASONING + " "
+            + "This algorithm does not sort duplicate values correctly. "
+        ) * 2  # diverse enough to pass TTR; contradiction should be ignored
+        result = check_heuristic(_raw_rec(raw), cfg)
+        assert "self_contradiction" not in result.reason
+
+    def test_raw_takes_priority_over_empty_parsed(self, cfg):
+        """
+        When raw_response is present and reasoning/answer are absent,
+        the raw_response path is used (not the parsed path).
+        """
+        rec = {
+            "prompt": "What is 2+2?",
+            "raw_response": _GOOD_RAW,
+            # No reasoning or answer keys at all
+        }
+        result = check_heuristic(rec, cfg)
+        assert result.passed
+
+    def test_parsed_path_used_when_both_present(self, cfg):
+        """
+        When both raw_response and reasoning/answer are present, parsed path is used.
+        Boilerplate check should run (and fire) on the answer field.
+        """
+        rec = {
+            "prompt": "What is 2+2?",
+            "raw_response": _GOOD_RAW,
+            "reasoning": _GOOD_REASONING,
+            "answer": "I don't know",  # boilerplate answer
+        }
+        result = check_heuristic(rec, cfg)
+        assert result.reason == "boilerplate_answer"

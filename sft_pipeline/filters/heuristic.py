@@ -43,29 +43,42 @@ _BOILERPLATE_PATTERNS = re.compile(
 def check_heuristic(record: dict, cfg: HeuristicFilterConfig) -> FilterResult:
     """
     Apply heuristic filters to a response record.
+
+    Supports two record formats:
+      - New (Stage 5 raw output): MSTTR is computed on raw_response.
+        Boilerplate and contradiction checks are skipped (need parsed fields).
+      - Legacy / parsed: all three checks run on reasoning + answer fields.
     """
+    raw_response = record.get("raw_response", "")
     reasoning = record.get("reasoning", "")
     answer = record.get("answer", "")
 
-    # 1. Information density: Mean Segmental TTR on the full response.
-    #    Raw TTR collapses for long texts (< 0.30 for any response > ~700 words)
-    #    because common words repeat.  MSTTR computes TTR in fixed-size windows
-    #    and averages, making it length-independent.
-    full_text = (reasoning + " " + answer).lower()
+    # Determine which text to use for MSTTR.
+    # Use raw_response path when no separately-parsed fields are present,
+    # regardless of whether raw_response itself is empty.
+    if not (reasoning or answer):
+        full_text = raw_response.lower()
+        parsed_fields_available = False
+    else:
+        full_text = (reasoning + " " + answer).lower()
+        parsed_fields_available = True
+
+    # 1. Information density: Mean Segmental TTR — length-independent.
     tokens = full_text.split()
     if tokens:
         msttr = _compute_msttr(tokens, cfg.msttr_segment_size)
         if msttr < cfg.min_info_density:
             return FilterResult(False, f"low_info_density:{msttr:.2f}")
 
-    # 2. Boilerplate / refusal response
-    answer_stripped = answer.strip()
-    if _BOILERPLATE_PATTERNS.match(answer_stripped):
-        return FilterResult(False, "boilerplate_answer")
+    # 2 & 3: Boilerplate and contradiction require separately parsed fields.
+    if parsed_fields_available:
+        # 2. Boilerplate / refusal response
+        if _BOILERPLATE_PATTERNS.match(answer.strip()):
+            return FilterResult(False, "boilerplate_answer")
 
-    # 3. Self-contradiction (light heuristic — not a full NLI check)
-    if cfg.flag_self_contradiction and _has_contradiction(reasoning, answer):
-        return FilterResult(False, "self_contradiction")
+        # 3. Self-contradiction (light heuristic — not a full NLI check)
+        if cfg.flag_self_contradiction and _has_contradiction(reasoning, answer):
+            return FilterResult(False, "self_contradiction")
 
     return FilterResult(True)
 

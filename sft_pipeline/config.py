@@ -285,10 +285,6 @@ class LLMJudgeConfig(BaseModel):
 
 class Stage6Config(BaseModel):
     enabled: bool = True
-    # Delimiters used to parse raw_response from Stage 5 into reasoning+answer.
-    # These must match the format the teacher model naturally produces.
-    # Qwen3 / DeepSeek-R1 default: <think>…</think><answer>…</answer>
-    delimiters: ReasoningDelimiters = Field(default_factory=ReasoningDelimiters)
     structural: StructuralFilterConfig = Field(default_factory=StructuralFilterConfig)
     heuristic: HeuristicFilterConfig = Field(default_factory=HeuristicFilterConfig)
     math: MathFilterConfig = Field(default_factory=MathFilterConfig)

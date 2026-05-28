@@ -70,15 +70,6 @@ stage5_inference:
 stage6_filter:
   enabled: true
 
-  # Delimiters for parsing raw_response → reasoning + answer.
-  # These match the default Qwen3 output format.  Change if you used a model
-  # with different native delimiters.
-  delimiters:
-    think_start:  "<think>"
-    think_end:    "</think>"
-    answer_start: "<answer>"
-    answer_end:   "</answer>"
-
   # ── Filter 1: Structural ──────────────────────────────────────────────────
   structural:
     # Minimum tokens in reasoning+answer combined (whitespace split).

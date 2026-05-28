@@ -22,30 +22,49 @@ class FilterResult:
 def check_structural(record: dict, cfg: StructuralFilterConfig) -> FilterResult:
     """
     Apply all structural filters to a response record.
-    Returns FilterResult(passed=True) if the record passes all checks.
+
+    Supports two record formats:
+      - New (Stage 5 raw output): uses 'raw_response' for length + repetition checks.
+      - Legacy / parsed: uses 'reasoning' + 'answer' fields as before.
     """
+    prompt = record.get("prompt", "")
+    raw_response = record.get("raw_response", "")
     reasoning = record.get("reasoning", "")
     answer = record.get("answer", "")
-    prompt = record.get("prompt", "")
 
-    # 1. Required fields present and non-empty
+    # 1. Prompt must always be present
     if not prompt or not prompt.strip():
         return FilterResult(False, "missing_prompt")
-    if not reasoning or not reasoning.strip():
-        return FilterResult(False, "missing_reasoning")
-    if not answer or not answer.strip():
-        return FilterResult(False, "missing_answer")
 
-    # 2. Response token length (approximate via whitespace split)
-    full_response = reasoning + " " + answer
-    n_tokens = len(full_response.split())
+    # 2. Determine response text to check.
+    #    Use raw_response path when no separately-parsed fields are present.
+    #    The emptiness of raw_response is checked *after* we decide the path,
+    #    so an empty raw_response yields "missing_response" rather than
+    #    falling through to the parsed path (which would give "missing_reasoning").
+    if not (reasoning or answer):
+        # Unparsed format: work directly on raw_response
+        if not raw_response or not raw_response.strip():
+            return FilterResult(False, "missing_response")
+        response_text = raw_response
+        repetition_text = raw_response
+    else:
+        # Parsed format: require both reasoning and answer
+        if not reasoning or not reasoning.strip():
+            return FilterResult(False, "missing_reasoning")
+        if not answer or not answer.strip():
+            return FilterResult(False, "missing_answer")
+        response_text = reasoning + " " + answer
+        repetition_text = reasoning
+
+    # 3. Response token length (approximate via whitespace split)
+    n_tokens = len(response_text.split())
     if n_tokens < cfg.min_response_tokens:
         return FilterResult(False, f"too_short:{n_tokens}")
     if n_tokens > cfg.max_response_tokens:
         return FilterResult(False, f"too_long:{n_tokens}")
 
-    # 3. Repetition loop detection — check for repeated n-grams
-    if _has_repetition(reasoning, cfg.max_repetition_ngram, cfg.max_repetition_count):
+    # 4. Repetition loop detection — check for repeated n-grams
+    if _has_repetition(repetition_text, cfg.max_repetition_ngram, cfg.max_repetition_count):
         return FilterResult(False, "repetition_loop")
 
     return FilterResult(True)

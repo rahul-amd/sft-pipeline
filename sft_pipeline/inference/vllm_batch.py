@@ -21,29 +21,32 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def run_inference_batch(
-    prompts: list[dict],      # list of prompt records from Stage 4
+    prompts: list[dict],          # list of prompt records from Stage 4
     model_name: str,
-    vllm_engine_cfg: Any,     # VllmEngineConfig
-    generation_cfg: Any,      # GenerationConfig
-    delimiters: Any,          # ReasoningDelimiters
+    vllm_engine_cfg: Any,         # VllmEngineConfig
+    generation_cfg: Any,          # GenerationConfig
+    skip_special_tokens: bool = False,
     device: str = "cuda",
 ) -> Iterator[dict]:
     """
     Run vLLM offline inference on a list of prompt records.
-    Yields enriched records with 'reasoning', 'answer', 'teacher_model' fields.
+    Yields enriched records with a 'raw_response' field containing the full
+    model output (including any <think>...</think> tokens the model produces
+    natively).  No delimiter parsing is done here.
 
     Args:
         prompts: List of prompt dicts (must have 'prompt_id' and 'prompt').
         model_name: HuggingFace model ID.
         vllm_engine_cfg: VllmEngineConfig with tensor_parallel_size etc.
         generation_cfg: GenerationConfig with temperature, max_tokens, n_candidates.
-        delimiters: ReasoningDelimiters for parsing.
+        skip_special_tokens: False (default) keeps HF special tokens such as
+            <|im_end|> in the output text.  True strips them (vLLM default).
+            Note: <think>/<answer> are regular text tokens and are always present.
         device: 'cuda' or 'rocm' (both map to 'cuda' in PyTorch/vLLM).
     """
     from vllm import LLM, SamplingParams
     from transformers import AutoTokenizer
 
-    from sft_pipeline.inference.output_parser import select_best_candidate
     from sft_pipeline.inference.prompt_formatter import apply_chat_template
 
     logger.info(
@@ -68,27 +71,25 @@ def run_inference_batch(
         top_p=generation_cfg.top_p,
         max_tokens=generation_cfg.max_tokens,
         n=generation_cfg.n_candidates,
+        skip_special_tokens=skip_special_tokens,
     )
 
-    # Format all prompts with chat template
-    formatted = [
-        apply_chat_template(tokenizer, rec["prompt"], delimiters)
-        for rec in prompts
-    ]
+    # Apply the model's native chat template (no delimiter instructions injected)
+    formatted = [apply_chat_template(tokenizer, rec["prompt"]) for rec in prompts]
 
     logger.info("Running vLLM.generate() on %d prompts", len(formatted))
     outputs = llm.generate(formatted, sampling_params)
 
     for rec, output in zip(prompts, outputs):
+        # Store all candidates; pick the longest one as primary raw_response.
+        # Downstream (Stage 6) can re-rank or re-parse as needed.
         candidate_texts = [o.text for o in output.outputs]
-        best, _ = select_best_candidate(candidate_texts, delimiters)
+        raw_response = max(candidate_texts, key=len) if candidate_texts else ""
 
         yield {
             **rec,
-            "reasoning": best.reasoning,
-            "answer": best.answer,
+            "raw_response": raw_response,
             "teacher_model": model_name,
-            "used_fallback_parse": best.used_fallback,
         }
 
 
@@ -113,13 +114,13 @@ def build_ray_actor_class():
             model_name: str,
             vllm_engine_cfg,
             generation_cfg,
-            delimiters,
+            skip_special_tokens: bool,
             device: str,
         ) -> None:
             self.model_name = model_name
             self.vllm_engine_cfg = vllm_engine_cfg
             self.generation_cfg = generation_cfg
-            self.delimiters = delimiters
+            self.skip_special_tokens = skip_special_tokens
             self.device = device
             self._llm = None
             self._tokenizer = None
@@ -146,7 +147,6 @@ def build_ray_actor_class():
 
         def process_batch(self, prompts: list[dict]) -> list[dict]:
             from vllm import SamplingParams
-            from sft_pipeline.inference.output_parser import select_best_candidate
             from sft_pipeline.inference.prompt_formatter import apply_chat_template
 
             self._ensure_loaded()
@@ -155,22 +155,21 @@ def build_ray_actor_class():
                 top_p=self.generation_cfg.top_p,
                 max_tokens=self.generation_cfg.max_tokens,
                 n=self.generation_cfg.n_candidates,
+                skip_special_tokens=self.skip_special_tokens,
             )
             formatted = [
-                apply_chat_template(self._tokenizer, rec["prompt"], self.delimiters)
+                apply_chat_template(self._tokenizer, rec["prompt"])
                 for rec in prompts
             ]
             outputs = self._llm.generate(formatted, sampling_params)
             results = []
             for rec, output in zip(prompts, outputs):
                 candidate_texts = [o.text for o in output.outputs]
-                best, _ = select_best_candidate(candidate_texts, self.delimiters)
+                raw_response = max(candidate_texts, key=len) if candidate_texts else ""
                 results.append({
                     **rec,
-                    "reasoning": best.reasoning,
-                    "answer": best.answer,
+                    "raw_response": raw_response,
                     "teacher_model": self.model_name,
-                    "used_fallback_parse": best.used_fallback,
                 })
             return results
 

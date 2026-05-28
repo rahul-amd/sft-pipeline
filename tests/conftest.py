@@ -76,20 +76,29 @@ def make_prompt_record(
 
 
 def make_response_record(prompt: str, domain: str = "general") -> dict:
+    """
+    Simulate the raw Stage 5 output for a single prompt.
+    Uses the <think>...</think><answer>...</answer> format that Qwen3 and
+    similar thinking models produce natively.  Stage 6 parses this into
+    reasoning + answer fields before running its filters.
+    """
     base = make_prompt_record(prompt, domain=domain)
+    reasoning_text = (
+        f"Let me think through this carefully. The question asks: '{prompt[:40]}'. "
+        "To solve this I need to break the problem into clear steps and analyze each part. "
+        "First I will identify the key concepts involved and their relationships. "
+        "Next I will apply the relevant principles to work toward a solution. "
+        "The core insight is that we must consider all relevant constraints and conditions. "
+        "Working through the logic step by step leads us to the correct conclusion. "
+        "Therefore the answer follows directly from this systematic analysis."
+    )
+    answer_text = "Based on the analysis above, this is the final answer to the question."
     base.update({
-        "reasoning": (
-            f"Let me think through this carefully. The question asks: '{prompt[:40]}'. "
-            "To solve this I need to break the problem into clear steps and analyze each part. "
-            "First I will identify the key concepts involved and their relationships. "
-            "Next I will apply the relevant principles to work toward a solution. "
-            "The core insight is that we must consider all relevant constraints and conditions. "
-            "Working through the logic step by step leads us to the correct conclusion. "
-            "Therefore the answer follows directly from this systematic analysis."
+        "raw_response": (
+            f"<think>\n{reasoning_text}\n</think>\n"
+            f"<answer>\n{answer_text}\n</answer>"
         ),
-        "answer": "Based on the analysis above, this is the final answer to the question.",
         "teacher_model": "test-model",
-        "used_fallback_parse": False,
     })
     return base
 

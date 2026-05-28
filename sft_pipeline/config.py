@@ -215,10 +215,32 @@ class ReasoningDelimiters(BaseModel):
 class Stage5Config(BaseModel):
     enabled: bool = True
     model: str = "Qwen/Qwen3.5-122B-A10B"
+
+    # Execution mode:
+    #   "vllm_offline"  — in-process vLLM LLM() class (requires vLLM installed, GPU)
+    #   "openai_api"    — async HTTP calls to an external OpenAI-compatible server
+    #                     (works from any CPU node; vLLM server must be running separately)
+    inference_mode: Literal["vllm_offline", "openai_api"] = "vllm_offline"
+
+    # ── openai_api mode ─────────────────────────────────────────────────────
+    # URL of the running vLLM /v1 endpoint (or any OpenAI-compatible server).
+    api_base: str = "http://localhost:9000/v1"
+    api_key: str = "none"
+    # Number of concurrent in-flight requests.  Rule of thumb: ~64 per vLLM replica.
+    concurrency: int = 256
+    # Per-request timeout in seconds.  Thinking models can take 60–120 s each.
+    request_timeout: float = 120.0
+
+    # ── vllm_offline mode ───────────────────────────────────────────────────
     n_replicas: int = 64  # Ray actors; each wraps one vLLM LLM instance
     vllm_engine: VllmEngineConfig = Field(default_factory=VllmEngineConfig)
+
+    # ── shared ──────────────────────────────────────────────────────────────
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
-    delimiters: ReasoningDelimiters = Field(default_factory=ReasoningDelimiters)
+    # Whether to include HF special tokens (e.g. <|im_end|>) in the raw output.
+    # False = keep them (default); True = strip them (vLLM default, not what we want).
+    # Note: <think>/<answer> tags are regular text tokens — they appear regardless.
+    skip_special_tokens: bool = False
     batch_size: int = 256
     checkpoint_every: int = 5_000
     max_retries: int = 3
@@ -234,6 +256,10 @@ class StructuralFilterConfig(BaseModel):
 
 class HeuristicFilterConfig(BaseModel):
     min_info_density: float = Field(0.3, ge=0.0, le=1.0)
+    # MSTTR segment size: TTR is computed per window of this many tokens then averaged.
+    # Keeps the metric length-independent (raw TTR collapses below 0.30 for any
+    # response > ~700 words, even high-quality ones).
+    msttr_segment_size: int = Field(100, ge=10)
     flag_self_contradiction: bool = True
 
 
@@ -259,6 +285,10 @@ class LLMJudgeConfig(BaseModel):
 
 class Stage6Config(BaseModel):
     enabled: bool = True
+    # Delimiters used to parse raw_response from Stage 5 into reasoning+answer.
+    # These must match the format the teacher model naturally produces.
+    # Qwen3 / DeepSeek-R1 default: <think>…</think><answer>…</answer>
+    delimiters: ReasoningDelimiters = Field(default_factory=ReasoningDelimiters)
     structural: StructuralFilterConfig = Field(default_factory=StructuralFilterConfig)
     heuristic: HeuristicFilterConfig = Field(default_factory=HeuristicFilterConfig)
     math: MathFilterConfig = Field(default_factory=MathFilterConfig)

@@ -1,0 +1,124 @@
+# =============================================================================
+# Stage 5 Inference — Teacher model via external vLLM OpenAI-compatible server.
+#
+# Usage:
+#   sft-pipeline run-stage stage5_inference --config config/stage5_inference.yaml
+#
+# What this run does:
+#   - Reads sampled prompts from Stage 4 (7M prompts)
+#   - Sends each prompt to the vLLM server via async HTTP
+#   - Parses <think>...</think><answer>...</answer> from each response
+#   - Writes responses to stage5/part-*.jsonl
+#   - Checkpoints to DuckDB every 5 000 records — safe to interrupt and resume
+#
+# Prerequisites:
+#   - Stage 4 complete: runs/research_stage3_001/stage4/part-*.jsonl must exist
+#   - vLLM server running (update api_base below to point at it):
+#       Single node:   bash vllm/serve.sh --model Qwen/Qwen3.5-122B-A10B --tensor-parallel-size 8
+#       Job array:     sbatch vllm/slurm_serve_array.sh
+#     The load-balancer URL is printed in logs/vllm_worker_<job>_0.log when using the array job.
+#
+# This stage needs NO GPU on the pipeline node — all compute is on the vLLM server.
+# Submit with the CPU-only Slurm script:  sbatch scripts/slurm_stage5.sh
+#
+# Tuning concurrency:
+#   Rule of thumb: ~64 per vLLM replica.
+#     1 replica  → concurrency: 64
+#     4 replicas → concurrency: 256
+#    16 replicas → concurrency: 1024
+#    64 replicas → concurrency: 4096
+#
+# Time estimate (rough, 7M prompts):
+#   1 replica  @ ~2 s/prompt → ~3 900 h → impractical alone
+#   4 replicas @ 256 concurrency → ~970 h of wall time  → ~10 days
+#  16 replicas @ 1024 concurrency → ~240 h → ~2.5 days
+#  64 replicas @ 4096 concurrency → ~60 h → ~2.5 days
+#  Inference tokens dominate; adjust max_tokens to taste.
+#
+# Resume:
+#   Re-submit the Slurm job at any time.  Already-processed prompts are skipped
+#   automatically.
+# =============================================================================
+
+global:
+  device: "cpu"          # no GPU on this node — all compute is on the vLLM server
+  run_id: "research_stage3_001"
+  base_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/{run_id}"
+  hf_home: "/scratch/project_462000963/hf_cache"
+  seed: 42
+
+# ---------------------------------------------------------------------------
+# Stages 1–3 — disabled
+# ---------------------------------------------------------------------------
+stage1_collect:
+  enabled: false
+  distributed: false
+  datasets: []
+  output_dir: "{base_path}/stage1"
+
+stage2_generate:
+  enabled: false
+  output_dir: "{base_path}/stage2"
+
+stage3_cluster:
+  enabled: false
+  embeddings_dir: "{base_path}/stage3/embeddings"
+  faiss_index_path: "{base_path}/stage3/faiss.index"
+  output_dir: "{base_path}/stage3"
+
+# ---------------------------------------------------------------------------
+# Stage 4 — disabled; output_dir tells Stage 5 where to read prompts from.
+# ---------------------------------------------------------------------------
+stage4_sample:
+  enabled: false
+  output_dir: "{base_path}/stage4"
+
+# ---------------------------------------------------------------------------
+# Stage 5 — inference via external vLLM server
+# ---------------------------------------------------------------------------
+stage5_inference:
+  enabled: true
+  inference_mode: "openai_api"
+
+  # ── vLLM server URL ───────────────────────────────────────────────────────
+  # Update this to the URL printed by vllm/slurm_serve_array.sh (task 0 log),
+  # or the node:port used by vllm/serve.sh.
+  # Examples:
+  #   api_base: "http://nid007475:9000/v1"          # single server
+  #   api_base: "http://nid007475:8080/v1"          # nginx load-balancer
+  api_base: "http://localhost:9000/v1"
+  api_key: "none"
+
+  model: "Qwen/Qwen3.5-122B-A10B"
+
+  # Concurrent in-flight requests.  Rule of thumb: 64 per vLLM replica.
+  # Match to the number of running replicas (update before running).
+  concurrency: 256
+
+  # Per-request timeout in seconds.  Thinking models can take 60–180 s
+  # for complex prompts; set conservatively.
+  request_timeout: 180.0
+
+  # ── Generation settings ───────────────────────────────────────────────────
+  generation:
+    temperature: 0.7
+    top_p:       0.95
+    # Max tokens for the full response (reasoning + answer).
+    # Qwen3.5-122B-A10B is a thinking model — allow enough room for the chain
+    # of thought. 8192 handles most prompts; raise to 16384 for hard math.
+    max_tokens:  8192
+    # Number of candidates per prompt.  1 is fastest; raise to 2 for better
+    # quality at the cost of 2× inference time.
+    n_candidates: 1
+
+  # Flush checkpoint to DuckDB every N responses written.
+  # Lower = less re-work on crash; higher = less DuckDB I/O.
+  checkpoint_every: 5000
+
+  output_dir: "{base_path}/stage5"
+
+# ---------------------------------------------------------------------------
+# Stage 6 — disabled in this run
+# ---------------------------------------------------------------------------
+stage6_filter:
+  enabled: false

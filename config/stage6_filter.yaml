@@ -1,0 +1,112 @@
+# =============================================================================
+# Stage 6 Filter — Structural + Heuristic only (Filters 1 and 2).
+#
+# Usage:
+#   sft-pipeline run-stage stage6_filter --config config/stage6_filter.yaml
+#
+# What this run does:
+#   - Reads Stage 5 responses from {stage5.output_dir}
+#   - Parses raw_response → reasoning + answer (using default <think>/<answer> delimiters)
+#   - Filter 1 (structural): rejects missing fields, too-short/long responses,
+#                             and repetition loops
+#   - Filter 2 (heuristic):  rejects low info-density (MSTTR < 0.30),
+#                             boilerplate refusals, and obvious contradictions
+#   - Filters 3–5 (math, code, LLM judge): DISABLED
+#   - Writes passing records to stage6/part-*.jsonl + filter_report.json
+#
+# Prerequisites:
+#   - Stage 5 complete: runs/research_stage3_001/stage5/part-*.jsonl must exist
+#
+# Resume:
+#   Re-run at any time — already-processed records are skipped via DuckDB.
+#
+# Why filters 3–5 are off:
+#   Math verifier (SymPy) and code executor require extra dependencies and add
+#   significant latency. LLM judge requires a running vLLM server.  Run this
+#   config first to get a quick pass-rate baseline, then enable those filters
+#   incrementally once you are happy with the structural quality.
+# =============================================================================
+
+global:
+  device: "cpu"
+  run_id: "research_stage3_001"
+  base_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/{run_id}"
+  hf_home: "/scratch/project_462000963/hf_cache"
+  seed: 42
+
+# ---------------------------------------------------------------------------
+# Stages 1–4 — disabled
+# ---------------------------------------------------------------------------
+stage1_collect:
+  enabled: false
+  distributed: false
+  datasets: []
+  output_dir: "{base_path}/stage1"
+
+stage2_generate:
+  enabled: false
+  output_dir: "{base_path}/stage2"
+
+stage3_cluster:
+  enabled: false
+  embeddings_dir: "{base_path}/stage3/embeddings"
+  faiss_index_path: "{base_path}/stage3/faiss.index"
+  output_dir: "{base_path}/stage3"
+
+stage4_sample:
+  enabled: false
+  output_dir: "{base_path}/stage4"
+
+# ---------------------------------------------------------------------------
+# Stage 5 — disabled; output_dir tells Stage 6 where to read responses from.
+# ---------------------------------------------------------------------------
+stage5_inference:
+  enabled: false
+  output_dir: "{base_path}/stage5"
+
+# ---------------------------------------------------------------------------
+# Stage 6 — structural + heuristic filters only
+# ---------------------------------------------------------------------------
+stage6_filter:
+  enabled: true
+
+  # Delimiters for parsing raw_response → reasoning + answer.
+  # These match the default Qwen3 output format.  Change if you used a model
+  # with different native delimiters.
+  delimiters:
+    think_start:  "<think>"
+    think_end:    "</think>"
+    answer_start: "<answer>"
+    answer_end:   "</answer>"
+
+  # ── Filter 1: Structural ──────────────────────────────────────────────────
+  structural:
+    # Minimum tokens in reasoning+answer combined (whitespace split).
+    # 50 is conservative — increase to 100 if you want to require more depth.
+    min_response_tokens: 50
+    max_response_tokens: 8000
+    # Flag reasoning that repeats a 5-gram more than 3 times (stuck loop).
+    max_repetition_ngram: 5
+    max_repetition_count: 3
+
+  # ── Filter 2: Heuristic ───────────────────────────────────────────────────
+  heuristic:
+    # MSTTR threshold: 0.30 rejects responses whose 100-word windows
+    # average fewer than 30 unique words.  Well-written responses score 0.5+.
+    min_info_density: 0.30
+    msttr_segment_size: 100
+    # Flag obvious polarity flips between reasoning and answer.
+    flag_self_contradiction: true
+
+  # ── Filters 3–5: disabled ─────────────────────────────────────────────────
+  math:
+    enabled: false
+
+  code:
+    enabled: false
+
+  llm_judge:
+    enabled: false
+
+  output_dir: "{base_path}/stage6"
+  report_path: "{base_path}/stage6/filter_report.json"

@@ -53,12 +53,25 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     total_input = 0
     total_passed = 0
 
+    from sft_pipeline.inference.output_parser import parse_output
+
     with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
         for record in iter_jsonl_dir(stage5_dir):
             pid = record.get("prompt_id", "")
             if cm.is_processed(pid, STAGE):
                 total_passed += 1
                 continue
+
+            # ── Parse raw_response → reasoning + answer ───────────────────
+            # Stage 5 stores the full model output in raw_response.
+            # If reasoning/answer are already present (legacy format), skip.
+            if "raw_response" in record and "reasoning" not in record:
+                parsed = parse_output(record["raw_response"], s6.delimiters)
+                record = {
+                    **record,
+                    "reasoning": parsed.reasoning,
+                    "answer": parsed.answer,
+                }
 
             total_input += 1
             domain = record.get("domain", "general")

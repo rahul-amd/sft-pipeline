@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.sarvam.ai)",
+      "WebFetch(domain:www.rahular.com)"
+    ]
+  }
+}

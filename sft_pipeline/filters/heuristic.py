@@ -45,19 +45,19 @@ def check_heuristic(record: dict, cfg: HeuristicFilterConfig) -> FilterResult:
     Apply heuristic filters to a response record.
 
     Supports two record formats:
-      - New (Stage 5 raw output): MSTTR is computed on raw_response.
+      - New (Stage 5 raw output): MSTTR is computed on response.
         Boilerplate and contradiction checks are skipped (need parsed fields).
       - Legacy / parsed: all three checks run on reasoning + answer fields.
     """
-    raw_response = record.get("raw_response", "")
+    response = record.get("response", "")
     reasoning = record.get("reasoning", "")
     answer = record.get("answer", "")
 
     # Determine which text to use for MSTTR.
-    # Use raw_response path when no separately-parsed fields are present,
-    # regardless of whether raw_response itself is empty.
+    # Use response path when no separately-parsed fields are present,
+    # regardless of whether response itself is empty.
     if not (reasoning or answer):
-        full_text = raw_response.lower()
+        full_text = response.lower()
         parsed_fields_available = False
     else:
         full_text = (reasoning + " " + answer).lower()

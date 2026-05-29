@@ -24,11 +24,11 @@ def check_structural(record: dict, cfg: StructuralFilterConfig) -> FilterResult:
     Apply all structural filters to a response record.
 
     Supports two record formats:
-      - New (Stage 5 raw output): uses 'raw_response' for length + repetition checks.
+      - New (Stage 5 raw output): uses 'response' for length + repetition checks.
       - Legacy / parsed: uses 'reasoning' + 'answer' fields as before.
     """
     prompt = record.get("prompt", "")
-    raw_response = record.get("raw_response", "")
+    response = record.get("response", "")
     reasoning = record.get("reasoning", "")
     answer = record.get("answer", "")
 
@@ -37,16 +37,16 @@ def check_structural(record: dict, cfg: StructuralFilterConfig) -> FilterResult:
         return FilterResult(False, "missing_prompt")
 
     # 2. Determine response text to check.
-    #    Use raw_response path when no separately-parsed fields are present.
-    #    The emptiness of raw_response is checked *after* we decide the path,
-    #    so an empty raw_response yields "missing_response" rather than
+    #    Use response path when no separately-parsed fields are present.
+    #    The emptiness of response is checked *after* we decide the path,
+    #    so an empty response yields "missing_response" rather than
     #    falling through to the parsed path (which would give "missing_reasoning").
     if not (reasoning or answer):
-        # Unparsed format: work directly on raw_response
-        if not raw_response or not raw_response.strip():
+        # Unparsed format: work directly on response
+        if not response or not response.strip():
             return FilterResult(False, "missing_response")
-        response_text = raw_response
-        repetition_text = raw_response
+        response_text = response
+        repetition_text = response
     else:
         # Parsed format: require both reasoning and answer
         if not reasoning or not reasoning.strip():

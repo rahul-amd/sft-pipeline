@@ -292,6 +292,12 @@ class Stage6Config(BaseModel):
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
     output_dir: str = "{base_path}/stage6"
     report_path: str = "{base_path}/stage6/filter_report.json"
+    # Debug mode: collect the first N rejected records, write them with their
+    # rejection reason to a JSONL file, then stop.  Does not write normal output
+    # and does not update the checkpoint DB — safe to re-run after inspecting.
+    debug_rejections: bool = False
+    debug_rejection_limit: int = 100
+    debug_rejection_path: str = "{base_path}/stage6/debug_rejections.jsonl"
 
 
 class ExportConfig(BaseModel):

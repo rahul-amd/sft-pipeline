@@ -30,7 +30,7 @@ def run_inference_batch(
 ) -> Iterator[dict]:
     """
     Run vLLM offline inference on a list of prompt records.
-    Yields enriched records with a 'raw_response' field containing the full
+    Yields enriched records with a 'response' field containing the full
     model output (including any <think>...</think> tokens the model produces
     natively).  No delimiter parsing is done here.
 
@@ -81,14 +81,14 @@ def run_inference_batch(
     outputs = llm.generate(formatted, sampling_params)
 
     for rec, output in zip(prompts, outputs):
-        # Store all candidates; pick the longest one as primary raw_response.
+        # Store all candidates; pick the longest one as primary response.
         # Downstream (Stage 6) can re-rank or re-parse as needed.
         candidate_texts = [o.text for o in output.outputs]
-        raw_response = max(candidate_texts, key=len) if candidate_texts else ""
+        response = max(candidate_texts, key=len) if candidate_texts else ""
 
         yield {
             **rec,
-            "raw_response": raw_response,
+            "response": response,
             "teacher_model": model_name,
         }
 
@@ -165,10 +165,10 @@ def build_ray_actor_class():
             results = []
             for rec, output in zip(prompts, outputs):
                 candidate_texts = [o.text for o in output.outputs]
-                raw_response = max(candidate_texts, key=len) if candidate_texts else ""
+                response = max(candidate_texts, key=len) if candidate_texts else ""
                 results.append({
                     **rec,
-                    "raw_response": raw_response,
+                    "response": response,
                     "teacher_model": self.model_name,
                 })
             return results

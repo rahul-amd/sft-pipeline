@@ -287,11 +287,11 @@ class TestFilterOrdering:
 
 
 # ===========================================================================
-# 6. raw_response path (Stage 5 format — no separate reasoning/answer fields)
+# 6. response path (Stage 5 format — no separate reasoning/answer fields)
 # ===========================================================================
 
-def _raw_rec(raw_response: str) -> dict:
-    return {"prompt": "What is 2 + 2?", "raw_response": raw_response}
+def _raw_rec(response: str) -> dict:
+    return {"prompt": "What is 2 + 2?", "response": response}
 
 
 _GOOD_RAW = (
@@ -304,25 +304,25 @@ _GOOD_RAW = (
 
 
 class TestRawResponsePath:
-    def test_good_raw_response_passes(self, cfg):
+    def test_good_response_passes(self, cfg):
         result = check_heuristic(_raw_rec(_GOOD_RAW), cfg)
         assert result.passed
 
-    def test_repetitive_raw_response_fails(self, cfg):
+    def test_repetitive_response_fails(self, cfg):
         rep_raw = "the answer is four " * 200   # high repetition, 800 tokens
         result = check_heuristic(_raw_rec(rep_raw), cfg)
         assert not result.passed
         assert result.reason.startswith("low_info_density")
 
-    def test_empty_raw_response_no_crash(self, cfg):
-        """Empty raw_response has no tokens — TTR check skipped, no error."""
+    def test_empty_response_no_crash(self, cfg):
+        """Empty response has no tokens — TTR check skipped, no error."""
         result = check_heuristic(_raw_rec(""), cfg)
         assert "low_info_density" not in result.reason
 
     def test_boilerplate_skipped_for_raw(self, cfg):
         """
         Boilerplate check requires parsed answer field.
-        A raw_response that looks like a boilerplate answer should NOT be
+        A response that looks like a boilerplate answer should NOT be
         rejected for boilerplate (we can't isolate just the answer portion).
         """
         raw = "I don't know the answer to your question. " * 20  # repetitive but not parsed
@@ -343,12 +343,12 @@ class TestRawResponsePath:
 
     def test_raw_takes_priority_over_empty_parsed(self, cfg):
         """
-        When raw_response is present and reasoning/answer are absent,
-        the raw_response path is used (not the parsed path).
+        When response is present and reasoning/answer are absent,
+        the response path is used (not the parsed path).
         """
         rec = {
             "prompt": "What is 2+2?",
-            "raw_response": _GOOD_RAW,
+            "response": _GOOD_RAW,
             # No reasoning or answer keys at all
         }
         result = check_heuristic(rec, cfg)
@@ -356,12 +356,12 @@ class TestRawResponsePath:
 
     def test_parsed_path_used_when_both_present(self, cfg):
         """
-        When both raw_response and reasoning/answer are present, parsed path is used.
+        When both response and reasoning/answer are present, parsed path is used.
         Boilerplate check should run (and fire) on the answer field.
         """
         rec = {
             "prompt": "What is 2+2?",
-            "raw_response": _GOOD_RAW,
+            "response": _GOOD_RAW,
             "reasoning": _GOOD_REASONING,
             "answer": "I don't know",  # boilerplate answer
         }

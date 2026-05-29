@@ -9,6 +9,11 @@ Applies filters in cost-order (cheapest first, most expensive last):
   5. LLM Judge   — sampled quality scoring (all domains)
 
 Writes a filtered JSONL and a JSON filter report.
+
+Debug mode (``stage6_filter.debug_rejections: true``):
+  Scans the input, collects the first N rejected records with their reasons,
+  writes them to ``debug_rejection_path``, then stops.  The checkpoint DB is
+  not touched, so the run is completely safe to repeat after inspection.
 """
 from __future__ import annotations
 
@@ -17,6 +22,8 @@ import logging
 import random
 from collections import defaultdict
 from pathlib import Path
+
+import orjson
 
 from sft_pipeline.checkpoint import CheckpointManager, ItemStatus
 from sft_pipeline.config import PipelineConfig
@@ -32,9 +39,111 @@ logger = logging.getLogger(__name__)
 STAGE = "stage6_filter"
 
 
+def _apply_filters(record: dict, s6, rng: random.Random) -> str | None:
+    """
+    Run the full filter chain on *record*.
+
+    Returns the rejection reason string (``"filter_name:sub_reason"``) if the
+    record was rejected, or ``None`` if it passed all filters.
+    """
+    domain = record.get("domain", "general")
+
+    # 1. Structural
+    r = check_structural(record, s6.structural)
+    if not r.passed:
+        return f"structural:{r.reason}"
+
+    # 2. Heuristic
+    r = check_heuristic(record, s6.heuristic)
+    if not r.passed:
+        return f"heuristic:{r.reason}"
+
+    # 3. Math (only for relevant domains)
+    if s6.math.enabled and domain in s6.math.domains:
+        r = check_math(record)
+        if not r.passed:
+            return f"math:{r.reason}"
+
+    # 4. Code (only for code domain)
+    if s6.code.enabled and domain in s6.code.domains:
+        r = check_code(record, s6.code)
+        if not r.passed:
+            return f"code:{r.reason}"
+
+    # 5. LLM Judge (sampled)
+    r = check_llm_judge(record, s6.llm_judge, rng=rng)
+    if not r.passed:
+        return f"llm_judge:{r.reason}"
+
+    return None
+
+
+def _run_debug(cfg: PipelineConfig) -> None:
+    """
+    Debug mode: scan input, collect the first N rejected records, write them
+    with their ``_rejection_reason`` field to a JSONL file, then exit.
+
+    Does NOT write normal stage output and does NOT modify the checkpoint DB.
+    """
+    s5 = cfg.stage5_inference
+    s6 = cfg.stage6_filter
+
+    stage5_dir = Path(s5.output_dir)
+    limit = s6.debug_rejection_limit
+    debug_path = Path(s6.debug_rejection_path)
+    debug_path.parent.mkdir(parents=True, exist_ok=True)
+
+    rng = random.Random(cfg.global_.seed)
+
+    logger.info(
+        "Stage6 DEBUG MODE: scanning %s for the first %d rejected records → %s",
+        stage5_dir, limit, debug_path,
+    )
+
+    # Warn about expensive filters requiring parsed fields (same as normal mode)
+    if s6.math.enabled or s6.llm_judge.enabled:
+        logger.warning(
+            "Stage6: math or llm_judge filters are enabled.  These filters require "
+            "'reasoning' and 'answer' fields.  If Stage 5 output only contains "
+            "'response', those checks will be skipped per-record."
+        )
+
+    collected: list[dict] = []
+    total_scanned = 0
+
+    for record in iter_jsonl_dir(stage5_dir):
+        total_scanned += 1
+        reason = _apply_filters(record, s6, rng)
+        if reason is not None:
+            entry = dict(record)  # shallow copy — don't mutate the original
+            entry["_rejection_reason"] = reason
+            collected.append(entry)
+            logger.debug(
+                "DEBUG rejected #%d  pid=%s  reason=%s",
+                len(collected), record.get("prompt_id", "?"), reason,
+            )
+            if len(collected) >= limit:
+                break
+
+    # Write debug file
+    with debug_path.open("wb") as fh:
+        for entry in collected:
+            fh.write(orjson.dumps(entry) + b"\n")
+
+    logger.info(
+        "Stage6 DEBUG: scanned %d records, collected %d rejections → %s",
+        total_scanned, len(collected), debug_path,
+    )
+
+
 def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     s5 = cfg.stage5_inference
     s6 = cfg.stage6_filter
+
+    # ── Debug mode: collect sample rejections and quit without touching the DB ──
+    if s6.debug_rejections:
+        _run_debug(cfg)
+        return
 
     stage5_dir = Path(s5.output_dir)
     out_dir = Path(s6.output_dir)
@@ -55,12 +164,12 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     # Warn if expensive filters are enabled but records likely lack parsed fields.
     # math / llm_judge operate on reasoning + answer; they'll silently pass
-    # records that have only raw_response (no parsed fields).
+    # records that have only response (no parsed fields).
     if s6.math.enabled or s6.llm_judge.enabled:
         logger.warning(
             "Stage6: math or llm_judge filters are enabled.  These filters require "
             "'reasoning' and 'answer' fields.  If Stage 5 output only contains "
-            "'raw_response', those checks will be skipped per-record.  "
+            "'response', those checks will be skipped per-record.  "
             "Parse the responses first or disable these filters."
         )
 
@@ -73,38 +182,8 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
             total_input += 1
             domain = record.get("domain", "general")
-            rejection_reason: str | None = None
 
-            # 1. Structural
-            r = check_structural(record, s6.structural)
-            if not r.passed:
-                rejection_reason = f"structural:{r.reason}"
-
-            # 2. Heuristic
-            if rejection_reason is None:
-                r = check_heuristic(record, s6.heuristic)
-                if not r.passed:
-                    rejection_reason = f"heuristic:{r.reason}"
-
-            # 3. Math (only for relevant domains)
-            if rejection_reason is None and s6.math.enabled:
-                if domain in s6.math.domains:
-                    r = check_math(record)
-                    if not r.passed:
-                        rejection_reason = f"math:{r.reason}"
-
-            # 4. Code (only for code domain)
-            if rejection_reason is None and s6.code.enabled:
-                if domain in s6.code.domains:
-                    r = check_code(record, s6.code)
-                    if not r.passed:
-                        rejection_reason = f"code:{r.reason}"
-
-            # 5. LLM Judge (sampled)
-            if rejection_reason is None:
-                r = check_llm_judge(record, s6.llm_judge, rng=rng)
-                if not r.passed:
-                    rejection_reason = f"llm_judge:{r.reason}"
+            rejection_reason = _apply_filters(record, s6, rng)
 
             if rejection_reason:
                 rejection_counts[rejection_reason.split(":")[0]] += 1

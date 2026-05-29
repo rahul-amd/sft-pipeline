@@ -179,12 +179,12 @@ export:
 
     assert len(output_records) > 0, "No records in Stage 6 output"
 
-    required_fields = {"prompt_id", "prompt", "raw_response", "domain", "difficulty"}
+    required_fields = {"prompt_id", "prompt", "response", "domain", "difficulty"}
     for rec in output_records:
         missing = required_fields - set(rec.keys())
         assert not missing, f"Record missing fields: {missing}"
         assert rec["prompt"], "Empty prompt"
-        assert rec["raw_response"], "Empty raw_response"
+        assert rec["response"], "Empty response"
 
     # Filter report exists
     report_path = Path(cfg.stage6_filter.report_path)

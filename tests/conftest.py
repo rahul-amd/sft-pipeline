@@ -94,7 +94,7 @@ def make_response_record(prompt: str, domain: str = "general") -> dict:
     )
     answer_text = "Based on the analysis above, this is the final answer to the question."
     base.update({
-        "raw_response": (
+        "response": (
             f"<think>\n{reasoning_text}\n</think>\n"
             f"<answer>\n{answer_text}\n</answer>"
         ),

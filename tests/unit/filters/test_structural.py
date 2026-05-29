@@ -73,14 +73,14 @@ def test_repetition_loop(cfg):
 
 
 # ---------------------------------------------------------------------------
-# raw_response path (Stage 5 output format: no separate reasoning/answer)
+# response path (Stage 5 output format: no separate reasoning/answer)
 # ---------------------------------------------------------------------------
 
 def _raw_record(**kwargs):
-    """Record in Stage 5 raw output format — only raw_response, no parsed fields."""
+    """Record in Stage 5 raw output format — only response, no parsed fields."""
     base = {
         "prompt": "What is 2 + 2?",
-        "raw_response": (
+        "response": (
             "<think>\n"
             "We need to add 2 and 2 together. "
             "Addition is a fundamental arithmetic operation where we combine two numbers. "
@@ -96,54 +96,54 @@ def _raw_record(**kwargs):
     return base
 
 
-def test_raw_response_valid_passes(cfg):
+def test_response_valid_passes(cfg):
     result = check_structural(_raw_record(), cfg)
     assert result.passed
 
 
-def test_raw_response_missing_prompt(cfg):
+def test_response_missing_prompt(cfg):
     result = check_structural(_raw_record(prompt=""), cfg)
     assert not result.passed
     assert "missing_prompt" in result.reason
 
 
-def test_raw_response_empty_response(cfg):
-    result = check_structural(_raw_record(raw_response=""), cfg)
+def test_response_empty_response(cfg):
+    result = check_structural(_raw_record(response=""), cfg)
     assert not result.passed
     assert "missing_response" in result.reason
 
 
-def test_raw_response_whitespace_only(cfg):
-    result = check_structural(_raw_record(raw_response="   \n\t  "), cfg)
+def test_response_whitespace_only(cfg):
+    result = check_structural(_raw_record(response="   \n\t  "), cfg)
     assert not result.passed
     assert "missing_response" in result.reason
 
 
-def test_raw_response_too_short(cfg):
-    result = check_structural(_raw_record(raw_response="Short answer."), cfg)
+def test_response_too_short(cfg):
+    result = check_structural(_raw_record(response="Short answer."), cfg)
     assert not result.passed
     assert "too_short" in result.reason
 
 
-def test_raw_response_too_long(cfg):
+def test_response_too_long(cfg):
     long_text = " ".join(["word"] * (cfg.max_response_tokens + 100))
-    result = check_structural(_raw_record(raw_response=long_text), cfg)
+    result = check_structural(_raw_record(response=long_text), cfg)
     assert not result.passed
     assert "too_long" in result.reason
 
 
-def test_raw_response_repetition_loop(cfg):
+def test_response_repetition_loop(cfg):
     loop_text = "the quick brown fox " * 50
-    result = check_structural(_raw_record(raw_response=loop_text), cfg)
+    result = check_structural(_raw_record(response=loop_text), cfg)
     assert not result.passed
     assert "repetition_loop" in result.reason
 
 
-def test_raw_response_takes_priority_over_parsed(cfg):
-    """When raw_response present but reasoning/answer absent, raw_response path is used."""
+def test_response_takes_priority_over_parsed(cfg):
+    """When response present but reasoning/answer absent, response path is used."""
     rec = {
         "prompt": "What is 2 + 2?",
-        "raw_response": (
+        "response": (
             "Let me think through this arithmetic problem step by step. "
             "Addition combines two quantities into a single total value. "
             "Starting from two objects and then counting two additional objects "
@@ -159,10 +159,10 @@ def test_raw_response_takes_priority_over_parsed(cfg):
 
 
 def test_parsed_fields_take_priority_when_both_present(cfg):
-    """When both raw_response AND reasoning/answer present, parsed path is used."""
+    """When both response AND reasoning/answer present, parsed path is used."""
     rec = {
         "prompt": "What is 2 + 2?",
-        "raw_response": "Some raw text that is long enough " * 10,
+        "response": "Some raw text that is long enough " * 10,
         "reasoning": "",   # empty → should fail with missing_reasoning
         "answer": "4",
     }

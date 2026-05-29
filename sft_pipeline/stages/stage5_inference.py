@@ -126,7 +126,7 @@ async def _infer_one(
     Send one prompt to the OpenAI-compatible endpoint and store the raw response.
 
     The full model output (including any <think>...</think> tokens the model
-    produces natively) is stored verbatim in 'raw_response'.  No parsing is
+    produces natively) is stored verbatim in 'response'.  No parsing is
     done here — that is Stage 6's job.
 
     Note on special tokens: <think> / </think> are regular text tokens for
@@ -139,7 +139,7 @@ async def _infer_one(
 
     pid = record["prompt_id"]
     messages = build_chat_messages(record["prompt"])
-    raw_response = ""
+    response = ""
 
     async with semaphore:
         try:
@@ -153,7 +153,7 @@ async def _infer_one(
             )
             # Pick the longest candidate as the primary response.
             candidates = [choice.message.content or "" for choice in response.choices]
-            raw_response = max(candidates, key=len) if candidates else ""
+            response = max(candidates, key=len) if candidates else ""
         except Exception as exc:
             logger.warning("Stage5: inference failed for %s: %s", pid, exc)
             counter[1] += 1
@@ -172,7 +172,7 @@ async def _infer_one(
 
     return {
         **record,
-        "raw_response": raw_response,
+        "response": response,
         "teacher_model": model,
     }
 
@@ -227,7 +227,7 @@ async def _run_openai_api_async(
         asyncio.create_task(
             _infer_one(
                 oai_client, s5.model, rec, semaphore,
-                s5.generation, s5.delimiters, counter, total,
+                s5.generation, counter, total,
             )
         )
         for rec in pending

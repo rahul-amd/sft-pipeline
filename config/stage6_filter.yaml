@@ -6,7 +6,6 @@
 #
 # What this run does:
 #   - Reads Stage 5 responses from {stage5.output_dir}
-#   - Parses raw_response → reasoning + answer (using default <think>/<answer> delimiters)
 #   - Filter 1 (structural): rejects missing fields, too-short/long responses,
 #                             and repetition loops
 #   - Filter 2 (heuristic):  rejects low info-density (MSTTR < 0.30),
@@ -19,6 +18,11 @@
 #
 # Resume:
 #   Re-run at any time — already-processed records are skipped via DuckDB.
+#
+# Debug mode:
+#   Set debug_rejections: true to collect the first 100 rejected records
+#   (with their rejection reason) into debug_rejections.jsonl, then stop.
+#   The checkpoint DB is not modified — safe to repeat after inspecting.
 #
 # Why filters 3–5 are off:
 #   Math verifier (SymPy) and code executor require extra dependencies and add
@@ -101,3 +105,12 @@ stage6_filter:
 
   output_dir: "{base_path}/stage6"
   report_path: "{base_path}/stage6/filter_report.json"
+
+  # ── Debug mode ────────────────────────────────────────────────────────────
+  # Flip to true to sample rejections without running the full stage.
+  # Stops after collecting debug_rejection_limit rejected records and writes
+  # them (with _rejection_reason) to debug_rejection_path, then exits.
+  # Does NOT update the checkpoint DB — safe to re-run repeatedly.
+  debug_rejections: false
+  debug_rejection_limit: 100
+  debug_rejection_path: "{base_path}/stage6/debug_rejections.jsonl"

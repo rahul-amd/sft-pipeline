@@ -182,6 +182,7 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     t0 = time.time()
     LOG_EVERY = 10_000
+    checkpoint_buffer: list[tuple[str, ItemStatus, str | None]] = []
 
     with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
         for record in iter_jsonl_dir(stage5_dir):
@@ -197,14 +198,17 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             if rejection_reason:
                 rejection_counts[rejection_reason.split(":")[0]] += 1
                 domain_fail[domain] += 1
-                cm.mark_processed(pid, STAGE, status=ItemStatus.SKIPPED, error_msg=rejection_reason)
+                checkpoint_buffer.append((pid, ItemStatus.SKIPPED, rejection_reason))
             else:
                 writer.write(record)
                 total_passed += 1
                 domain_pass[domain] += 1
-                cm.mark_processed(pid, STAGE, status=ItemStatus.SUCCESS)
+                checkpoint_buffer.append((pid, ItemStatus.SUCCESS, None))
 
             if total_input % LOG_EVERY == 0:
+                cm.mark_processed_batch(checkpoint_buffer, STAGE)
+                checkpoint_buffer.clear()
+
                 elapsed = time.time() - t0
                 rate = total_input / elapsed if elapsed > 0 else 0
                 pass_rate = 100.0 * total_passed / total_input
@@ -216,6 +220,11 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     "  rejections=[%s]",
                     total_input, total_passed, pass_rate, rate, rejection_summary,
                 )
+
+        # Flush any remaining records not yet checkpointed
+        if checkpoint_buffer:
+            cm.mark_processed_batch(checkpoint_buffer, STAGE)
+            checkpoint_buffer.clear()
 
     # Write filter report
     pass_rate = total_passed / max(total_input, 1)

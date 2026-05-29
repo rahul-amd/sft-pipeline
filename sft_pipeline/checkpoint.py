@@ -187,10 +187,12 @@ class CheckpointManager:
         """
         Cache all processed item IDs for a stage into memory.
         Call once at the start of each stage for O(1) is_processed lookups.
+        Includes both SUCCESS and SKIPPED items so that rejected records are
+        also skipped on resume (avoids re-running deterministic filter checks).
         """
         with self._lock:
             rows = self._conn.execute(
-                "SELECT item_id FROM processed_items WHERE stage_name = ? AND status = 'success'",
+                "SELECT item_id FROM processed_items WHERE stage_name = ? AND status IN ('success', 'skipped')",
                 [stage],
             ).fetchall()
         self._processed_cache[stage] = {r[0] for r in rows}
@@ -204,7 +206,7 @@ class CheckpointManager:
             return item_id in self._processed_cache[stage]
         with self._lock:
             row = self._conn.execute(
-                "SELECT 1 FROM processed_items WHERE item_id = ? AND stage_name = ? AND status = 'success'",
+                "SELECT 1 FROM processed_items WHERE item_id = ? AND stage_name = ? AND status IN ('success', 'skipped')",
                 [item_id, stage],
             ).fetchone()
         return row is not None
@@ -228,7 +230,7 @@ class CheckpointManager:
                 [item_id, stage, status, shard, error_msg,
                  status, shard, error_msg],
             )
-        if status == ItemStatus.SUCCESS and stage in self._processed_cache:
+        if status in (ItemStatus.SUCCESS, ItemStatus.SKIPPED) and stage in self._processed_cache:
             self._processed_cache[stage].add(item_id)
 
     def mark_processed_batch(
@@ -253,7 +255,7 @@ class CheckpointManager:
             )
         if stage in self._processed_cache:
             for item_id, status, _ in items:
-                if status == ItemStatus.SUCCESS:
+                if status in (ItemStatus.SUCCESS, ItemStatus.SKIPPED):
                     self._processed_cache[stage].add(item_id)
 
     # ------------------------------------------------------------------

@@ -292,6 +292,11 @@ class Stage6Config(BaseModel):
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
     output_dir: str = "{base_path}/stage6"
     report_path: str = "{base_path}/stage6/filter_report.json"
+    # When False, per-item checkpoint writes to DuckDB are skipped entirely.
+    # The stage-level start/complete markers are still written.
+    # Use this when throughput matters more than crash-resume granularity
+    # (e.g. the stage runs in < 1 hour and a full restart is acceptable).
+    checkpoint_items: bool = True
     # Debug mode: collect the first N rejected records, write them with their
     # rejection reason to a JSONL file, then stop.  Does not write normal output
     # and does not update the checkpoint DB — safe to re-run after inspecting.

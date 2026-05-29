@@ -23,10 +23,9 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=8:00:00
-#SBATCH --account=project_462000963
-#SBATCH --partition=dev-g
-#SBATCH --output=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-stage6.out
-#SBATCH --error=/scratch/project_462000963/users/aralikatte/sft-pipeline/logs/slurm-%j-stage6.err
+#SBATCH --partition=hissu
+#SBATCH --output=./logs/slurm-%j-stage6.out
+#SBATCH --error=./logs/slurm-%j-stage6.err
 
 set -euo pipefail
 

@@ -151,12 +151,18 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     ensure_dir(out_dir)
 
     cm.mark_stage_started(STAGE)
-    cm.preload_processed(STAGE)
 
-    already_done = cm.processed_count(STAGE)
+    checkpoint_items = s6.checkpoint_items
+    if checkpoint_items:
+        already_done = cm.processed_count(STAGE)
+        cm.preload_processed(STAGE)
+    else:
+        already_done = 0
+        logger.info("Stage6: per-item checkpointing disabled — no resume support for this run")
+
     logger.info(
-        "Stage6: starting — input=%s  output=%s  already_done=%d",
-        stage5_dir, out_dir, already_done,
+        "Stage6: starting — input=%s  output=%s  already_done=%d  checkpoint_items=%s",
+        stage5_dir, out_dir, already_done, checkpoint_items,
     )
 
     rng = random.Random(cfg.global_.seed)
@@ -166,12 +172,9 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     domain_pass: dict[str, int] = defaultdict(int)
     domain_fail: dict[str, int] = defaultdict(int)
 
-    total_input = 0   # records processed this run (excludes already_done)
-    total_passed = 0  # records that passed filters this run
+    total_input = 0
+    total_passed = 0
 
-    # Warn if expensive filters are enabled but records likely lack parsed fields.
-    # math / llm_judge operate on reasoning + answer; they'll silently pass
-    # records that have only response (no parsed fields).
     if s6.math.enabled or s6.llm_judge.enabled:
         logger.warning(
             "Stage6: math or llm_judge filters are enabled.  These filters require "
@@ -181,14 +184,14 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         )
 
     t0 = time.time()
-    LOG_EVERY = 10_000        # log a progress line every N records
-    CHECKPOINT_EVERY = 100_000  # flush to DuckDB every N records (one fsync)
+    LOG_EVERY = 10_000
+    CHECKPOINT_EVERY = 100_000
     checkpoint_buffer: list[tuple[str, ItemStatus, str | None]] = []
 
     with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
         for record in iter_jsonl_dir(stage5_dir):
             pid = record.get("prompt_id", "")
-            if cm.is_processed(pid, STAGE):
+            if checkpoint_items and cm.is_processed(pid, STAGE):
                 continue
 
             total_input += 1
@@ -199,14 +202,16 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             if rejection_reason:
                 rejection_counts[rejection_reason.split(":")[0]] += 1
                 domain_fail[domain] += 1
-                checkpoint_buffer.append((pid, ItemStatus.SKIPPED, rejection_reason))
+                if checkpoint_items:
+                    checkpoint_buffer.append((pid, ItemStatus.SKIPPED, rejection_reason))
             else:
                 writer.write(record)
                 total_passed += 1
                 domain_pass[domain] += 1
-                checkpoint_buffer.append((pid, ItemStatus.SUCCESS, None))
+                if checkpoint_items:
+                    checkpoint_buffer.append((pid, ItemStatus.SUCCESS, None))
 
-            if total_input % CHECKPOINT_EVERY == 0:
+            if checkpoint_items and total_input % CHECKPOINT_EVERY == 0:
                 cm.mark_processed_batch(checkpoint_buffer, STAGE)
                 checkpoint_buffer.clear()
 
@@ -223,8 +228,7 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     total_input, total_passed, pass_rate, rate, rejection_summary,
                 )
 
-        # Flush any remaining records not yet checkpointed
-        if checkpoint_buffer:
+        if checkpoint_items and checkpoint_buffer:
             cm.mark_processed_batch(checkpoint_buffer, STAGE)
             checkpoint_buffer.clear()
 

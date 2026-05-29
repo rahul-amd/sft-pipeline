@@ -34,8 +34,8 @@
 global:
   device: "cpu"
   run_id: "research_stage3_001"
-  base_path: "/scratch/project_462000963/users/aralikatte/sft-pipeline/runs/{run_id}"
-  hf_home: "/scratch/project_462000963/hf_cache"
+  base_path: "/shared_silo/scratch/rahul.aralikatte@amd.com/sft-pipeline/runs/{run_id}"
+  hf_home: "/shared_silo/scratch/hf_cache"
   seed: 42
 
 # ---------------------------------------------------------------------------
@@ -78,17 +78,18 @@ stage6_filter:
   structural:
     # Minimum tokens in reasoning+answer combined (whitespace split).
     # 50 is conservative — increase to 100 if you want to require more depth.
-    min_response_tokens: 50
-    max_response_tokens: 8000
+    min_response_tokens: 1
+    max_response_tokens: 100000
     # Flag reasoning that repeats a 5-gram more than 3 times (stuck loop).
-    max_repetition_ngram: 5
+    max_repetition_ngram: 100
     max_repetition_count: 3
 
   # ── Filter 2: Heuristic ───────────────────────────────────────────────────
   heuristic:
-    # MSTTR threshold: 0.30 rejects responses whose 100-word windows
-    # average fewer than 30 unique words.  Well-written responses score 0.5+.
-    min_info_density: 0.30
+    # MSTTR threshold: 0.1 rejects responses whose 100-word windows
+    # average fewer than 10 unique words.  Well-written responses score 0.5+.
+    # But some math responses are <0.3
+    min_info_density: 0.1
     msttr_segment_size: 100
     # Flag obvious polarity flips between reasoning and answer.
     flag_self_contradiction: true
@@ -105,6 +106,12 @@ stage6_filter:
 
   output_dir: "{base_path}/stage6"
   report_path: "{base_path}/stage6/filter_report.json"
+
+  # ── Checkpointing ─────────────────────────────────────────────────────────
+  # Set to false to skip per-item DuckDB writes entirely (stage start/complete
+  # are still recorded).  Eliminates the main throughput bottleneck on Lustre.
+  # Trade-off: no crash-resume — if interrupted, re-run from scratch.
+  checkpoint_items: false
 
   # ── Debug mode ────────────────────────────────────────────────────────────
   # Flip to true to sample rejections without running the full stage.

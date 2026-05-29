@@ -181,7 +181,8 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         )
 
     t0 = time.time()
-    LOG_EVERY = 10_000
+    LOG_EVERY = 10_000        # log a progress line every N records
+    CHECKPOINT_EVERY = 100_000  # flush to DuckDB every N records (one fsync)
     checkpoint_buffer: list[tuple[str, ItemStatus, str | None]] = []
 
     with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
@@ -205,10 +206,11 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                 domain_pass[domain] += 1
                 checkpoint_buffer.append((pid, ItemStatus.SUCCESS, None))
 
-            if total_input % LOG_EVERY == 0:
+            if total_input % CHECKPOINT_EVERY == 0:
                 cm.mark_processed_batch(checkpoint_buffer, STAGE)
                 checkpoint_buffer.clear()
 
+            if total_input % LOG_EVERY == 0:
                 elapsed = time.time() - t0
                 rate = total_input / elapsed if elapsed > 0 else 0
                 pass_rate = 100.0 * total_passed / total_input

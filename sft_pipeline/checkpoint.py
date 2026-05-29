@@ -238,21 +238,33 @@ class CheckpointManager:
         items: list[tuple[str, ItemStatus, str | None]],  # (item_id, status, shard)
         stage: str,
     ) -> None:
-        """Batch-insert processed item records."""
+        """
+        Batch-insert processed item records in a single transaction.
+
+        All rows are committed in one fsync, which is critical on distributed
+        filesystems (Lustre/GPFS) where per-commit overhead can be 100ms+.
+        """
         rows = [
             (item_id, stage, status, shard, None)
             for item_id, status, shard in items
         ]
+        params = [(r[0], r[1], r[2], r[3], r[4], r[2], r[3]) for r in rows]
         with self._lock:
-            self._conn.executemany(
-                """
-                INSERT INTO processed_items (item_id, stage_name, status, output_shard, error_msg)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT (item_id, stage_name) DO UPDATE
-                SET status = ?, output_shard = ?, processed_at = now()
-                """,
-                [(r[0], r[1], r[2], r[3], r[4], r[2], r[3]) for r in rows],
-            )
+            self._conn.execute("BEGIN TRANSACTION")
+            try:
+                self._conn.executemany(
+                    """
+                    INSERT INTO processed_items (item_id, stage_name, status, output_shard, error_msg)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT (item_id, stage_name) DO UPDATE
+                    SET status = ?, output_shard = ?, processed_at = now()
+                    """,
+                    params,
+                )
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
         if stage in self._processed_cache:
             for item_id, status, _ in items:
                 if status in (ItemStatus.SUCCESS, ItemStatus.SKIPPED):

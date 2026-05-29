@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -152,6 +153,12 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     cm.mark_stage_started(STAGE)
     cm.preload_processed(STAGE)
 
+    already_done = cm.processed_count(STAGE)
+    logger.info(
+        "Stage6: starting — input=%s  output=%s  already_done=%d",
+        stage5_dir, out_dir, already_done,
+    )
+
     rng = random.Random(cfg.global_.seed)
 
     # Per-filter rejection counters
@@ -159,8 +166,8 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     domain_pass: dict[str, int] = defaultdict(int)
     domain_fail: dict[str, int] = defaultdict(int)
 
-    total_input = 0
-    total_passed = 0
+    total_input = 0   # records processed this run (excludes already_done)
+    total_passed = 0  # records that passed filters this run
 
     # Warn if expensive filters are enabled but records likely lack parsed fields.
     # math / llm_judge operate on reasoning + answer; they'll silently pass
@@ -173,11 +180,13 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             "Parse the responses first or disable these filters."
         )
 
+    t0 = time.time()
+    LOG_EVERY = 10_000
+
     with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
         for record in iter_jsonl_dir(stage5_dir):
             pid = record.get("prompt_id", "")
             if cm.is_processed(pid, STAGE):
-                total_passed += 1
                 continue
 
             total_input += 1
@@ -195,11 +204,17 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                 domain_pass[domain] += 1
                 cm.mark_processed(pid, STAGE, status=ItemStatus.SUCCESS)
 
-            if total_input % 100_000 == 0:
-                pass_rate = 100.0 * total_passed / max(total_input, 1)
+            if total_input % LOG_EVERY == 0:
+                elapsed = time.time() - t0
+                rate = total_input / elapsed if elapsed > 0 else 0
+                pass_rate = 100.0 * total_passed / total_input
+                rejection_summary = ", ".join(
+                    f"{k}={v}" for k, v in sorted(rejection_counts.items())
+                ) or "none"
                 logger.info(
-                    "Stage6: processed %d, passed %d (%.1f%%)",
-                    total_input, total_passed, pass_rate,
+                    "Stage6: %d processed  passed=%d (%.1f%%)  rate=%.0f/s"
+                    "  rejections=[%s]",
+                    total_input, total_passed, pass_rate, rate, rejection_summary,
                 )
 
     # Write filter report
@@ -217,8 +232,15 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     report_path.write_text(json.dumps(report, indent=2))
     logger.info("Filter report written to %s", report_path)
 
-    cm.mark_stage_complete(STAGE, output_count=total_passed)
+    elapsed = time.time() - t0
+    rate = total_input / elapsed if elapsed > 0 else 0
+    cm.mark_stage_complete(STAGE, output_count=already_done + total_passed)
     logger.info(
-        "Stage6 complete: input=%d, passed=%d (%.1f%%)",
-        total_input, total_passed, 100.0 * pass_rate,
+        "Stage6 complete: input=%d  passed=%d (%.1f%%)  elapsed=%.0fs  rate=%.0f/s",
+        total_input, total_passed, 100.0 * pass_rate, elapsed, rate,
     )
+    if rejection_counts:
+        logger.info(
+            "Stage6 rejection breakdown: %s",
+            ", ".join(f"{k}={v}" for k, v in sorted(rejection_counts.items())),
+        )

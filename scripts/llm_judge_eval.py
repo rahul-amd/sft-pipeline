@@ -25,9 +25,16 @@ which picks the provider from the model name (claude-* → anthropic, else opena
         --api-base http://localhost:9000/v1 \\
         --concurrency 64
 
-  OpenAI:
+  OpenAI (chat completions — gpt-4o and older):
     python scripts/llm_judge_eval.py responses.jsonl scores.jsonl \\
         --model gpt-4o \\
+        --api-key $OPENAI_API_KEY \\
+        --concurrency 32
+
+  OpenAI (responses API — gpt-4.5 and newer):
+    python scripts/llm_judge_eval.py responses.jsonl scores.jsonl \\
+        --model gpt-4.5 \\
+        --provider openai-responses \\
         --api-key $OPENAI_API_KEY \\
         --concurrency 32
 
@@ -198,7 +205,15 @@ async def _call_judge(client, provider: str, model: str, prompt: str, max_tokens
             max_tokens=max_tokens,
         )
         return resp.content[0].text or ""
-    else:
+    elif provider == "openai-responses":
+        resp = await client.responses.create(
+            model=model,
+            instructions=_JUDGE_SYSTEM,
+            input=prompt,
+            max_output_tokens=max_tokens,
+        )
+        return resp.output_text or ""
+    else:  # openai / vllm
         resp = await client.chat.completions.create(
             model=model,
             messages=[
@@ -415,8 +430,11 @@ def main() -> None:
     parser.add_argument(
         "--provider",
         default="auto",
-        choices=["auto", "openai", "anthropic"],
-        help="API provider. 'auto' infers from model name (claude-* → anthropic, else openai)",
+        choices=["auto", "openai", "openai-responses", "anthropic"],
+        help=(
+            "API provider. 'auto' infers from model name (claude-* → anthropic, else openai). "
+            "Use 'openai-responses' for models that require the Responses API (gpt-4.5+)."
+        ),
     )
     parser.add_argument("--concurrency", type=int, default=64, help="Concurrent in-flight requests")
     parser.add_argument("--max-tokens", type=int, default=512, help="Max tokens for judge response")

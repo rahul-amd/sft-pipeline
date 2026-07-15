@@ -63,6 +63,40 @@ def test_batch_mark_processed(tmp_path):
         assert cm.is_processed("id_49", "stage5")
 
 
+def test_batch_mark_processed_empty_is_noop(tmp_path):
+    cm = CheckpointManager(tmp_path / "ckpt.duckdb")
+    with cm:
+        cm.mark_processed_batch([], "stage5")  # must not raise
+        assert cm.processed_count("stage5") == 0
+
+
+def test_batch_upsert_dedups_within_batch(tmp_path):
+    # The bulk upsert path must not choke on the same item_id appearing twice
+    # in one batch — the last write wins, exactly as the old row-by-row path.
+    cm = CheckpointManager(tmp_path / "ckpt.duckdb")
+    with cm:
+        items = [
+            ("dup", ItemStatus.SKIPPED, "old.jsonl"),
+            ("dup", ItemStatus.SUCCESS, "new.jsonl"),
+            ("other", ItemStatus.SUCCESS, "a.jsonl"),
+        ]
+        cm.mark_processed_batch(items, "stage6")
+        # One physical row for "dup", reflecting the last write (SUCCESS).
+        assert cm.processed_count("stage6") == 2  # dup + other, both success
+        assert cm.is_processed("dup", "stage6")
+
+
+def test_batch_upsert_replaces_existing_row(tmp_path):
+    # A later batch re-marking the same id (e.g. across a resume) must replace,
+    # not duplicate or error on the primary key.
+    cm = CheckpointManager(tmp_path / "ckpt.duckdb")
+    with cm:
+        cm.mark_processed_batch([("x", ItemStatus.SKIPPED, "s0.jsonl")], "stage6")
+        cm.mark_processed_batch([("x", ItemStatus.SUCCESS, "s1.jsonl")], "stage6")
+        assert cm.processed_count("stage6") == 1  # replaced, not duplicated
+        assert cm.is_processed("x", "stage6")
+
+
 def test_shard_manifest(tmp_path):
     cm = CheckpointManager(tmp_path / "ckpt.duckdb")
     with cm:

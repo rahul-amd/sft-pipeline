@@ -76,8 +76,16 @@ def check_heuristic(record: dict, cfg: HeuristicFilterConfig) -> FilterResult:
         if _BOILERPLATE_PATTERNS.match(answer.strip()):
             return FilterResult(False, "boilerplate_answer")
 
-        # 3. Self-contradiction (light heuristic — not a full NLI check)
-        if cfg.flag_self_contradiction and _has_contradiction(reasoning, answer):
+        # 3. Self-contradiction (light heuristic — not a full NLI check).
+        #    Only meaningful for short, conclusive answers: comparing negation
+        #    polarity between two long texts fires on ~40% of healthy
+        #    responses (any long answer shares 3+ content words with its
+        #    reasoning, and negation words appear in almost all long text).
+        if (
+            cfg.flag_self_contradiction
+            and len(answer.split()) <= 80
+            and _has_contradiction(reasoning, answer)
+        ):
             return FilterResult(False, "self_contradiction")
 
     return FilterResult(True)

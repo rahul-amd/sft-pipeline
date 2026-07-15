@@ -208,13 +208,34 @@ class TestBoilerplate:
 # ===========================================================================
 
 class TestSelfContradiction:
-    def test_contradiction_flagged(self, cfg):
+    # The check is opt-in (off by default: measured ~4% precision on real
+    # Stage 5 data). These tests enable it explicitly.
+    @pytest.fixture
+    def cfg_contra(self):
+        return HeuristicFilterConfig(flag_self_contradiction=True)
+
+    def test_contradiction_flagged(self, cfg_contra):
         # Reasoning is affirmative; answer negates the same claim
         r = "This algorithm correctly sorts duplicate values using stable comparison."
         a = "This algorithm does not sort duplicate values correctly."
-        result = check_heuristic(_rec(r, a), cfg)
+        result = check_heuristic(_rec(r, a), cfg_contra)
         assert not result.passed
         assert result.reason == "self_contradiction"
+
+    def test_contradiction_off_by_default(self, cfg):
+        r = "This algorithm correctly sorts duplicate values using stable comparison."
+        a = "This algorithm does not sort duplicate values correctly."
+        result = check_heuristic(_rec(r, a), cfg)
+        assert "self_contradiction" not in result.reason
+
+    def test_long_answer_not_flagged(self, cfg_contra):
+        # Polarity comparison is only meaningful for short conclusive answers;
+        # long answers share vocabulary with their reasoning by construction.
+        r = "This algorithm correctly sorts duplicate values using stable comparison."
+        a = ("This algorithm does not sort duplicate values correctly. " * 20)
+        assert len(a.split()) > 80
+        result = check_heuristic(_rec(r, a), cfg_contra)
+        assert "self_contradiction" not in result.reason
 
     def test_same_polarity_not_flagged(self, cfg):
         # Both sides are negated — same polarity, no contradiction
@@ -230,11 +251,11 @@ class TestSelfContradiction:
         result = check_heuristic(_rec(r, a), cfg)
         assert "self_contradiction" not in result.reason
 
-    def test_flipped_direction_also_flagged(self, cfg):
+    def test_flipped_direction_also_flagged(self, cfg_contra):
         # Reasoning is negated; answer is affirmative — contradiction is symmetric
         r = "The quadratic formula cannot produce complex roots for this equation with real coefficients."
         a = "The quadratic formula produces complex roots for this equation with real coefficients."
-        result = check_heuristic(_rec(r, a), cfg)
+        result = check_heuristic(_rec(r, a), cfg_contra)
         assert not result.passed
         assert result.reason == "self_contradiction"
 

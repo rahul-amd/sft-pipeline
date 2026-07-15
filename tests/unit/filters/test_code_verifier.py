@@ -1,6 +1,9 @@
 """Tests for the code verifier filter (subprocess sandbox)."""
 from __future__ import annotations
 
+import os
+import time
+
 import pytest
 
 from sft_pipeline.config import CodeFilterConfig
@@ -113,6 +116,30 @@ def test_long_running_marker_timeout_is_uncertain():
     result = check_code(_rec(answer), cfg)
     assert result.passed
     assert result.reason == "code_long_running"
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(os.name != "posix", reason="process-group kill is POSIX-specific")
+def test_backgrounded_child_does_not_hang_past_timeout():
+    # The direct child exits instantly but backgrounds a grandchild that
+    # inherits the stdout pipe and blocks forever. Without process-group kill,
+    # communicate() waits for pipe EOF long past the timeout — the multi-minute
+    # Stage 6 freeze. The sandbox must still return within the timeout window.
+    answer = (
+        "```python\n"
+        "import subprocess, sys\n"
+        "subprocess.Popen([sys.executable, '-c', 'import signal; signal.pause()'])\n"
+        "print('parent exits now')\n"
+        "```"
+    )
+    cfg = CodeFilterConfig(enabled=True, sandbox="subprocess", timeout_seconds=3, domains=["code"])
+    start = time.monotonic()
+    result = check_code(_rec(answer), cfg)
+    elapsed = time.monotonic() - start
+    assert not result.passed
+    assert result.reason == "code_timeout"
+    # timeout (3s) + bounded drain (5s) + slack — must not hang indefinitely.
+    assert elapsed < 20, f"sandbox hung for {elapsed:.1f}s past its timeout"
 
 
 def test_last_block_is_executed():

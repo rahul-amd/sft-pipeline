@@ -17,13 +17,14 @@ Debug mode (``stage6_filter.debug_rejections: true``):
 """
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import os
 import random
 import time
-from collections import defaultdict, deque
-from concurrent.futures import ProcessPoolExecutor
+from collections import defaultdict
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -164,12 +165,22 @@ def _iter_filtered(
     n_workers: int,
     chunk_size: int,
 ) -> Iterator[tuple[dict, str | None]]:
-    """Yield (record, rejection_reason) for each record, in input order.
+    """Yield (record, rejection_reason) for each record.
 
-    ``n_workers <= 1`` runs the original serial path. Otherwise records are
-    fanned out to a ``ProcessPoolExecutor`` with a bounded sliding window of
-    in-flight chunks so peak memory stays flat regardless of dataset size
-    (``executor.map`` would eagerly submit every task).
+    ``n_workers <= 1`` runs the original serial path (input order). Otherwise
+    records are fanned out to a ``ProcessPoolExecutor``:
+
+    - A bounded sliding window of ``n_workers * 2`` in-flight chunks keeps peak
+      memory flat regardless of dataset size (``executor.map`` would eagerly
+      submit every task).
+    - Results are yielded in **completion order**, not input order. This is the
+      key to avoiding head-of-line blocking: a single slow chunk (e.g. one
+      record whose code sandbox is churning) ties up only its own worker while
+      every other worker keeps producing. Strict input-order yielding would
+      block the whole pipeline on the slowest chunk and drain the pool.
+
+    Output order is therefore not preserved — fine for a filtering stage, where
+    only the pass/reject decision per record matters, not ordering.
     """
     if n_workers <= 1:
         rng = random.Random(seed)
@@ -184,13 +195,19 @@ def _iter_filtered(
         initializer=_worker_init,
         initargs=(s6, delimiters, seed),
     ) as ex:
-        pending = deque()
-        for chunk in chunks:
-            pending.append(ex.submit(_worker_apply_chunk, chunk))
-            if len(pending) >= max_pending:
-                yield from pending.popleft().result()
+        # Prime the window, then top up one chunk per completed chunk so the
+        # pool always has work and the in-flight set never exceeds max_pending.
+        pending = {
+            ex.submit(_worker_apply_chunk, c)
+            for c in itertools.islice(chunks, max_pending)
+        }
         while pending:
-            yield from pending.popleft().result()
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for fut in done:
+                yield from fut.result()
+                next_chunk = next(chunks, None)
+                if next_chunk is not None:
+                    pending.add(ex.submit(_worker_apply_chunk, next_chunk))
 
 
 def _run_debug(cfg: PipelineConfig) -> None:

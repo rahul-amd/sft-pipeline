@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
 import textwrap
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -117,13 +119,13 @@ def check_code(record: dict, cfg: CodeFilterConfig) -> FilterResult:
     # compiles once dedented or wrapped in a function. Only reject when the
     # block is not valid Python in any of those forms.
     try:
-        compile(code, "<response>", "exec")
+        _compile_quiet(code)
     except SyntaxError:
         dedented = textwrap.dedent(code)
         wrapped = "def _sft_wrap_():\n" + textwrap.indent(dedented, "    ")
         for candidate in (dedented, wrapped):
             try:
-                compile(candidate, "<response>", "exec")
+                _compile_quiet(candidate)
                 return FilterResult(True, "code_fragment")
             except SyntaxError:
                 continue
@@ -150,6 +152,20 @@ def check_code(record: dict, cfg: CodeFilterConfig) -> FilterResult:
     return FilterResult(True)
 
 
+def _compile_quiet(src: str) -> None:
+    """``compile()`` with ``SyntaxWarning`` silenced.
+
+    Arbitrary response code routinely contains invalid escape sequences (an
+    un-raw regex string like ``"\\d"``, a Windows path), which make ``compile()``
+    emit a ``SyntaxWarning`` to stderr. At Stage 6 scale these flood the logs
+    and say nothing about response quality — the syntax *gate* only cares about
+    ``SyntaxError``. Suppress the warnings; let ``SyntaxError`` propagate.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        compile(src, "<response>", "exec")
+
+
 def _last_stderr_line(stderr: str) -> str:
     """The final non-empty stderr line — for Python tracebacks, the actual error."""
     lines = [ln.strip() for ln in (stderr or "").strip().splitlines() if ln.strip()]
@@ -169,6 +185,16 @@ def _run_subprocess(code: str, timeout: int) -> ExecutionResult:
     files (csv/json/zip demos), and with the caller's cwd those would litter
     the repository. The directory is removed afterwards, along with anything
     the code created in it.
+
+    The snippet runs in its **own process group** (``start_new_session=True``)
+    so that on timeout we can kill the entire tree, not just the direct child.
+    This matters: ``subprocess.run(timeout=)`` only kills the immediate child,
+    but a snippet that backgrounds a process (``multiprocessing``, ``Popen``,
+    ``os.system('… &')``) leaves a grandchild holding the stdout pipe open, and
+    ``communicate()`` then blocks waiting for pipe EOF *long past the timeout* —
+    freezing the whole filter run on a single record (observed as a multi-minute
+    stall in Stage 6). Killing the process group closes those fds so we return
+    within the timeout.
     """
     import shutil
 
@@ -180,30 +206,65 @@ def _run_subprocess(code: str, timeout: int) -> ExecutionResult:
     # the timeout. UTF-8 I/O: print(emoji) must not die with UnicodeEncodeError
     # on platforms whose console defaults to a legacy codepage (Windows cp1252).
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    proc = None
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, str(tmp_path)],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=timeout,
-            stdin=subprocess.DEVNULL,
             env=env,
             cwd=workdir,
+            # POSIX: new session → child is its own process-group leader, so
+            # os.killpg reaches every descendant. Ignored on Windows (we fall
+            # back to proc.kill(), which on Windows terminates child trees).
+            start_new_session=True,
         )
-        return ExecutionResult(
-            success=result.returncode == 0,
-            stdout=result.stdout[:500],
-            # Keep the TAIL: for tracebacks the exception type is on the last line.
-            stderr=result.stderr[-500:],
-        )
-    except subprocess.TimeoutExpired:
-        return ExecutionResult(success=False, timed_out=True)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            return ExecutionResult(
+                success=proc.returncode == 0,
+                stdout=(stdout or "")[:500],
+                # Keep the TAIL: for tracebacks the exception type is on the last line.
+                stderr=(stderr or "")[-500:],
+            )
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(proc)
+            # Drain the pipes now that the tree is dead. Bounded by a short
+            # secondary timeout so a stuck fd can never hang us indefinitely.
+            try:
+                proc.communicate(timeout=5)
+            except (subprocess.TimeoutExpired, Exception):
+                pass
+            return ExecutionResult(success=False, timed_out=True)
     except Exception as exc:
+        if proc is not None:
+            _kill_process_tree(proc)
         return ExecutionResult(success=False, stderr=str(exc))
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _kill_process_tree(proc: subprocess.Popen) -> None:
+    """Kill *proc* and every descendant it spawned.
+
+    On POSIX the child leads its own process group (see ``start_new_session``),
+    so ``killpg`` takes out the whole tree in one signal. On Windows, and if the
+    group lookup fails (child already gone), fall back to killing the child.
+    """
+    try:
+        if os.name == "posix":
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        else:
+            proc.kill()
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

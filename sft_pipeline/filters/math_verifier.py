@@ -24,45 +24,65 @@ _LATEX_DISPLAY = re.compile(r"\$\$(.+?)\$\$|\\\[(.+?)\\\]", re.DOTALL)
 _NUMERIC_RESULT = re.compile(
     r"=\s*(-?\d+(?:\.\d+)?(?:/\d+)?)\s*(?:$|[^\w])", re.MULTILINE
 )
+# Final boxed answer: \boxed{42}, \boxed{\frac{1}{2}} ...
+_BOXED = re.compile(r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}")
+# Any numeric literal (used generously on the reasoning side)
+_ANY_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:/\d+)?")
 
 
 def check_math(record: dict) -> FilterResult:
     """
     Apply math verification to a response record.
-    Returns FilterResult with passed=True, passed=False, or
-    passed=True with reason='uncertain' for unparseable expressions.
+
+    Two independent checks:
+      1. Numeric consistency — the concluded numbers (boxed / "= N" in the
+         answer) must appear somewhere in the reasoning. The reasoning side is
+         matched against ALL numeric literals (generous by design: false
+         rejection is the costly error). Runs even when LaTeX is unparseable.
+      2. SymPy parse sanity — unparseable LaTeX is 'uncertain', never a reject.
     """
     reasoning = record.get("reasoning", "")
     answer = record.get("answer", "")
 
-    # Extract math from answer
     answer_exprs = _extract_math_strings(answer)
-    if not answer_exprs:
+    a_numbers = _extract_answer_numbers(answer)
+
+    if not answer_exprs and not a_numbers:
         # No math to verify — pass through
         return FilterResult(True)
 
-    # Try to parse each answer expression with SymPy
-    parse_failures = 0
-    for expr_str in answer_exprs:
-        result = _try_parse_sympy(expr_str)
-        if result == "error":
-            parse_failures += 1
-
-    if parse_failures == len(answer_exprs) and len(answer_exprs) > 0:
-        # All expressions failed to parse — uncertain, don't filter
-        return FilterResult(True, reason="math_uncertain")
-
-    # Check internal consistency: numeric results from reasoning vs answer
-    r_numbers = set(_extract_numbers(reasoning))
-    a_numbers = set(_extract_numbers(answer))
-
-    if r_numbers and a_numbers:
-        # The final numeric answer should appear somewhere in the reasoning
-        # (or be derivable — we just check the simpler case)
+    # 1. Numeric consistency: concluded numbers should occur in the reasoning.
+    #    Informational only — measured against an LLM judge on 995 labeled
+    #    Stage 5 records, every rejection this check made was a false positive
+    #    (answers legitimately introduce fresh worked examples whose numbers
+    #    never appear in the reasoning). Kept as a non-rejecting signal.
+    r_numbers = set(_ANY_NUMBER.findall(reasoning))
+    if a_numbers and r_numbers:
         if not (a_numbers & r_numbers) and not _is_subset_derivable(r_numbers, a_numbers):
-            return FilterResult(False, "math_answer_not_in_reasoning")
+            return FilterResult(True, "math_numbers_disjoint")
+
+    # 2. SymPy parse sanity on the answer's LaTeX spans.
+    if answer_exprs:
+        parse_failures = sum(
+            1 for expr_str in answer_exprs if _try_parse_sympy(expr_str) == "error"
+        )
+        if parse_failures == len(answer_exprs):
+            return FilterResult(True, reason="math_uncertain")
 
     return FilterResult(True)
+
+
+def _extract_answer_numbers(answer: str) -> set[str]:
+    """
+    Numbers the answer *concludes with*: contents of \\boxed{...} plus
+    "= N" result patterns. These are the claims worth checking against
+    the reasoning.
+    """
+    nums: set[str] = set()
+    for m in _BOXED.finditer(answer):
+        nums.update(_ANY_NUMBER.findall(m.group(1)))
+    nums.update(m.group(1) for m in _NUMERIC_RESULT.finditer(answer))
+    return nums
 
 
 def _extract_math_strings(text: str) -> list[str]:
@@ -82,11 +102,6 @@ def _try_parse_sympy(expr_str: str) -> str:
         return "ok"
     except Exception:
         return "error"
-
-
-def _extract_numbers(text: str) -> list[str]:
-    """Extract numeric values from text (as strings for exact comparison)."""
-    return [m.group(1) for m in _NUMERIC_RESULT.finditer(text)]
 
 
 def _is_subset_derivable(r_numbers: set[str], a_numbers: set[str]) -> bool:

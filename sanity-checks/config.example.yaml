@@ -1,0 +1,44 @@
+# Sanity-check configuration (template).
+#
+# Copy this to config.yaml and fill in your secrets:
+#     cp sanity-checks/config.example.yaml sanity-checks/config.yaml
+#
+# config.yaml is gitignored (it holds API tokens) — config.example.yaml is not.
+#
+# Every value here is a *default*; any matching CLI flag overrides it.
+# The script auto-loads sanity-checks/config.yaml if present (or pass
+# --config <path>).
+
+# HuggingFace token used to stream the (private) Stage 5 dataset.
+# Leave blank to fall back to `hf auth login` cached credentials / HF_TOKEN env.
+hf_token: ""
+
+# ---- Dataset / sampling -----------------------------------------------------
+dataset: "rahular/sft-pipeline-stage5"
+split: "train"
+domains: ["math", "code"]
+n: 1000              # records to sample per domain
+max_scan: 2000000    # give up filling buckets after scanning this many rows
+code_timeout: 10     # seconds per code-execution verify
+# The dataset is arranged domain-wise (first ~1.4M rows are math, code next).
+# Per-domain stream skip offsets avoid scanning foreign-domain rows.
+domain_offsets:
+  math: 0
+  code: 1399000
+
+# ---- Metrics ----------------------------------------------------------------
+good_threshold: 4.0  # judge answer_correctness >= this counts as "good" (1-5 scale)
+n_examples: 15       # FP/FN examples to save per domain for inspection
+
+# ---- Judge (reference labeler) ----------------------------------------------
+# Z.AI glm-5.2 is OpenAI-compatible; the judge script's "openai" provider works.
+# NOTE: Z.AI glm-5.2 has a hard concurrency limit of 10.
+judge:
+  provider: "openai"                          # openai | openai-responses | anthropic | auto
+  model: "glm-5.2"
+  api_base: "https://api.z.ai/api/paas/v4/"
+  api_key: ""                                 # <-- your Z.AI API token
+  concurrency: 10
+  # Reasoning models (glm-5.2, Qwen3-Thinking, ...) burn their hidden reasoning
+  # tokens against max_tokens; keep this high so the JSON verdict isn't truncated.
+  max_tokens: 8000

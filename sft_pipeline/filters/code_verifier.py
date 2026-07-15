@@ -11,18 +11,68 @@ where possible (no execution).
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
 from sft_pipeline.config import CodeFilterConfig
 from sft_pipeline.filters.structural import FilterResult
 
+# The language tag is REQUIRED. With an optional tag, any fenced block (yaml,
+# robots.txt, markdown prose, sample I/O …) gets executed as Python and fails
+# with a spurious SyntaxError — measured at 100% false rejections on real
+# Stage 5 data.
 _CODE_BLOCK = re.compile(
-    r"```(?:python|py)?\s*\n(.*?)```", re.DOTALL | re.IGNORECASE
+    r"```(?:python|py)\s*\n(.*?)```", re.DOTALL | re.IGNORECASE
+)
+
+# Runtime errors caused by the sandbox environment, not by wrong code.
+# Rejecting on these punishes correct responses (measured on real data):
+#   ModuleNotFound/Import — sandbox has no third-party deps
+#   EOFError              — code calls input(); sandbox has no stdin
+#   FileNotFound/Permission/network — external resources unavailable
+#   NameError             — illustrative fragment using names defined in prose
+#   Unicode*Error         — console-encoding artifact (e.g. emoji on cp1252)
+_ENV_ERROR_MARKERS = (
+    "ModuleNotFoundError",
+    "ImportError",
+    "EOFError",
+    "FileNotFoundError",
+    "PermissionError",
+    "ConnectionError",
+    "SSLError",
+    "Max retries exceeded",
+    "gaierror",
+    "URLError",
+    "HTTPError",
+    "TimeoutError",
+    "NameError",
+    "KeyboardInterrupt",
+    "MemoryError",
+    "UnicodeEncodeError",
+    "UnicodeDecodeError",
+)
+
+# Code that is *designed* to run indefinitely or wait on external resources
+# (GUIs, servers, polling loops, model/dataset downloads). A timeout on these
+# is expected behaviour, not an infinite-loop bug.
+_LONG_RUNNING_MARKERS = (
+    "input(",
+    "mainloop(",
+    "plt.show(",
+    "app.run(",
+    "serve_forever",
+    "run_forever",
+    "time.sleep(",
+    "import turtle",
+    "import tkinter",
+    "import pygame",
+    "from_pretrained(",
 )
 
 
@@ -36,8 +86,11 @@ class ExecutionResult:
 
 def check_code(record: dict, cfg: CodeFilterConfig) -> FilterResult:
     """
-    Extract and execute code from the response answer/reasoning.
-    Returns FilterResult.
+    Extract and execute the final Python code block from the response.
+
+    Only genuine code defects reject; environment limitations (missing deps,
+    no stdin, no network) and non-executable illustration (REPL transcripts,
+    fragments) pass with an informational reason.
     """
     full_text = record.get("reasoning", "") + "\n" + record.get("answer", "")
     code_blocks = _CODE_BLOCK.findall(full_text)
@@ -50,17 +103,57 @@ def check_code(record: dict, cfg: CodeFilterConfig) -> FilterResult:
     if not code:
         return FilterResult(True)
 
+    # REPL transcripts (">>> ..." lines) are illustration, not programs.
+    if ">>>" in code:
+        return FilterResult(True, "code_repl_transcript")
+
+    # Notebook magics / shell commands inside a python fence ("!pip install",
+    # "%matplotlib") — sloppy fencing, but not incorrect code.
+    if re.search(r"^\s*[!%]\w", code, re.MULTILINE):
+        return FilterResult(True, "code_notebook_shell")
+
+    # Syntax gate. A fenced fragment (e.g. a method body with a bare `return`)
+    # is legitimate illustration — detect it by checking whether the block
+    # compiles once dedented or wrapped in a function. Only reject when the
+    # block is not valid Python in any of those forms.
+    try:
+        compile(code, "<response>", "exec")
+    except SyntaxError:
+        dedented = textwrap.dedent(code)
+        wrapped = "def _sft_wrap_():\n" + textwrap.indent(dedented, "    ")
+        for candidate in (dedented, wrapped):
+            try:
+                compile(candidate, "<response>", "exec")
+                return FilterResult(True, "code_fragment")
+            except SyntaxError:
+                continue
+        return FilterResult(False, "code_syntax_error")
+    except (ValueError, MemoryError, RecursionError):
+        return FilterResult(True, "code_compile_uncertain")
+
     if cfg.sandbox == "e2b":
         result = _run_e2b(code, cfg.timeout_seconds)
     else:
         result = _run_subprocess(code, cfg.timeout_seconds)
 
     if result.timed_out:
+        if any(m in code for m in _LONG_RUNNING_MARKERS):
+            return FilterResult(True, "code_long_running")
         return FilterResult(False, "code_timeout")
+
     if not result.success:
-        return FilterResult(False, f"code_error:{result.stderr[:200]}")
+        last_line = _last_stderr_line(result.stderr)
+        if any(m in result.stderr for m in _ENV_ERROR_MARKERS):
+            return FilterResult(True, f"code_env_uncertain:{last_line[:80]}")
+        return FilterResult(False, f"code_error:{last_line[:200]}")
 
     return FilterResult(True)
+
+
+def _last_stderr_line(stderr: str) -> str:
+    """The final non-empty stderr line — for Python tracebacks, the actual error."""
+    lines = [ln.strip() for ln in (stderr or "").strip().splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
 
 
 # ---------------------------------------------------------------------------
@@ -78,17 +171,26 @@ def _run_subprocess(code: str, timeout: int) -> ExecutionResult:
         f.write(code)
         tmp_path = f.name
 
+    # No stdin: input() raises EOFError immediately instead of blocking until
+    # the timeout. UTF-8 I/O: print(emoji) must not die with UnicodeEncodeError
+    # on platforms whose console defaults to a legacy codepage (Windows cp1252).
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     try:
         result = subprocess.run(
             [sys.executable, tmp_path],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
+            stdin=subprocess.DEVNULL,
+            env=env,
         )
         return ExecutionResult(
             success=result.returncode == 0,
             stdout=result.stdout[:500],
-            stderr=result.stderr[:500],
+            # Keep the TAIL: for tracebacks the exception type is on the last line.
+            stderr=result.stderr[-500:],
         )
     except subprocess.TimeoutExpired:
         return ExecutionResult(success=False, timed_out=True)

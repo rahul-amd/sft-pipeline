@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "verifier-comparison-viz",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-X", "utf8", "sanity-checks/viz_compare.py"],
+      "port": 7860
+    }
+  ]
+}

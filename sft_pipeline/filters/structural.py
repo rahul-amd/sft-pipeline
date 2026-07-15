@@ -72,15 +72,24 @@ def check_structural(record: dict, cfg: StructuralFilterConfig) -> FilterResult:
 
 def _has_repetition(text: str, ngram_size: int, max_count: int) -> bool:
     """
-    Return True if any ngram of size `ngram_size` appears more than
-    `max_count` times in the text (indicates a repetition loop).
+    Return True if any ngram of size `ngram_size` appears more than the
+    allowed count (indicates a repetition loop).
+
+    The allowed count is length-aware: long reasoning traces naturally repeat
+    5-grams like "the answer is 0" while re-checking work, so the threshold
+    scales with text length (1 extra allowed repeat per 150 tokens).
+    Calibrated against LLM-judge labels: genuinely-stuck responses show max
+    5-gram counts several times higher than the busiest healthy trace of the
+    same length.
     """
     tokens = text.lower().split()
-    if len(tokens) < ngram_size * (max_count + 1):
+    threshold = max(max_count, len(tokens) // 150)
+    # Minimum tokens for threshold+1 (possibly overlapping) occurrences.
+    if len(tokens) < threshold + ngram_size:
         return False
     ngrams = [
         " ".join(tokens[i : i + ngram_size])
         for i in range(len(tokens) - ngram_size + 1)
     ]
     counts = Counter(ngrams)
-    return any(c > max_count for c in counts.values())
+    return any(c > threshold for c in counts.values())

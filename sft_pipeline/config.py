@@ -248,19 +248,28 @@ class Stage5Config(BaseModel):
 
 
 class StructuralFilterConfig(BaseModel):
-    min_response_tokens: int = 50
+    min_response_tokens: int = 20
     max_response_tokens: int = 8_000
     max_repetition_ngram: int = 5
-    max_repetition_count: int = 3
+    # Floor for the length-aware repetition threshold (see structural._has_repetition).
+    # Healthy long reasoning traces legitimately repeat 5-grams up to ~35x
+    # (e.g. restating a polynomial while testing candidate roots); genuinely
+    # stuck loops repeat them ~100x.
+    max_repetition_count: int = 40
 
 
 class HeuristicFilterConfig(BaseModel):
-    min_info_density: float = Field(0.3, ge=0.0, le=1.0)
+    # 0.2 measured against LLM-judge labels: healthy responses bottom out at
+    # MSTTR ~0.25 (terse numeric answers); genuine word-salad sits far below.
+    min_info_density: float = Field(0.2, ge=0.0, le=1.0)
     # MSTTR segment size: TTR is computed per window of this many tokens then averaged.
     # Keeps the metric length-independent (raw TTR collapses below 0.30 for any
     # response > ~700 words, even high-quality ones).
     msttr_segment_size: int = Field(100, ge=10)
-    flag_self_contradiction: bool = True
+    # Off by default: measured against an LLM judge on real Stage 5 data, the
+    # negation-polarity heuristic fires on ~40% of healthy responses and its
+    # precision (~4%) is indistinguishable from the bad-response base rate.
+    flag_self_contradiction: bool = False
 
 
 class MathFilterConfig(BaseModel):

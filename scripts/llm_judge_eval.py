@@ -92,8 +92,11 @@ def parse_response(
     close_pos = raw.find(think_close)
     open_pos = raw.find(think_open)
 
-    if open_pos != -1 and close_pos != -1:
-        thinking = raw[open_pos + len(think_open):close_pos].strip()
+    if close_pos != -1:
+        # Close tag present. The open tag is optional — many reasoning models
+        # emit the opening delimiter implicitly and only produce </think>.
+        start = open_pos + len(think_open) if (open_pos != -1 and open_pos < close_pos) else 0
+        thinking = raw[start:close_pos].strip()
         answer = raw[close_pos + len(think_close):].strip() or None
         return thinking, answer, True
 
@@ -102,7 +105,7 @@ def parse_response(
         thinking = raw[open_pos + len(think_open):].strip()
         return thinking, None, False
 
-    # No think tags — treat entire response as the answer
+    # No think tags at all — treat entire response as the answer
     return None, raw.strip() or None, True
 
 
@@ -298,6 +301,7 @@ async def run_async(
     max_thinking_words: int,
     think_open: str,
     think_close: str,
+    output_file: Path | None = None,
 ) -> list[dict]:
     http_client = None
 
@@ -341,9 +345,20 @@ async def run_async(
         for rec in records
     ]
 
+    # Stream each result to disk as it completes: a mid-run crash (or an API
+    # account running out of balance) must not lose the calls already paid for.
     results = []
-    for coro in asyncio.as_completed(tasks):
-        results.append(await coro)
+    out_fh = output_file.open("wb") if output_file is not None else None
+    try:
+        for coro in asyncio.as_completed(tasks):
+            result = await coro
+            results.append(result)
+            if out_fh is not None:
+                out_fh.write(orjson.dumps(result) + b"\n")
+                out_fh.flush()
+    finally:
+        if out_fh is not None:
+            out_fh.close()
 
     if http_client is not None:
         await http_client.aclose()
@@ -414,6 +429,14 @@ def main() -> None:
         description="LLM-as-a-judge evaluator for response quality",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    # Windows consoles default to cp1252, which cannot encode the box-drawing
+    # characters used in print_stats(). Force UTF-8 so stats never crash the run.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     parser.add_argument("input_file", type=Path, help="Input JSONL file")
     parser.add_argument("output_file", type=Path, help="Output JSONL file with judge scores")
     parser.add_argument(
@@ -483,7 +506,8 @@ def main() -> None:
         provider = "anthropic" if args.model.startswith("claude") else "openai"
         logger.info("Auto-detected provider: %s", provider)
 
-    # Evaluate
+    # Evaluate — results are streamed to the output file as they complete.
+    args.output_file.parent.mkdir(parents=True, exist_ok=True)
     results = asyncio.run(run_async(
         records,
         model=args.model,
@@ -495,13 +519,8 @@ def main() -> None:
         max_thinking_words=args.max_thinking_words,
         think_open=args.think_open,
         think_close=args.think_close,
+        output_file=args.output_file,
     ))
-
-    # Write output
-    args.output_file.parent.mkdir(parents=True, exist_ok=True)
-    with args.output_file.open("wb") as f:
-        for result in results:
-            f.write(orjson.dumps(result) + b"\n")
     logger.info("Scores written to %s", args.output_file)
 
     # Print stats

@@ -59,8 +59,25 @@ def parse_output(text: str, delimiters: ReasoningDelimiters) -> ParsedOutput:
             valid=True,
         )
 
-    # Fallback: try splitting at common conclusion markers
-    fb_match = _FALLBACK_SPLIT_PATTERNS.search(text)
+    # Think delimiters only (no answer tags): everything after the think
+    # block's closing delimiter is the answer. Common for teacher models that
+    # emit a thought section followed directly by the final response.
+    if think_match:
+        answer_tail = text[think_match.end():].strip()
+        if answer_tail:
+            return ParsedOutput(
+                reasoning=think_match.group(1).strip(),
+                answer=answer_tail,
+                used_fallback=False,
+                valid=True,
+            )
+
+    # Fallback: split at the LAST conclusion marker. Long reasoning traces
+    # use "therefore"/"thus" many times mid-derivation; only the final one
+    # introduces the actual conclusion.
+    fb_match = None
+    for fb_match in _FALLBACK_SPLIT_PATTERNS.finditer(text):
+        pass
     if fb_match:
         split_pos = fb_match.start()
         reasoning = text[:split_pos].strip()
@@ -73,15 +90,23 @@ def parse_output(text: str, delimiters: ReasoningDelimiters) -> ParsedOutput:
                 valid=True,
             )
 
-    # Last resort: treat full text as reasoning, answer is last sentence
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
-    if len(sentences) >= 2:
-        return ParsedOutput(
-            reasoning=" ".join(sentences[:-1]),
-            answer=sentences[-1],
-            used_fallback=True,
-            valid=True,
-        )
+    # Last resort: treat full text as reasoning, answer is the last sentence.
+    # Slice the original text rather than re-joining split sentences —
+    # re-joining collapses newlines, which silently corrupts any code block
+    # or formatted math that spans the split.
+    last_boundary = None
+    for last_boundary in re.finditer(r"(?<=[.!?])\s+", text):
+        pass
+    if last_boundary:
+        reasoning = text[: last_boundary.start()].strip()
+        answer = text[last_boundary.end():].strip()
+        if reasoning and answer:
+            return ParsedOutput(
+                reasoning=reasoning,
+                answer=answer,
+                used_fallback=True,
+                valid=True,
+            )
 
     # Cannot parse
     return ParsedOutput(reasoning=text, answer="", used_fallback=True, valid=False)

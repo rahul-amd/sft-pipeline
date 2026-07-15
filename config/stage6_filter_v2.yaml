@@ -27,7 +27,7 @@
 
 global:
   device: "cpu"          # filtering needs no GPU (code runs in subprocesses)
-  run_id: "research_stage5_001"   # <-- set to the run holding stage5/ output
+  run_id: "research_stage3_001"
   base_path: "/shared_silo/scratch/rahul.aralikatte@amd.com/sft-pipeline/runs/{run_id}"
   checkpoint_db: "{base_path}/checkpoints_stage6_v2.duckdb"
 

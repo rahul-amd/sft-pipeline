@@ -160,14 +160,24 @@ stage5_inference:
 # ---------------------------------------------------------------------------
 stage6_filter:
   enabled: true
+  # Parse raw Stage 5 responses into reasoning/answer (using
+  # stage5_inference.delimiters) before filtering. Required for the math and
+  # code filters to see anything on raw 'response' records.
+  parse_responses: true
+  # Thresholds below were calibrated against an LLM judge on 1000 real Stage 5
+  # records per domain (see sanity-checks/) — the previous values falsely
+  # rejected 32% of good math and 61% of good code responses.
   structural:
-    min_response_tokens: 50
+    min_response_tokens: 20
     max_response_tokens: 8000
     max_repetition_ngram: 5
-    max_repetition_count: 3
+    # Floor for the length-aware repetition threshold (+1 per 150 tokens).
+    # Healthy reasoning traces repeat 5-grams up to ~35x; stuck loops ~95x.
+    max_repetition_count: 40
   heuristic:
-    min_info_density: 0.30
-    flag_self_contradiction: true
+    min_info_density: 0.20
+    # Measured ~4% precision (equal to the bad-response base rate) — keep off.
+    flag_self_contradiction: false
   math:
     enabled: true
     domains: ["math", "science"]

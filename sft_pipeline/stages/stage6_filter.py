@@ -40,7 +40,28 @@ logger = logging.getLogger(__name__)
 STAGE = "stage6_filter"
 
 
-def _apply_filters(record: dict, s6, rng: random.Random) -> str | None:
+def _parse_record(record: dict, delimiters) -> None:
+    """
+    Populate ``reasoning`` / ``answer`` from the raw ``response`` in place.
+
+    Stage 5 writes raw responses only; the math/code filters (and the export
+    schema) need the parsed fields. Uses the configured reasoning delimiters —
+    set ``stage5_inference.delimiters`` to whatever the teacher actually
+    emitted (e.g. ``<|channel>thought`` / ``<channel|>``).
+    """
+    from sft_pipeline.inference.output_parser import parse_output
+
+    if record.get("reasoning") or record.get("answer"):
+        return  # already parsed
+    response = record.get("response")
+    if not response:
+        return
+    parsed = parse_output(response, delimiters)
+    record["reasoning"] = parsed.reasoning
+    record["answer"] = parsed.answer
+
+
+def _apply_filters(record: dict, s6, rng: random.Random, delimiters=None) -> str | None:
     """
     Run the full filter chain on *record*.
 
@@ -48,6 +69,9 @@ def _apply_filters(record: dict, s6, rng: random.Random) -> str | None:
     record was rejected, or ``None`` if it passed all filters.
     """
     domain = record.get("domain", "general")
+
+    if s6.parse_responses and delimiters is not None:
+        _parse_record(record, delimiters)
 
     # 1. Structural
     r = check_structural(record, s6.structural)
@@ -101,12 +125,11 @@ def _run_debug(cfg: PipelineConfig) -> None:
         stage5_dir, limit, debug_path,
     )
 
-    # Warn about expensive filters requiring parsed fields (same as normal mode)
-    if s6.math.enabled or s6.llm_judge.enabled:
+    if not s6.parse_responses and (s6.math.enabled or s6.llm_judge.enabled):
         logger.warning(
-            "Stage6: math or llm_judge filters are enabled.  These filters require "
-            "'reasoning' and 'answer' fields.  If Stage 5 output only contains "
-            "'response', those checks will be skipped per-record."
+            "Stage6: parse_responses is off but math/llm_judge filters are enabled. "
+            "They need 'reasoning'/'answer' fields; on raw Stage 5 'response' "
+            "records those checks silently pass everything."
         )
 
     collected: list[dict] = []
@@ -114,7 +137,7 @@ def _run_debug(cfg: PipelineConfig) -> None:
 
     for record in iter_jsonl_dir(stage5_dir):
         total_scanned += 1
-        reason = _apply_filters(record, s6, rng)
+        reason = _apply_filters(record, s6, rng, delimiters=cfg.stage5_inference.delimiters)
         if reason is not None:
             entry = dict(record)  # shallow copy — don't mutate the original
             entry["_rejection_reason"] = reason
@@ -175,12 +198,12 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     total_input = 0
     total_passed = 0
 
-    if s6.math.enabled or s6.llm_judge.enabled:
+    if not s6.parse_responses and (s6.math.enabled or s6.llm_judge.enabled):
         logger.warning(
-            "Stage6: math or llm_judge filters are enabled.  These filters require "
-            "'reasoning' and 'answer' fields.  If Stage 5 output only contains "
-            "'response', those checks will be skipped per-record.  "
-            "Parse the responses first or disable these filters."
+            "Stage6: parse_responses is off but math/llm_judge filters are enabled. "
+            "They need 'reasoning'/'answer' fields; on raw Stage 5 'response' "
+            "records those checks silently pass everything. "
+            "Enable stage6_filter.parse_responses or disable these filters."
         )
 
     t0 = time.time()
@@ -197,7 +220,7 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             total_input += 1
             domain = record.get("domain", "general")
 
-            rejection_reason = _apply_filters(record, s6, rng)
+            rejection_reason = _apply_filters(record, s6, rng, delimiters=cfg.stage5_inference.delimiters)
 
             if rejection_reason:
                 rejection_counts[rejection_reason.split(":")[0]] += 1

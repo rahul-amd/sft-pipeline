@@ -237,6 +237,11 @@ class Stage5Config(BaseModel):
 
     # ── shared ──────────────────────────────────────────────────────────────
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
+    # Reasoning delimiters the teacher ACTUALLY emits — used to split raw
+    # responses into reasoning/answer (Stage 6 parse_responses, export).
+    # NOTE: this field existed in YAML configs for a while but was silently
+    # ignored because the model had no such attribute; it is live now.
+    delimiters: ReasoningDelimiters = Field(default_factory=ReasoningDelimiters)
     # Whether to include HF special tokens (e.g. <|im_end|>) in the raw output.
     # False = keep them (default); True = strip them (vLLM default, not what we want).
     # Note: <think>/<answer> tags are regular text tokens — they appear regardless.
@@ -294,6 +299,10 @@ class LLMJudgeConfig(BaseModel):
 
 class Stage6Config(BaseModel):
     enabled: bool = True
+    # Parse raw Stage 5 `response` strings into reasoning/answer before
+    # filtering, using stage5_inference.delimiters. Without this the math and
+    # code filters see empty fields and silently become no-ops.
+    parse_responses: bool = True
     structural: StructuralFilterConfig = Field(default_factory=StructuralFilterConfig)
     heuristic: HeuristicFilterConfig = Field(default_factory=HeuristicFilterConfig)
     math: MathFilterConfig = Field(default_factory=MathFilterConfig)

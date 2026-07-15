@@ -10,8 +10,8 @@ The pipeline chains together:
 2. **Prompt generation** — synthesize additional prompts from knowledge-rich corpora (arXiv, Wikipedia, textbooks) using a lightweight LLM
 3. **Clustering** — embed all prompts, build a FAISS index, cluster by domain and assign difficulty labels (Easy / Medium / Hard)
 4. **Sampling** — enforce domain and difficulty quotas, deduplicate by embedding cosine similarity, sort for KV-cache reuse
-5. **Inference** — batch inference with Qwen3.5-122B-A10B via vLLM; each response is `<think>reasoning</think><answer>answer</answer>`
-6. **Quality filtering** — structural checks, heuristics, SymPy math verification, sandboxed code execution, LLM judge (10% sample)
+5. **Inference** — batch inference with Qwen3.5-122B-A10B via vLLM; each response carries a reasoning trace and a final answer, split by configurable delimiters (`stage5_inference.delimiters` — the production teacher emits `<|channel>thought … <channel|> …`)
+6. **Quality filtering** — structural checks, heuristics, SymPy math verification, sandboxed code execution, LLM judge (10% sample). Thresholds calibrated against an LLM judge on real Stage 5 data (see `sanity-checks/`)
 7. **Multilingual expansion** — *(v2, not yet implemented)*
 
 **Production target**: 32-node AMD MI250X cluster (512 GCDs, ROCm), local disk.
@@ -163,6 +163,37 @@ sbatch scripts/slurm_stage3_annotate.sh
 
 `stage3_annotate.yaml` connects to a running vLLM server at `annotation_api_base` with concurrency 4096 (64 replicas × 64 each). It writes `{base_path}/stage3/annotations.parquet` as a resumable checkpoint, then a second `run-stage stage3_cluster --import-annotations` pass merges the results.
 
+### Stage 6 — Quality Filtering
+
+```bash
+# Rerun filtering with the recalibrated verifiers (v2)
+sft-pipeline run-stage stage6_filter --config config/stage6_filter_v2.yaml
+
+# Output: {base_path}/stage6_v2/part-*.jsonl + filter_report.json
+```
+
+`stage6_filter_v2.yaml` reads raw Stage 5 responses, parses them with the
+teacher's actual delimiters (`<|channel>thought … <channel|>`), and runs the
+filter chain with thresholds calibrated against an LLM judge. It writes to
+`stage6_v2/` and uses a dedicated checkpoint DB, so a previous Stage 6 run is
+never overwritten or skipped. Set `global.run_id` to the run holding your
+`stage5/` output. The LLM judge is off by default; enable
+`stage6_filter.llm_judge` and point it at a running vLLM server to add
+sampled judging.
+
+**How the filters were calibrated** (`sanity-checks/`): 1000 records/domain
+from the Stage 5 dataset were scored by every verifier and by glm-5.2 as
+ground truth. The original chain falsely rejected 32% of good math and 61% of
+good code responses; the recalibrated chain rejects ~0.1% wrongly with
+precision 1.0 on math. To reproduce or extend the evaluation:
+
+```bash
+# Configure tokens + judge in sanity-checks/config.yaml (copy from config.example.yaml)
+python -X utf8 sanity-checks/sanity_check.py            # sample → verify → judge → metrics
+python -X utf8 sanity-checks/prep_comparison.py         # re-score with the frozen baseline
+python -X utf8 sanity-checks/viz_compare.py             # Gradio comparison app @ :7860
+```
+
 ### Visualization (after Stage 3)
 
 ```bash
@@ -196,6 +227,7 @@ All pipeline parameters live in a single YAML file validated by Pydantic v2. Con
 | `config/stage1_research.yaml` | Stage 1 only; 45 public HF research datasets |
 | `config/stage3_cluster.yaml` | Stage 3 clustering; distributed embedding + torch_kmeans |
 | `config/stage3_annotate.yaml` | Stage 3 annotation only; async LLM calls, no GPU |
+| `config/stage6_filter_v2.yaml` | Stage 6 rerun with recalibrated verifiers; writes to `stage6_v2/` |
 
 Placeholders `{run_id}` and `{base_path}` are resolved throughout string fields at load time.
 
@@ -307,6 +339,7 @@ sft-pipeline/
 │   ├── clustering/              # Embedder, FAISS index, clusterer
 │   ├── inference/               # vLLM batch loop, prompt formatter, output parser
 │   └── export/                  # Final JSONL export + optional HF Hub push
+├── sanity-checks/               # Verifier evaluation harness + baseline-vs-current Gradio viz
 ├── tests/
 ├── scripts/
 ├── docker/

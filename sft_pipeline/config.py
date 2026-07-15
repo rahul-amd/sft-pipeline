@@ -310,6 +310,16 @@ class Stage6Config(BaseModel):
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
     output_dir: str = "{base_path}/stage6"
     report_path: str = "{base_path}/stage6/filter_report.json"
+    # Number of worker processes for the filter chain. 1 (default) runs the
+    # original single-process serial loop. >1 fans _apply_filters out across a
+    # ProcessPoolExecutor — the loop is CPU/subprocess-bound (code sandbox,
+    # regex, MSTTR) and embarrassingly parallel, so this scales ~linearly with
+    # cores. None resolves to os.cpu_count() at runtime.
+    n_workers: int | None = 1
+    # Records per unit of work handed to a worker process. Larger amortizes IPC
+    # but hurts load balance when a chunk contains a slow code snippet that hits
+    # the sandbox timeout. 32 is a reasonable middle.
+    worker_chunk_size: int = Field(32, ge=1)
     # When False, per-item checkpoint writes to DuckDB are skipped entirely.
     # The stage-level start/complete markers are still written.
     # Use this when throughput matters more than crash-resume granularity

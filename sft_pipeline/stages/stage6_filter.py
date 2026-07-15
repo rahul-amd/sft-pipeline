@@ -19,10 +19,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from typing import Iterable, Iterator
 
 import orjson
 
@@ -101,6 +104,93 @@ def _apply_filters(record: dict, s6, rng: random.Random, delimiters=None) -> str
         return f"llm_judge:{r.reason}"
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Parallel filter application
+# ---------------------------------------------------------------------------
+#
+# The filter chain is CPU/subprocess-bound (code sandbox, MSTTR, regex) and
+# each record is independent, so it parallelizes cleanly across processes.
+# The main process keeps ownership of everything stateful — checkpoint DB,
+# output writer, counters — and only the pure _apply_filters call is offloaded.
+
+# Per-worker globals, populated once by the pool initializer so we don't
+# re-serialize the (small but non-trivial) config with every chunk.
+_W_S6 = None
+_W_DELIMITERS = None
+_W_RNG: random.Random | None = None
+
+
+def _worker_init(s6, delimiters, seed: int) -> None:
+    global _W_S6, _W_DELIMITERS, _W_RNG
+    _W_S6 = s6
+    _W_DELIMITERS = delimiters
+    # Each worker gets its own RNG. The llm_judge sample subset therefore
+    # differs from a single-process run (it is still ~sample_rate of records);
+    # irrelevant when llm_judge is disabled, which is the common case.
+    _W_RNG = random.Random(seed)
+
+
+def _worker_apply_chunk(records: list[dict]) -> list[tuple[dict, str | None]]:
+    """Run the filter chain over a chunk of records in a worker process.
+
+    Returns (record, reason) pairs. The record is returned so the parent gets
+    the version mutated in-place by ``_parse_record`` (reasoning/answer fields)
+    and writes the same enriched output the serial path would.
+    """
+    return [
+        (rec, _apply_filters(rec, _W_S6, _W_RNG, delimiters=_W_DELIMITERS))
+        for rec in records
+    ]
+
+
+def _chunked(it: Iterator[dict], size: int) -> Iterator[list[dict]]:
+    chunk: list[dict] = []
+    for rec in it:
+        chunk.append(rec)
+        if len(chunk) >= size:
+            yield chunk
+            chunk = []
+    if chunk:
+        yield chunk
+
+
+def _iter_filtered(
+    records: Iterable[dict],
+    s6,
+    delimiters,
+    seed: int,
+    n_workers: int,
+    chunk_size: int,
+) -> Iterator[tuple[dict, str | None]]:
+    """Yield (record, rejection_reason) for each record, in input order.
+
+    ``n_workers <= 1`` runs the original serial path. Otherwise records are
+    fanned out to a ``ProcessPoolExecutor`` with a bounded sliding window of
+    in-flight chunks so peak memory stays flat regardless of dataset size
+    (``executor.map`` would eagerly submit every task).
+    """
+    if n_workers <= 1:
+        rng = random.Random(seed)
+        for rec in records:
+            yield rec, _apply_filters(rec, s6, rng, delimiters=delimiters)
+        return
+
+    chunks = _chunked(iter(records), chunk_size)
+    max_pending = n_workers * 2
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_worker_init,
+        initargs=(s6, delimiters, seed),
+    ) as ex:
+        pending = deque()
+        for chunk in chunks:
+            pending.append(ex.submit(_worker_apply_chunk, chunk))
+            if len(pending) >= max_pending:
+                yield from pending.popleft().result()
+        while pending:
+            yield from pending.popleft().result()
 
 
 def _run_debug(cfg: PipelineConfig) -> None:
@@ -183,12 +273,14 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         already_done = 0
         logger.info("Stage6: per-item checkpointing disabled — no resume support for this run")
 
-    logger.info(
-        "Stage6: starting — input=%s  output=%s  already_done=%d  checkpoint_items=%s",
-        stage5_dir, out_dir, already_done, checkpoint_items,
-    )
+    n_workers = s6.n_workers if s6.n_workers is not None else (os.cpu_count() or 1)
+    n_workers = max(1, n_workers)
 
-    rng = random.Random(cfg.global_.seed)
+    logger.info(
+        "Stage6: starting — input=%s  output=%s  already_done=%d  "
+        "checkpoint_items=%s  n_workers=%d",
+        stage5_dir, out_dir, already_done, checkpoint_items, n_workers,
+    )
 
     # Per-filter rejection counters
     rejection_counts: dict[str, int] = defaultdict(int)
@@ -211,16 +303,25 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     CHECKPOINT_EVERY = 100_000
     checkpoint_buffer: list[tuple[str, ItemStatus, str | None]] = []
 
-    with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
+    def _records_to_process() -> Iterator[dict]:
+        """Stream input records, skipping any already checkpointed."""
         for record in iter_jsonl_dir(stage5_dir):
-            pid = record.get("prompt_id", "")
-            if checkpoint_items and cm.is_processed(pid, STAGE):
+            if checkpoint_items and cm.is_processed(record.get("prompt_id", ""), STAGE):
                 continue
+            yield record
 
+    with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
+        for record, rejection_reason in _iter_filtered(
+            _records_to_process(),
+            s6,
+            cfg.stage5_inference.delimiters,
+            cfg.global_.seed,
+            n_workers,
+            s6.worker_chunk_size,
+        ):
+            pid = record.get("prompt_id", "")
             total_input += 1
             domain = record.get("domain", "general")
-
-            rejection_reason = _apply_filters(record, s6, rng, delimiters=cfg.stage5_inference.delimiters)
 
             if rejection_reason:
                 rejection_counts[rejection_reason.split(":")[0]] += 1

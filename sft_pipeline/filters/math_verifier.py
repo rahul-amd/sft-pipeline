@@ -1,14 +1,12 @@
 """
-Math domain quality filter using SymPy.
+Math domain quality filter.
 
-Attempts to:
-  1. Extract LaTeX math expressions from the response
-  2. Verify that the final answer expression is syntactically parseable
-  3. Check internal consistency: if a numeric result is computed in the
-     reasoning, it should appear (or be derivable) in the answer
+Checks internal numeric consistency: numbers the answer concludes with
+(boxed / "= N") are compared against the numeric literals in the reasoning.
 
-Parse failures are treated as 'uncertain' (not 'failed') to avoid
-over-filtering on SymPy's limited LaTeX coverage.
+This filter is deliberately non-rejecting (informational only) — see
+``check_math``. It previously ran SymPy's LaTeX parser for a "parse sanity"
+signal that the caller discarded; that dead ANTLR cost has been removed.
 """
 from __future__ import annotations
 
@@ -34,12 +32,18 @@ def check_math(record: dict) -> FilterResult:
     """
     Apply math verification to a response record.
 
-    Two independent checks:
-      1. Numeric consistency — the concluded numbers (boxed / "= N" in the
-         answer) must appear somewhere in the reasoning. The reasoning side is
-         matched against ALL numeric literals (generous by design: false
-         rejection is the costly error). Runs even when LaTeX is unparseable.
-      2. SymPy parse sanity — unparseable LaTeX is 'uncertain', never a reject.
+    Numeric consistency — the concluded numbers (boxed / "= N" in the answer)
+    are compared against ALL numeric literals in the reasoning (generous by
+    design: false rejection is the costly error).
+
+    NOTE: this filter never rejects. Every path returns ``passed=True`` — the
+    checks are informational only (measured against an LLM judge on 995 labeled
+    Stage 5 records, every rejection was a false positive). A prior version also
+    ran SymPy's ``parse_latex`` on the answer's LaTeX spans to set a
+    ``math_uncertain`` reason, but that reason is discarded by the caller (which
+    only reads ``.passed``), so the ANTLR parse — tens of ms per expression on
+    every math/science answer — was pure wasted CPU and has been removed. If you
+    ever make this filter actually reject, re-introduce SymPy verification here.
     """
     reasoning = record.get("reasoning", "")
     answer = record.get("answer", "")
@@ -51,23 +55,11 @@ def check_math(record: dict) -> FilterResult:
         # No math to verify — pass through
         return FilterResult(True)
 
-    # 1. Numeric consistency: concluded numbers should occur in the reasoning.
-    #    Informational only — measured against an LLM judge on 995 labeled
-    #    Stage 5 records, every rejection this check made was a false positive
-    #    (answers legitimately introduce fresh worked examples whose numbers
-    #    never appear in the reasoning). Kept as a non-rejecting signal.
+    # Numeric consistency: concluded numbers should occur in the reasoning.
     r_numbers = set(_ANY_NUMBER.findall(reasoning))
     if a_numbers and r_numbers:
         if not (a_numbers & r_numbers) and not _is_subset_derivable(r_numbers, a_numbers):
             return FilterResult(True, "math_numbers_disjoint")
-
-    # 2. SymPy parse sanity on the answer's LaTeX spans.
-    if answer_exprs:
-        parse_failures = sum(
-            1 for expr_str in answer_exprs if _try_parse_sympy(expr_str) == "error"
-        )
-        if parse_failures == len(answer_exprs):
-            return FilterResult(True, reason="math_uncertain")
 
     return FilterResult(True)
 
@@ -92,16 +84,6 @@ def _extract_math_strings(text: str) -> list[str]:
     for m in _LATEX_DISPLAY.finditer(text):
         results.append(m.group(1) or m.group(2))
     return [s.strip() for s in results if s and s.strip()]
-
-
-def _try_parse_sympy(expr_str: str) -> str:
-    """Returns 'ok', 'error', or 'uncertain'."""
-    try:
-        from sympy.parsing.latex import parse_latex
-        parse_latex(expr_str)
-        return "ok"
-    except Exception:
-        return "error"
 
 
 def _is_subset_derivable(r_numbers: set[str], a_numbers: set[str]) -> bool:

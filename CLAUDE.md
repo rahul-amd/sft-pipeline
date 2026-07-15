@@ -266,8 +266,19 @@ Auto-splits output at configurable `shard_size_mb` boundary. Accepts an `on_shar
 ### Stage 6 filter ordering
 Filters run cheapest-first: structural → heuristic → math → code → llm_judge. Each filter is short-circuit: once a record fails, it is not passed to more expensive filters. The LLM judge only sees a 10% sample (`sample_rate: 0.10`).
 
-### SymPy "uncertain" vs "fail" (`math_verifier.py`)
-SymPy can fail to parse valid LaTeX (e.g., custom macros, non-standard notation). Parse failures return `FilterResult(passed=True, reason="uncertain")` — don't reject what the parser can't understand. Only structural inconsistencies (answer numbers absent from reasoning) cause rejection.
+### Stage 6 parallelism (`stage6_filter.py`)
+The filter chain is CPU/subprocess-bound (code sandbox dominates) and each record is independent, so it fans out across processes. Set `stage6_filter.n_workers` (`null` → `os.cpu_count()`, `1` → the original serial loop). `_iter_filtered()` drives it:
+- A `ProcessPoolExecutor` with an **initializer** that stashes the config in worker globals once (no per-record re-serialization).
+- Work is **chunked** (`worker_chunk_size`, default 32) to amortize IPC. Larger chunks amortize more but hurt load balance when a chunk contains a slow code snippet that hits the sandbox timeout.
+- Submission uses a **bounded, order-preserving sliding window** (`n_workers * 2` in-flight chunks) — do **not** switch to `executor.map`, which eagerly submits every task and blows memory at 7M records.
+- The main process keeps all state: checkpoint DB, `ShardedJSONLWriter`, counters, report. Workers return the (possibly `_parse_record`-mutated) record so the parent writes the same enriched output the serial path would.
+- Determinism caveat: each worker seeds its own `random.Random`, so the `llm_judge` 10% sample subset differs from a serial run (still ~`sample_rate`). Irrelevant when the judge is disabled, which is the common case.
+- Debug mode (`debug_rejections`) stays serial — it early-exits after N rejections.
+
+The code sandbox's `code.timeout_seconds` bounds worst-case per-record cost: a hanging snippet blocks its worker for the full timeout. `stage6_filter_v2.yaml` sets it to 3s.
+
+### Math filter is non-rejecting (`math_verifier.py`)
+`check_math` **never returns `passed=False`** — every path returns `FilterResult(True, ...)`; the numeric-consistency check is informational only (measured against an LLM judge on 995 labeled records, every rejection it would have made was a false positive). It used to also run SymPy's ANTLR `parse_latex` for a "parse sanity" signal, but the caller only reads `.passed` and discards the `reason`, so that parse — tens of ms per expression on every math/science answer — was pure wasted CPU and has been removed. If you ever make this filter actually reject, re-introduce SymPy verification there.
 
 ### LLM prompt annotation (`clustering/annotator.py`)
 After clustering, each prompt is annotated with `{domain, difficulty, topics, language, summary}` by calling an OpenAI-compatible API (Qwen3-30B-A3B-Thinking-2507 or similar). Key properties:

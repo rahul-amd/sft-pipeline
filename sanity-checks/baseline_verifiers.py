@@ -266,15 +266,16 @@ def check_code(record: dict, timeout: int = 10) -> FilterResult:
     if not code:
         return FilterResult(True)
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8"
-    ) as f:
-        f.write(code)
-        tmp_path = f.name
+    # Isolated temp cwd (NOT baseline-faithful, but required hygiene: dataset
+    # code writes csv/json/zip demo files, which must not litter the repo).
+    import shutil
+    workdir = tempfile.mkdtemp(prefix="sft_baseline_sandbox_")
+    tmp_path = Path(workdir) / "snippet.py"
+    tmp_path.write_text(code, encoding="utf-8")
     try:
         result = subprocess.run(
-            [sys.executable, tmp_path],
-            capture_output=True, text=True, timeout=timeout,
+            [sys.executable, str(tmp_path)],
+            capture_output=True, text=True, timeout=timeout, cwd=workdir,
         )
         if result.returncode != 0:
             return FilterResult(False, f"code_error:{(result.stderr or '')[:200]}")
@@ -284,10 +285,7 @@ def check_code(record: dict, timeout: int = 10) -> FilterResult:
     except Exception as exc:
         return FilterResult(False, f"code_error:{exc}")
     finally:
-        try:
-            Path(tmp_path).unlink()
-        except OSError:
-            pass
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------

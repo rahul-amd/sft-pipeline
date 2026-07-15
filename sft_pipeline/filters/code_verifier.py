@@ -164,12 +164,17 @@ def _run_subprocess(code: str, timeout: int) -> ExecutionResult:
     """
     Execute Python code in a restricted subprocess.
     No network, CPU time limited by subprocess timeout.
+
+    Runs inside a throwaway temp directory: dataset code frequently writes
+    files (csv/json/zip demos), and with the caller's cwd those would litter
+    the repository. The directory is removed afterwards, along with anything
+    the code created in it.
     """
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8"
-    ) as f:
-        f.write(code)
-        tmp_path = f.name
+    import shutil
+
+    workdir = tempfile.mkdtemp(prefix="sft_code_sandbox_")
+    tmp_path = Path(workdir) / "snippet.py"
+    tmp_path.write_text(code, encoding="utf-8")
 
     # No stdin: input() raises EOFError immediately instead of blocking until
     # the timeout. UTF-8 I/O: print(emoji) must not die with UnicodeEncodeError
@@ -177,7 +182,7 @@ def _run_subprocess(code: str, timeout: int) -> ExecutionResult:
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     try:
         result = subprocess.run(
-            [sys.executable, tmp_path],
+            [sys.executable, str(tmp_path)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -185,6 +190,7 @@ def _run_subprocess(code: str, timeout: int) -> ExecutionResult:
             timeout=timeout,
             stdin=subprocess.DEVNULL,
             env=env,
+            cwd=workdir,
         )
         return ExecutionResult(
             success=result.returncode == 0,
@@ -197,10 +203,7 @@ def _run_subprocess(code: str, timeout: int) -> ExecutionResult:
     except Exception as exc:
         return ExecutionResult(success=False, stderr=str(exc))
     finally:
-        try:
-            Path(tmp_path).unlink()
-        except OSError:
-            pass
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------

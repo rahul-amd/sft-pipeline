@@ -1,0 +1,16 @@
+# Dependencies for the verifier sanity-check harness (sanity-checks/).
+# Install on top of the core pipeline requirements:
+#   pip install -r requirements.txt -r sanity-checks/requirements.txt
+
+# Judge (llm_judge_eval.py) — OpenAI-compatible (Z.AI glm-5.2, vLLM, OpenAI)
+openai>=1.40
+# Optional: only if judging with Anthropic models (--provider anthropic)
+# anthropic>=0.34
+
+# Baseline-vs-current comparison viz (viz_compare.py)
+gradio>=4.0
+plotly>=5.20
+pandas>=2.0
+
+# math verifier needs this (also in core requirements.txt) — pinned for clarity
+antlr4-python3-runtime>=4.11,<4.12

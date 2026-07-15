@@ -43,7 +43,13 @@ dependencies = [
 
     # Quality filtering
     "sympy>=1.12",
+    # sympy.parsing.latex.parse_latex requires the antlr4 runtime; sympy
+    # 1.13/1.14 need the 4.11 line. Without it the math verifier no-ops.
+    "antlr4-python3-runtime>=4.11,<4.12",
     "json-repair>=0.25",
+
+    # LLM API clients — Stage 3 annotator, Stage 5 openai_api mode, LLM judge
+    "openai>=1.40",
 
     # HTTP / async
     "httpx>=0.27",
@@ -60,6 +66,14 @@ gpu = [
 ]
 code-sandbox = [
     "e2b-code-interpreter>=0.0.8",
+]
+judge-anthropic = [
+    "anthropic>=0.34",
+]
+sanity-checks = [
+    "gradio>=4.0",
+    "plotly>=5.20",
+    "pandas>=2.0",
 ]
 translate = [
     "deepl>=1.18",

@@ -30,7 +30,14 @@ duckdb>=0.10
 
 # Quality filtering
 sympy>=1.12
+# Required by sympy.parsing.latex.parse_latex (the math verifier). Without it
+# every LaTeX answer is treated as "uncertain" and the math filter no-ops.
+# sympy 1.13/1.14 require the 4.11 line specifically.
+antlr4-python3-runtime>=4.11,<4.12
 json-repair>=0.25
+
+# LLM API clients — Stage 3 annotator, Stage 5 openai_api mode, LLM judge
+openai>=1.40
 
 # HTTP / async
 httpx>=0.27
@@ -58,6 +65,12 @@ orjson>=3.10
 #
 # Code sandbox (production):
 #   pip install e2b-code-interpreter>=0.0.8
+#
+# LLM judge with Anthropic models (scripts/llm_judge_eval.py --provider anthropic):
+#   pip install anthropic>=0.34
+#
+# Verifier sanity-check harness + comparison viz (sanity-checks/):
+#   pip install -r sanity-checks/requirements.txt
 #
 # Translation (v2):
 #   pip install deepl>=1.18 google-cloud-translate>=3.15

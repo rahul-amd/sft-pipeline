@@ -76,6 +76,7 @@ def run(
         return
 
     from sft_pipeline.checkpoint import CheckpointManager
+    from sft_pipeline.stages.decontaminate import run_decontaminate
     from sft_pipeline.stages.stage1_collect import run_stage1
     from sft_pipeline.stages.stage2_generate import run_stage2
     from sft_pipeline.stages.stage3_cluster import run_stage3
@@ -87,6 +88,9 @@ def run(
         stages = [
             ("stage1_collect", cfg.stage1_collect.enabled, lambda: run_stage1(cfg, cm)),
             ("stage2_generate", cfg.stage2_generate.enabled, lambda: run_stage2(cfg, cm)),
+            ("decontaminate",
+             cfg.decontaminate.enabled and bool(cfg.decontaminate.evals),
+             lambda: run_decontaminate(cfg, cm)),
             ("stage3_cluster", cfg.stage3_cluster.enabled, lambda: run_stage3(cfg, cm)),
             ("stage4_sample", cfg.stage4_sample.enabled, lambda: run_stage4(cfg, cm)),
             ("stage5_inference", cfg.stage5_inference.enabled, lambda: run_stage5(cfg, cm)),
@@ -117,6 +121,7 @@ def run(
 STAGE_NAMES = [
     "stage1_collect",
     "stage2_generate",
+    "decontaminate",
     "stage3_cluster",
     "stage4_sample",
     "stage5_inference",
@@ -186,6 +191,9 @@ def _dispatch_stage(
     elif stage == "stage2_generate":
         from sft_pipeline.stages.stage2_generate import run_stage2
         run_stage2(cfg, cm)
+    elif stage == "decontaminate":
+        from sft_pipeline.stages.decontaminate import run_decontaminate
+        run_decontaminate(cfg, cm)
     elif stage == "stage3_cluster":
         from sft_pipeline.stages.stage3_cluster import run_stage3
         run_stage3(cfg, cm,

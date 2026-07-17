@@ -1,0 +1,88 @@
+# =============================================================================
+# Decontamination — remove collected prompts that overlap downstream evals.
+#
+# Runs between Stage 2 and Stage 3. Reads the raw stage1(+stage2) pool, removes
+# any prompt that shares a 13-word span (or, for short eval items, exactly
+# contains one) with any configured eval, and writes a CLEAN pool to
+# {base_path}/stage_decontam/ that Stage 3 then reads automatically.
+#
+# Usage (standalone against an existing run):
+#   sft-pipeline run-stage decontaminate --config config/decontaminate.yaml
+# Then run Stage 3 as usual — it auto-detects the decontaminated pool.
+#
+# NOTE: verify each eval's hf_repo_id / splits / match_fields against the actual
+# dataset card before a production run; field names differ across benchmarks.
+# Gated datasets need HF_TOKEN set in the environment.
+# =============================================================================
+
+global:
+  device: "cpu"           # decontamination is pure CPU
+  run_id: "research_stage3_001"
+  base_path: "/shared_silo/scratch/rahul.aralikatte@amd.com/sft-pipeline/runs/{run_id}"
+  checkpoint_db: "{base_path}/checkpoints.duckdb"
+
+# Stage 3 will read {base_path}/stage_decontam/clean/ once this stage has run.
+decontaminate:
+  enabled: true
+  ngram_size: 13
+  # Eval items shorter than this many tokens are dropped from the index (not
+  # matched). Without this floor a short field ("True", "0 1 2 3") becomes a
+  # tiny exact-match gram that removes legitimate prompts wholesale. Dropped
+  # counts appear in the report as eval_items_dropped_short.
+  min_gram_size: 5
+  # Parallelism is per input shard (each worker scans + writes a whole shard).
+  n_workers: null           # null → os.cpu_count(); 1 → serial
+  # output_dir is a LEAF dir holding only survivor shards; report/removed/state
+  # live one level up so Stage 3 can never ingest bookkeeping files.
+  output_dir: "{base_path}/stage_decontam/clean"
+  report_path: "{base_path}/stage_decontam/decontam_report.json"
+  removed_dir: "{base_path}/stage_decontam/removed"
+
+  evals:
+    # MMLU — hf_configs "all" expands to EVERY config (57 subjects). To use only
+    # the dataset's own config literally named "all", write: hf_configs: ["all"].
+    - name: mmlu
+      source: hf_dataset
+      hf_repo_id: cais/mmlu
+      hf_configs: all
+      splits: [test, validation]
+      match_fields: [question, choices]
+
+    - name: gsm8k
+      source: hf_dataset
+      hf_repo_id: openai/gsm8k
+      hf_configs: [main]
+      splits: [test]
+      match_fields: [question]
+
+    - name: humaneval
+      source: hf_dataset
+      hf_repo_id: openai/openai_humaneval
+      splits: [test]
+      match_fields: [prompt]
+
+    - name: arc
+      source: hf_dataset
+      hf_repo_id: allenai/ai2_arc
+      hf_configs: [ARC-Challenge, ARC-Easy]
+      splits: [test, validation]
+      match_fields: [question, choices.text]   # dot-notation nested list → joined
+
+    - name: truthful_qa
+      source: hf_dataset
+      hf_repo_id: truthful_qa
+      hf_configs: [generation]
+      splits: [validation]
+      match_fields: [question]
+
+    - name: hellaswag
+      source: hf_dataset
+      hf_repo_id: Rowan/hellaswag
+      splits: [validation]
+      match_fields: [ctx]
+
+    # Local eval file example (JSONL with a "prompt" field):
+    # - name: internal_holdout
+    #   source: local_jsonl
+    #   path: "{base_path}/evals/internal_holdout.jsonl"
+    #   match_fields: [prompt]

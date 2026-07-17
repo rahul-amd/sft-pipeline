@@ -118,6 +118,76 @@ class Stage2Config(BaseModel):
     output_dir: str = "{base_path}/stage2"
 
 
+class EvalDatasetSource(BaseModel):
+    """A downstream benchmark to decontaminate the prompt pool against."""
+    name: str                       # label used in the per-eval removal report
+    source: Literal["hf_dataset", "local_jsonl"]
+    # hf_dataset fields
+    hf_repo_id: str | None = None
+    # None → the dataset's default config; "all" → every config
+    # (datasets.get_dataset_config_names); a list → exactly those configs.
+    hf_configs: Literal["all"] | list[str] | None = None
+    # Eval items live in held-out splits, never 'train'.
+    splits: list[str] = Field(default_factory=lambda: ["test", "validation"])
+    # local_jsonl fields
+    path: str | None = None
+    # Fields whose text is registered as contamination signal. Each field may be:
+    #   - a plain string
+    #   - dot-notation nested ("a.b")
+    #   - a list (e.g. MMLU 'choices') → space-joined
+    #   - an OpenAI/ShareGPT message list → first user turn extracted
+    # A prompt is contaminated if it matches ANY listed field's text.
+    match_fields: list[str] = Field(default_factory=list)
+    max_examples: int | None = None  # cap eval items loaded (None = all)
+
+    @model_validator(mode="after")
+    def check_source_fields(self) -> EvalDatasetSource:
+        if self.source == "hf_dataset" and not self.hf_repo_id:
+            raise ValueError("hf_repo_id required when source='hf_dataset'")
+        if self.source == "local_jsonl" and not self.path:
+            raise ValueError("path required when source='local_jsonl'")
+        if not self.match_fields:
+            raise ValueError(f"eval '{self.name}': match_fields must be non-empty")
+        return self
+
+
+class DecontaminateConfig(BaseModel):
+    enabled: bool = True
+    # Downstream evals to scrub the pool against. If empty, the stage is a no-op
+    # and Stage 3 reads the raw stage1(+stage2) pool.
+    evals: list[EvalDatasetSource] = Field(default_factory=list)
+    # Contiguous word-gram length that defines a "shared span". Eval items with
+    # fewer than ngram_size tokens fall back to exact whole-item containment.
+    ngram_size: int = Field(13, ge=1)
+    # Floor for the short-item fallback: eval items with fewer than this many
+    # tokens are DROPPED from the index (with a logged count), not matched.
+    # Without a floor, a 1-token eval field like "True" or an MMLU choices list
+    # like "0 1 2 3" becomes a tiny exact-containment gram that removes huge
+    # swathes of legitimate prompts.
+    min_gram_size: int = Field(5, ge=1)
+    # Worker processes for the shard scan. Parallelism is per-shard (each worker
+    # scans + writes a whole shard; only stats cross process boundaries).
+    # 1 = serial; example configs set null (→ os.cpu_count()). Matching is
+    # deterministic, so parallel == serial.
+    n_workers: int | None = 1
+    # Clean-pool directory. Deliberately a LEAF directory containing only the
+    # survivor shards — report/removed/state all live outside it, so Stage 3
+    # can never accidentally ingest bookkeeping files.
+    output_dir: str = "{base_path}/stage_decontam/clean"
+    report_path: str = "{base_path}/stage_decontam/decontam_report.json"
+    # Uncapped record of every removed prompt (sharded): prompt_id, source,
+    # matched_eval, matched_ngram.
+    removed_dir: str = "{base_path}/stage_decontam/removed"
+
+    @model_validator(mode="after")
+    def check_gram_sizes(self) -> DecontaminateConfig:
+        if self.min_gram_size > self.ngram_size:
+            raise ValueError(
+                f"min_gram_size ({self.min_gram_size}) must be <= ngram_size ({self.ngram_size})"
+            )
+        return self
+
+
 class Stage3Config(BaseModel):
     enabled: bool = True
     # Distributed embedding (Ray)
@@ -348,6 +418,7 @@ class PipelineConfig(BaseModel):
     global_: GlobalConfig = Field(default_factory=GlobalConfig, alias="global")
     stage1_collect: Stage1Config = Field(default_factory=Stage1Config)
     stage2_generate: Stage2Config = Field(default_factory=Stage2Config)
+    decontaminate: DecontaminateConfig = Field(default_factory=DecontaminateConfig)
     stage3_cluster: Stage3Config = Field(default_factory=Stage3Config)
     stage4_sample: Stage4Config = Field(default_factory=Stage4Config)
     stage5_inference: Stage5Config = Field(default_factory=Stage5Config)

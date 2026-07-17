@@ -51,7 +51,8 @@ sft-pipeline/
 │   ├── prod.yaml                ← cluster overrides (ROCm, 7M prompts, 64 replicas)
 │   ├── stage1_research.yaml     ← Stage 1 only; 45 public HF research datasets
 │   ├── stage3_cluster.yaml      ← Stage 3 cluster run config (distributed embedding + clustering, annotation_enabled: false)
-│   └── stage3_annotate.yaml     ← Stage 3 annotation-only run (async LLM calls, CPU, no GPU)
+│   ├── stage3_annotate.yaml     ← Stage 3 annotation-only run (async LLM calls, CPU, no GPU)
+│   └── decontaminate.yaml       ← eval decontamination run config (standalone, CPU)
 ├── sft_pipeline/
 │   ├── config.py                ← Pydantic v2 models + YAML loader
 │   ├── checkpoint.py            ← DuckDB checkpoint tracker
@@ -61,10 +62,14 @@ sft-pipeline/
 │   ├── stages/
 │   │   ├── stage1_collect.py    ← HF dataset ingestion + SHA256 exact dedup
 │   │   ├── stage2_generate.py   ← corpus chunking + LLM prompt generation
+│   │   ├── decontaminate.py     ← eval decontamination (runs before Stage 3)
 │   │   ├── stage3_cluster.py    ← embed + FAISS index + HDBSCAN + difficulty
 │   │   ├── stage4_sample.py     ← quota sampling, near-dedup, similarity sort
 │   │   ├── stage5_inference.py  ← vLLM batch inference (single-node + Ray)
 │   │   └── stage6_filter.py     ← quality filter pipeline + filter_report.json
+│   ├── decontam/
+│   │   ├── normalize.py         ← aggressive match-time tokenizer (NFKC/lower/strip-punct)
+│   │   └── eval_index.py        ← eval loading + 13-word-gram containment index
 │   ├── filters/
 │   │   ├── structural.py        ← missing fields, length bounds, repetition loops
 │   │   ├── heuristic.py         ← type-token ratio, boilerplate, contradiction
@@ -108,10 +113,14 @@ sft-pipeline/
 │   │   ├── filters/
 │   │   │   ├── test_structural.py
 │   │   │   └── test_math_verifier.py
+│   │   ├── decontam/
+│   │   │   ├── test_normalize.py    ← match-time tokenizer
+│   │   │   └── test_eval_index.py   ← 13-gram hit, short-item fallback, attribution, fields
 │   │   └── clustering/
 │   │       └── test_clusterer_flash_kmeans.py  ← skip without CUDA + flash-kmeans
 │   └── integration/
-│       └── test_end_to_end.py   ← Stages 4 + mock-5 + 6 smoke test + resume test
+│       ├── test_end_to_end.py   ← Stages 4 + mock-5 + 6 smoke test + resume test
+│       └── test_decontaminate.py ← plant-contamination, clean pool, report, resume, stage3 wiring
 └── viz/
     ├── README.md
     ├── export.py            ← snapshot export CLI (run after each stage completes)
@@ -199,6 +208,10 @@ sft-pipeline run --config config/prod.yaml --set stage5_inference.n_replicas=32
 ```
 Stage 1  →  JSONL of prompts with {prompt_id, prompt, domain, source}
 Stage 2  →  additional JSONL prompts from corpus (same schema)
+Decontam →  clean pool (same schema) with eval-overlapping prompts removed
+             + removed/ + decontam_report.json (side outputs)
+             [runs only if decontaminate.enabled and evals set; Stage 3
+              auto-reads this pool when present, else stage1/stage2]
 Stage 3  →  same JSONL + {cluster_id, difficulty} labels
              + embeddings/ (sharded Parquet dir) + faiss.index (side outputs)
 Stage 4  →  sampled subset JSONL (~7M prompts)
@@ -264,6 +277,20 @@ At 7M prompts, Pandas would materialize tens of GB. Polars lazy evaluation keeps
 
 ### ShardedJSONLWriter (`storage.py`)
 Auto-splits output at configurable `shard_size_mb` boundary. Accepts an `on_shard_complete` callback so each completed shard can be registered in DuckDB's `shard_manifest` table.
+
+### Decontamination stage (`stages/decontaminate.py`, `decontam/`)
+Runs **between Stage 2 and Stage 3** (stage key `decontaminate`, not renumbered — existing `stageN` run dirs are untouched). Removes any collected/generated prompt that overlaps a downstream eval, so we never train on benchmark questions.
+
+- **Matching**: 13 word-gram containment (`decontam/eval_index.py`). Each eval item's `match_fields` text is tokenized and every contiguous 13-gram is indexed; items **shorter** than 13 tokens but at least `min_gram_size` (default 5) index a single gram of their own length (exact whole-item-containment fallback, folded into the same mechanism). A prompt is contaminated if **any** of its grams collides — first hit wins, and the owning eval + matched span are recorded. Aggressive by design: a missed eval leak is worse than dropping a few extra prompts.
+- **`min_gram_size` floor — do not remove it.** Eval items that tokenize below the floor are **dropped from the index** (counted per-eval in the report as `eval_items_dropped_short`). Without the floor, a 1-token field like `"True"` or an MMLU choices list like `"0 1 2 3"` becomes a tiny exact-match gram that removes legitimate prompts wholesale (verified: `"Prove the following is True for all n"` was removed by a `"True"` gram). Guard test: `test_below_min_gram_size_dropped`.
+- **Normalization** (`decontam/normalize.py`): NFKC → lowercase → drop punctuation/underscore (`[\W_]+`, Unicode-aware so CJK/accents survive) → split. Deliberately more aggressive than the Stage 1 `prompt_id` normalizer (which keeps case/punctuation). **Limitation**: tokens are whitespace-delimited, so space-free scripts (CJK/Thai) collapse to one huge token — containment degrades to whole-run exact match. Add a segmenter in `tokenize()` if CJK evals matter.
+- **Grams are keyed by STRING, not `hash()`** — CPython's `hash()` is per-process randomized, so precomputed int keys would silently miss in `spawn` workers. A string-keyed dict rehashes correctly in every process.
+- **Field types** (`extract_field_text`): plain string, dot-notation nested, list→space-joined (e.g. MMLU `choices`), and OpenAI/ShareGPT message list→first-user-turn (reuses Stage 1's `_extract_prompt`).
+- **Eval config**: `EvalDatasetSource` supports `hf_configs: "all"` (auto-expand every config via `get_dataset_config_names`) vs a list; `splits` defaults `[test, validation]`; plus `local_jsonl`.
+- **Output**: writes a **clean survivor pool** to `decontaminate.output_dir` (one output shard per input shard, `{stage1,stage2}-<name>.jsonl`). `output_dir` is a **leaf** directory (default `…/stage_decontam/clean/`) holding *only* survivor shards; the **uncapped** `removed/` dir (`prompt_id, source, matched_eval, matched_ngram`), `decontam_report.json`, and the resume ledger `_shard_stats.jsonl` all live one level up, so Stage 3 can glob the pool (even recursively) without ingesting bookkeeping. A shard counts as done only after the worker's atomic `.tmp`→rename **and** the parent recording its stats row, so re-runs redo at most the shards that were in flight.
+- **Execution — per-SHARD parallelism, not per-record.** Each worker reads, scans, and writes one whole input shard and returns only a small stats dict; records never cross process boundaries. Per-record fan-out (the Stage 6 pattern) loses here: matching one record is microseconds, so pickling records to workers and back dominated. The eval index is shared to workers via **fork copy-on-write** on Linux (module global, no pickling); shipped once per worker via the initializer on spawn/forkserver. Matching is deterministic → parallel output == serial (tested with 3 shards × 2 workers). Serial fallback when `n_workers<=1` or there's ≤1 shard to do.
+- **Stage 3 wiring**: `stage3_cluster._resolve_input_dirs(cfg)` returns `[decontam_dir]` if it exists & non-empty, else `[stage1, stage2]`. So Stage 3 auto-uses the clean pool when present and is unchanged otherwise. Enabled-but-no-evals = the stage is a skip/no-op and Stage 3 falls back.
+- **Run gating** (`cli.py`): the `run` command runs it only when `enabled and evals` are set.
 
 ### Stage 6 filter ordering
 Filters run cheapest-first: structural → heuristic → math → code → llm_judge. Each filter is short-circuit: once a record fails, it is not passed to more expensive filters. The LLM judge only sees a 10% sample (`sample_rate: 0.10`).

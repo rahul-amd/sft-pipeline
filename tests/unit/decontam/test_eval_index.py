@@ -37,27 +37,48 @@ def test_no_false_positive():
 
 def test_short_item_exact_fallback():
     idx = EvalNGramIndex(13)
-    idx.add_text("what is 2+2", "short_eval")  # tokenizes to [what, is, 2, 2] → 4 tokens < 13
+    # 6 tokens: >= min_gram_size (5) but < ngram_size (13) → exact fallback
+    idx.add_text("what is two plus two exactly", "short_eval")
     idx.finalize()
-    assert idx.gram_lens == (4,)  # only the short-length gram is indexed
-    assert _match(idx, "hey, what is 2+2 exactly?") is not None
-    assert _match(idx, "what is 3 plus 3") is None
+    assert idx.gram_lens == (6,)  # only the short-length gram is indexed
+    assert _match(idx, "hey, what is two plus two exactly?") is not None
+    assert _match(idx, "what is three plus three exactly") is None
 
 
 def test_short_item_requires_full_containment():
     idx = EvalNGramIndex(13)
-    idx.add_text("alpha beta gamma delta", "e")  # 4 tokens
+    idx.add_text("alpha beta gamma delta epsilon", "e")  # 5 tokens = min floor
     idx.finalize()
-    assert _match(idx, "alpha beta gamma omega") is None          # only 3 of 4 → no
-    assert _match(idx, "x alpha beta gamma delta y") is not None  # full span present → yes
+    assert _match(idx, "alpha beta gamma delta omega") is None            # 4 of 5 → no
+    assert _match(idx, "x alpha beta gamma delta epsilon y") is not None  # full span → yes
+
+
+def test_below_min_gram_size_dropped():
+    # The over-removal guard: tiny eval fields must NOT become match grams.
+    # Without the floor, "True" removes every prompt containing that word and
+    # "0 1 2 3" removes legitimate math prompts (measured on real MMLU choices).
+    idx = EvalNGramIndex(13, min_gram_size=5)
+    idx.add_text("True", "eval_bool")
+    idx.add_text("0 1 2 3", "eval_choices")
+    idx.finalize()
+    assert idx.total_grams == 0
+    assert idx.dropped_short == {"eval_bool": 1, "eval_choices": 1}
+    assert _match(idx, "Prove the following is True for all n.") is None
+    assert _match(idx, "List the first four whole numbers: 0 1 2 3.") is None
+
+
+def test_min_gram_size_must_not_exceed_ngram_size():
+    import pytest
+    with pytest.raises(ValueError):
+        EvalNGramIndex(ngram_size=4, min_gram_size=5)
 
 
 def test_attribution_picks_owning_eval():
     idx = EvalNGramIndex(13)
     idx.add_text("one two three four five six seven eight nine ten eleven twelve thirteen", "eval_long")
-    idx.add_text("secret phrase", "eval_short")
+    idx.add_text("the secret launch phrase okay", "eval_short")  # 5 tokens
     idx.finalize()
-    m = _match(idx, "prefix secret phrase suffix")
+    m = _match(idx, "prefix the secret launch phrase okay suffix")
     assert m is not None and idx.eval_names[m[0]] == "eval_short"
 
 

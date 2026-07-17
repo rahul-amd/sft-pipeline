@@ -27,7 +27,7 @@ _CLEAN = [
 ]
 
 
-def _setup(tmp_path: Path, n_workers: int) -> Path:
+def _setup(tmp_path: Path, n_workers: int, n_shards: int = 1) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     eval_path = tmp_path / "eval.jsonl"
     eval_path.write_text(json.dumps({"question": _EVAL_Q}) + "\n")
@@ -36,9 +36,12 @@ def _setup(tmp_path: Path, n_workers: int) -> Path:
     stage1.mkdir()
     recs = [{"prompt_id": prompt_id(_CONTAMINATED), "prompt": _CONTAMINATED, "source": "webset"}]
     recs += [{"prompt_id": prompt_id(p), "prompt": p, "source": "webset"} for p in _CLEAN]
-    with (stage1 / "part-000000.jsonl").open("w") as f:
-        for r in recs:
-            f.write(json.dumps(r) + "\n")
+    # Spread the records across n_shards files (round-robin) so the per-shard
+    # parallel path actually runs multiple shards concurrently.
+    for i in range(n_shards):
+        with (stage1 / f"part-{i:06d}.jsonl").open("w") as f:
+            for r in recs[i::n_shards]:
+                f.write(json.dumps(r) + "\n")
 
     cfg_text = f"""
 global:
@@ -55,7 +58,7 @@ decontaminate:
   enabled: true
   ngram_size: 13
   n_workers: {n_workers}
-  output_dir: "{(tmp_path / 'stage_decontam').as_posix()}"
+  output_dir: "{(tmp_path / 'stage_decontam' / 'clean').as_posix()}"
   report_path: "{(tmp_path / 'stage_decontam' / 'decontam_report.json').as_posix()}"
   removed_dir: "{(tmp_path / 'stage_decontam' / 'removed').as_posix()}"
   evals:
@@ -96,14 +99,19 @@ def test_decontaminate_removes_contaminated_prompt(tmp_path):
     assert _resolve_input_dirs(cfg) == [out_dir]
 
 
-def test_state_dir_not_read_by_stage3(tmp_path):
-    # _shard_stats.jsonl and the removed/ dir must not leak into Stage 3's input.
+def test_clean_dir_is_a_leaf(tmp_path):
+    # output_dir must contain ONLY survivor shards — stats, report, and the
+    # removed/ dir all live outside it, so Stage 3 can glob it (even
+    # recursively) without ingesting bookkeeping files.
     cfg = load_config(_setup(tmp_path, n_workers=1))
     with CheckpointManager(cfg.global_.checkpoint_db) as cm:
         run_decontaminate(cfg, cm)
     out_dir = Path(cfg.decontaminate.output_dir)
+    assert [p.name for p in out_dir.rglob("*") if not p.name.endswith(".jsonl")] == []
     for rec in iter_jsonl_dir(out_dir):
         assert "prompt" in rec  # only real prompt records, no stats/removed rows
+    # State file sits next to the report, not in the clean pool.
+    assert (out_dir.parent / "_shard_stats.jsonl").exists()
 
 
 def test_decontaminate_resume_is_stable(tmp_path):
@@ -118,8 +126,10 @@ def test_decontaminate_resume_is_stable(tmp_path):
 
 
 def test_parallel_matches_serial(tmp_path):
-    serial_cfg = load_config(_setup(tmp_path / "s", n_workers=1))
-    parallel_cfg = load_config(_setup(tmp_path / "p", n_workers=2))
+    # 3 shards + 2 workers → the pool genuinely runs shards concurrently
+    # (with a single shard the stage falls back to the serial inline path).
+    serial_cfg = load_config(_setup(tmp_path / "s", n_workers=1, n_shards=3))
+    parallel_cfg = load_config(_setup(tmp_path / "p", n_workers=2, n_shards=3))
     with CheckpointManager(serial_cfg.global_.checkpoint_db) as cm:
         run_decontaminate(serial_cfg, cm)
     with CheckpointManager(parallel_cfg.global_.checkpoint_db) as cm:
@@ -127,3 +137,6 @@ def test_parallel_matches_serial(tmp_path):
     s = {r["prompt_id"] for r in iter_jsonl_dir(Path(serial_cfg.decontaminate.output_dir))}
     p = {r["prompt_id"] for r in iter_jsonl_dir(Path(parallel_cfg.decontaminate.output_dir))}
     assert s == p
+    assert prompt_id(_CONTAMINATED) not in p
+    # One clean output shard per input shard
+    assert len(list(Path(parallel_cfg.decontaminate.output_dir).glob("*.jsonl"))) == 3

@@ -4,9 +4,12 @@ Eval loading + the n-gram containment index used for decontamination.
 Contamination model (see DecontaminateConfig):
   - Each eval item's match-field text is tokenized (decontam.normalize.tokenize).
   - Items with >= ngram_size tokens contribute every contiguous ngram_size-gram.
-  - Items SHORTER than ngram_size contribute a single gram of their own length —
-    this is the exact whole-item containment fallback, folded into the same
-    mechanism (a short item is "contained" iff the prompt has that exact gram).
+  - Items SHORTER than ngram_size but >= min_gram_size contribute a single gram
+    of their own length — the exact whole-item containment fallback, folded into
+    the same mechanism (a short item is "contained" iff the prompt has that
+    exact gram).
+  - Items shorter than min_gram_size are DROPPED (counted, logged). A 1-token
+    field like "True" would otherwise remove every prompt containing that word.
   - A prompt is contaminated if ANY of its grams (of any length present in the
     index) collides with an eval gram. First collision wins; the matched span
     and the eval that owns the gram are reported.
@@ -19,6 +22,7 @@ inside each process (fork or spawn), so matching is process-independent.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any, Iterator
 
 from sft_pipeline.config import EvalDatasetSource
@@ -130,13 +134,20 @@ def iter_eval_texts(src: EvalDatasetSource) -> Iterator[str]:
 class EvalNGramIndex:
     """Word-gram containment index over one or more eval datasets."""
 
-    def __init__(self, ngram_size: int) -> None:
+    def __init__(self, ngram_size: int, min_gram_size: int = 5) -> None:
+        if min_gram_size > ngram_size:
+            raise ValueError(
+                f"min_gram_size ({min_gram_size}) must be <= ngram_size ({ngram_size})"
+            )
         self.ngram_size = ngram_size
+        self.min_gram_size = min_gram_size
         self.eval_names: list[str] = []
         self._name_to_id: dict[str, int] = {}
         # gram_length -> {gram_string -> eval_id (first eval that produced it)}
         self._by_len: dict[int, dict[str, int]] = {}
         self._gram_lens: tuple[int, ...] = ()
+        # Eval items dropped because they tokenize below min_gram_size.
+        self.dropped_short: Counter = Counter()
 
     # -- build -------------------------------------------------------------
     def _eval_id(self, name: str) -> int:
@@ -156,7 +167,11 @@ class EvalNGramIndex:
     def add_text(self, text: str, eval_name: str) -> None:
         tokens = tokenize(text)
         n = len(tokens)
-        if n == 0:
+        if n < self.min_gram_size:
+            # Too short to be a meaningful contamination signal — a tiny gram
+            # (e.g. "True", "0 1 2 3") would match legitimate prompts wholesale.
+            if n > 0:
+                self.dropped_short[eval_name] += 1
             return
         eid = self._eval_id(eval_name)
         if n < self.ngram_size:
@@ -195,12 +210,14 @@ class EvalNGramIndex:
         return None
 
 
-def build_index(evals: list[EvalDatasetSource], ngram_size: int) -> tuple[EvalNGramIndex, dict[str, int]]:
+def build_index(
+    evals: list[EvalDatasetSource], ngram_size: int, min_gram_size: int = 5,
+) -> tuple[EvalNGramIndex, dict[str, int]]:
     """Load every eval and build the containment index.
 
     Returns the finalized index and a per-eval item-count dict (for the report).
     """
-    index = EvalNGramIndex(ngram_size)
+    index = EvalNGramIndex(ngram_size, min_gram_size)
     per_eval_items: dict[str, int] = {}
     for src in evals:
         count = 0
@@ -209,8 +226,17 @@ def build_index(evals: list[EvalDatasetSource], ngram_size: int) -> tuple[EvalNG
             count += 1
         per_eval_items[src.name] = count
         logger.info(
-            "Eval '%s': %d match texts loaded (index now %d grams)",
-            src.name, count, index.total_grams,
+            "Eval '%s': %d match texts loaded, %d below min_gram_size=%d dropped "
+            "(index now %d grams)",
+            src.name, count, index.dropped_short.get(src.name, 0),
+            min_gram_size, index.total_grams,
         )
     index.finalize()
+    # Rough footprint hint: every gram is a string dict key held in RAM on the
+    # head node (and per-worker on spawn platforms).
+    key_bytes = sum(len(k) for d in index._by_len.values() for k in d)
+    logger.info(
+        "Eval index finalized: %d grams, ~%.0f MB of key text (dict overhead extra)",
+        index.total_grams, key_bytes / 1e6,
+    )
     return index, per_eval_items

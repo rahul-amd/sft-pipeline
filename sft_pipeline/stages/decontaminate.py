@@ -11,12 +11,19 @@ Design notes
 ------------
 - Matching is deterministic (no RNG), so the multiprocessing path yields exactly
   the same decisions as the serial path.
+- Parallelism is PER SHARD, not per record: each worker reads, scans, and writes
+  one whole input shard and returns only a small stats dict. Per-record fan-out
+  was measured to lose to serial — the per-record work (tokenize + dict lookups)
+  is microseconds, so pickling every record to a worker and back dominated.
+  Per-shard fan-out has zero per-record IPC and no cross-shard barriers.
 - The eval index can be large; to avoid pickling it to every worker on Linux we
   set it as a module global and let ``fork`` share it copy-on-write. On spawn/
-  forkserver platforms (e.g. macOS dev) it is shipped via the pool initializer.
+  forkserver platforms (e.g. Windows/macOS dev) it is shipped once per worker
+  via the pool initializer.
 - Resume is shard-level: one output shard per input shard, and a completed shard
-  is recorded in ``_shard_stats.jsonl`` (written only after atomic rename). A
-  re-run skips shards already listed there and redoes at most one partial shard.
+  is recorded in ``_shard_stats.jsonl`` (written only after the worker's atomic
+  rename). A re-run skips shards already listed there and redoes at most the
+  shards that were in flight.
 """
 from __future__ import annotations
 
@@ -28,7 +35,6 @@ import time
 from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
-from typing import Iterator
 
 import orjson
 
@@ -42,7 +48,8 @@ logger = logging.getLogger(__name__)
 
 STAGE = "decontaminate"
 
-# Populated in workers (via fork inheritance or the pool initializer).
+# Populated in workers (via fork inheritance or the pool initializer) and in
+# the parent for the serial path.
 _WORKER_INDEX: EvalNGramIndex | None = None
 
 
@@ -53,22 +60,6 @@ _WORKER_INDEX: EvalNGramIndex | None = None
 def _worker_init_with_index(index: EvalNGramIndex) -> None:
     global _WORKER_INDEX
     _WORKER_INDEX = index
-
-
-def _scan_chunk(records: list[dict]) -> list[tuple[dict, tuple[int, str] | None]]:
-    idx = _WORKER_INDEX
-    return [(rec, idx.match(tokenize(rec.get("prompt", "")))) for rec in records]
-
-
-def _chunked(it: Iterator[dict], size: int) -> Iterator[list[dict]]:
-    chunk: list[dict] = []
-    for rec in it:
-        chunk.append(rec)
-        if len(chunk) >= size:
-            yield chunk
-            chunk = []
-    if chunk:
-        yield chunk
 
 
 def _make_executor(n_workers: int, index: EvalNGramIndex) -> ProcessPoolExecutor:
@@ -89,36 +80,55 @@ def _make_executor(n_workers: int, index: EvalNGramIndex) -> ProcessPoolExecutor
     )
 
 
-def _scan_records(
-    records: Iterator[dict],
-    index: EvalNGramIndex,
-    executor: ProcessPoolExecutor | None,
-    chunk_size: int,
-    n_workers: int,
-) -> Iterator[tuple[dict, tuple[int, str] | None]]:
-    """Yield (record, match) for each record. match = (eval_id, span) or None."""
-    if executor is None:
-        for rec in records:
-            yield rec, index.match(tokenize(rec.get("prompt", "")))
-        return
+def _process_shard(
+    shard_path: str,
+    key: str,
+    out_dir: str,
+    removed_dir: str,
+) -> dict:
+    """Scan ONE input shard against the module-global index.
 
-    chunks = _chunked(records, chunk_size)
-    max_pending = n_workers * 2
-    pending = set()
-    # Prime the window.
-    for _ in range(max_pending):
-        try:
-            pending.add(executor.submit(_scan_chunk, next(chunks)))
-        except StopIteration:
-            break
-    while pending:
-        done, pending = wait(pending, return_when=FIRST_COMPLETED)
-        for fut in done:
-            yield from fut.result()
-            try:
-                pending.add(executor.submit(_scan_chunk, next(chunks)))
-            except StopIteration:
-                pass
+    Runs in a worker process (or inline for the serial path). Writes the clean
+    and removed shards via tmp-file + atomic rename, and returns the stats row
+    for ``_shard_stats.jsonl``. Only these small stats cross the process
+    boundary — records never do.
+    """
+    index = _WORKER_INDEX
+    assert index is not None, "worker index not initialized"
+
+    out_tmp = Path(out_dir) / f"{key}.jsonl.tmp"
+    rem_tmp = Path(removed_dir) / f"{key}.jsonl.tmp"
+    n_in = n_removed = 0
+    per_eval: Counter = Counter()
+    per_source: Counter = Counter()
+
+    with out_tmp.open("wb") as out_f, rem_tmp.open("wb") as rem_f:
+        for rec in iter_jsonl(shard_path):
+            n_in += 1
+            match = index.match(tokenize(rec.get("prompt", "")))
+            if match is None:
+                out_f.write(orjson.dumps(rec) + b"\n")
+            else:
+                eid, span = match
+                eval_name = index.eval_names[eid]
+                n_removed += 1
+                per_eval[eval_name] += 1
+                per_source[rec.get("source", "")] += 1
+                rem_f.write(orjson.dumps({
+                    "prompt_id": rec.get("prompt_id", ""),
+                    "source": rec.get("source", ""),
+                    "matched_eval": eval_name,
+                    "matched_ngram": span,
+                }) + b"\n")
+
+    # Atomic publish; the parent records the shard as done only after receiving
+    # this result (publish-before-record, required for safe resume).
+    out_tmp.replace(Path(out_dir) / f"{key}.jsonl")
+    rem_tmp.replace(Path(removed_dir) / f"{key}.jsonl")
+    return {
+        "shard": key, "input": n_in, "removed": n_removed,
+        "per_eval": dict(per_eval), "per_source": dict(per_source),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -157,61 +167,18 @@ def _load_shard_stats(stats_path: Path) -> tuple[set[str], dict]:
     return done, agg
 
 
-def _process_shard(
-    tag: str,
-    shard: Path,
-    key: str,
-    index: EvalNGramIndex,
-    executor: ProcessPoolExecutor | None,
-    cfg_decontam,
-    out_dir: Path,
-    removed_dir: Path,
-    stats_path: Path,
-    agg: dict,
-    n_workers: int,
-) -> None:
-    out_tmp = out_dir / f"{key}.jsonl.tmp"
-    rem_tmp = removed_dir / f"{key}.jsonl.tmp"
-    n_in = n_removed = 0
-    per_eval: Counter = Counter()
-    per_source: Counter = Counter()
-
-    with out_tmp.open("wb") as out_f, rem_tmp.open("wb") as rem_f:
-        for rec, match in _scan_records(
-            iter_jsonl(shard), index, executor, cfg_decontam.worker_chunk_size, n_workers
-        ):
-            n_in += 1
-            if match is None:
-                out_f.write(orjson.dumps(rec) + b"\n")
-            else:
-                eid, span = match
-                eval_name = index.eval_names[eid]
-                n_removed += 1
-                per_eval[eval_name] += 1
-                per_source[rec.get("source", "")] += 1
-                rem_f.write(orjson.dumps({
-                    "prompt_id": rec.get("prompt_id", ""),
-                    "source": rec.get("source", ""),
-                    "matched_eval": eval_name,
-                    "matched_ngram": span,
-                }) + b"\n")
-
-    # Atomic publish, then record the shard as done (order matters for resume).
-    out_tmp.replace(out_dir / f"{key}.jsonl")
-    rem_tmp.replace(removed_dir / f"{key}.jsonl")
+def _record_stats(stats: dict, stats_path: Path, agg: dict) -> None:
+    """Append a completed shard's stats row and fold it into the aggregate."""
     with stats_path.open("ab") as sf:
-        sf.write(orjson.dumps({
-            "shard": key, "input": n_in, "removed": n_removed,
-            "per_eval": dict(per_eval), "per_source": dict(per_source),
-        }) + b"\n")
-
-    agg["input"] += n_in
-    agg["removed"] += n_removed
-    agg["per_eval"].update(per_eval)
-    agg["per_source"].update(per_source)
+        sf.write(orjson.dumps(stats) + b"\n")
+    agg["input"] += stats["input"]
+    agg["removed"] += stats["removed"]
+    agg["per_eval"].update(stats["per_eval"])
+    agg["per_source"].update(stats["per_source"])
+    n_in, n_removed = stats["input"], stats["removed"]
     logger.info(
         "Decontaminate: %s — %d in, %d removed (%.2f%%)",
-        key, n_in, n_removed, 100.0 * n_removed / n_in if n_in else 0.0,
+        stats["shard"], n_in, n_removed, 100.0 * n_removed / n_in if n_in else 0.0,
     )
 
 
@@ -233,10 +200,11 @@ def run_decontaminate(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     t0 = time.time()
 
     logger.info(
-        "Decontaminate: building eval n-gram index (ngram_size=%d) from %d eval source(s)...",
-        s.ngram_size, len(s.evals),
+        "Decontaminate: building eval n-gram index (ngram_size=%d, min_gram_size=%d) "
+        "from %d eval source(s)...",
+        s.ngram_size, s.min_gram_size, len(s.evals),
     )
-    index, per_eval_items = build_index(s.evals, s.ngram_size)
+    index, per_eval_items = build_index(s.evals, s.ngram_size, s.min_gram_size)
     if index.total_grams == 0:
         logger.warning(
             "Decontaminate: eval index is empty (no eval text loaded) — skipping. "
@@ -262,28 +230,59 @@ def run_decontaminate(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             "Run Stage 1 first."
         )
 
-    # State lives in a subdir so Stage 3's top-level *.jsonl glob never reads it.
-    stats_path = ensure_dir(out_dir / "_state") / "shard_stats.jsonl"
+    # State lives OUTSIDE the clean-pool dir (next to the report), so out_dir
+    # stays a leaf containing only survivor shards — Stage 3 can glob it
+    # (recursively or not) without ever ingesting bookkeeping files.
+    report_path = Path(s.report_path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    stats_path = report_path.parent / "_shard_stats.jsonl"
     done, agg = _load_shard_stats(stats_path)
 
+    todo = [
+        (f"{tag}-{shard.stem}", shard)
+        for tag, shard in input_shards
+        if f"{tag}-{shard.stem}" not in done
+    ]
     logger.info(
         "Decontaminate: %d input shard(s), %d to process, n_workers=%d",
-        len(input_shards), sum(1 for t, p in input_shards if f"{t}-{p.stem}" not in done),
-        n_workers,
+        len(input_shards), len(todo), n_workers,
     )
 
-    executor = _make_executor(n_workers, index) if n_workers > 1 else None
-    try:
-        for tag, shard in input_shards:
-            key = f"{tag}-{shard.stem}"
-            if key in done:
-                continue
-            _process_shard(
-                tag, shard, key, index, executor, s,
-                out_dir, removed_dir, stats_path, agg, n_workers,
-            )
-    finally:
-        if executor is not None:
+    if n_workers <= 1 or len(todo) <= 1:
+        # Serial: run shards inline with the index as the module global.
+        global _WORKER_INDEX
+        _WORKER_INDEX = index
+        for key, shard in todo:
+            stats = _process_shard(str(shard), key, str(out_dir), str(removed_dir))
+            _record_stats(stats, stats_path, agg)
+    else:
+        # Parallel: one whole shard per task, bounded submission window so a
+        # huge shard list doesn't pile up futures. No barrier between shards —
+        # a slow shard only occupies its own worker.
+        executor = _make_executor(min(n_workers, len(todo)), index)
+        try:
+            shard_iter = iter(todo)
+            pending = set()
+
+            def _submit_next() -> bool:
+                try:
+                    key, shard = next(shard_iter)
+                except StopIteration:
+                    return False
+                pending.add(executor.submit(
+                    _process_shard, str(shard), key, str(out_dir), str(removed_dir)
+                ))
+                return True
+
+            for _ in range(n_workers * 2):
+                if not _submit_next():
+                    break
+            while pending:
+                finished, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for fut in finished:
+                    _record_stats(fut.result(), stats_path, agg)
+                    _submit_next()
+        finally:
             executor.shutdown()
 
     survivors = agg["input"] - agg["removed"]
@@ -293,15 +292,17 @@ def run_decontaminate(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         "total_survivors": survivors,
         "removal_rate": round(agg["removed"] / max(agg["input"], 1), 6),
         "ngram_size": s.ngram_size,
+        "min_gram_size": s.min_gram_size,
         "gram_lengths": list(index.gram_lens),
         "total_eval_ngrams": index.total_grams,
         "eval_items_loaded": per_eval_items,
+        # Eval items too short to index (below min_gram_size) — a large count
+        # here means a match_field is mostly noise (e.g. single-word answers).
+        "eval_items_dropped_short": dict(index.dropped_short),
         "removed_per_eval": dict(agg["per_eval"]),
         "removed_per_source": dict(agg["per_source"]),
         "elapsed_seconds": round(time.time() - t0, 1),
     }
-    report_path = Path(s.report_path)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2))
 
     cm.mark_stage_complete(STAGE, output_count=survivors)

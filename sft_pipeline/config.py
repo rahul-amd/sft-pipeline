@@ -159,15 +159,33 @@ class DecontaminateConfig(BaseModel):
     # Contiguous word-gram length that defines a "shared span". Eval items with
     # fewer than ngram_size tokens fall back to exact whole-item containment.
     ngram_size: int = Field(13, ge=1)
-    # Worker processes for the prompt scan. 1 = serial; example configs set null
-    # (→ os.cpu_count()). Matching is deterministic, so parallel == serial.
+    # Floor for the short-item fallback: eval items with fewer than this many
+    # tokens are DROPPED from the index (with a logged count), not matched.
+    # Without a floor, a 1-token eval field like "True" or an MMLU choices list
+    # like "0 1 2 3" becomes a tiny exact-containment gram that removes huge
+    # swathes of legitimate prompts.
+    min_gram_size: int = Field(5, ge=1)
+    # Worker processes for the shard scan. Parallelism is per-shard (each worker
+    # scans + writes a whole shard; only stats cross process boundaries).
+    # 1 = serial; example configs set null (→ os.cpu_count()). Matching is
+    # deterministic, so parallel == serial.
     n_workers: int | None = 1
-    worker_chunk_size: int = Field(256, ge=1)
-    output_dir: str = "{base_path}/stage_decontam"
+    # Clean-pool directory. Deliberately a LEAF directory containing only the
+    # survivor shards — report/removed/state all live outside it, so Stage 3
+    # can never accidentally ingest bookkeeping files.
+    output_dir: str = "{base_path}/stage_decontam/clean"
     report_path: str = "{base_path}/stage_decontam/decontam_report.json"
     # Uncapped record of every removed prompt (sharded): prompt_id, source,
     # matched_eval, matched_ngram.
     removed_dir: str = "{base_path}/stage_decontam/removed"
+
+    @model_validator(mode="after")
+    def check_gram_sizes(self) -> DecontaminateConfig:
+        if self.min_gram_size > self.ngram_size:
+            raise ValueError(
+                f"min_gram_size ({self.min_gram_size}) must be <= ngram_size ({self.ngram_size})"
+            )
+        return self
 
 
 class Stage3Config(BaseModel):

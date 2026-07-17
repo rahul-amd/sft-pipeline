@@ -47,9 +47,31 @@ logger = logging.getLogger(__name__)
 STAGE = "stage3_cluster"
 
 
-def _all_prompts_iter(stage1_dir: Path, stage2_dir: Path):
-    yield from iter_jsonl_dir(stage1_dir)
-    yield from iter_jsonl_dir(stage2_dir)
+def _resolve_input_dirs(cfg: PipelineConfig) -> list[Path]:
+    """Directories Stage 3 should read prompts from.
+
+    If the decontamination stage produced a clean pool, read that instead of the
+    raw stage1/stage2 output. Falls back to stage1(+stage2) when decontamination
+    is disabled, has no evals, or hasn't run — so existing runs are unaffected.
+    """
+    decontam_dir = Path(cfg.decontaminate.output_dir)
+    if decontam_dir.exists() and any(decontam_dir.glob("*.jsonl")):
+        logger.info("Stage3: reading decontaminated pool from %s", decontam_dir)
+        return [decontam_dir]
+    return [Path(cfg.stage1_collect.output_dir), Path(cfg.stage2_generate.output_dir)]
+
+
+def _all_prompts_iter(input_dirs: list[Path]):
+    for d in input_dirs:
+        yield from iter_jsonl_dir(d)
+
+
+def _iter_input_shards(input_dirs: list[Path]) -> list[Path]:
+    """All *.jsonl shard files across the input dirs (sorted within each dir)."""
+    shards: list[Path] = []
+    for d in input_dirs:
+        shards.extend(sorted(d.glob("*.jsonl")))
+    return shards
 
 
 # ---------------------------------------------------------------------------
@@ -89,15 +111,14 @@ def _gpu_preflight() -> dict:
 
 
 def _embed_distributed(
-    stage1_dir: Path,
-    stage2_dir: Path,
+    input_dirs: list[Path],
     emb_dir: Path,
     cfg: PipelineConfig,
 ) -> None:
     """
     Distribute embedding across Ray workers.
 
-    Collects all part-*.jsonl shards from stage1_dir and stage2_dir,
+    Collects all *.jsonl shards from the resolved input dirs,
     splits them round-robin into n_embedding_workers chunks, and submits
     one Ray remote task per chunk.  Each task calls embed_jsonl_shards()
     on its chunk and writes:
@@ -115,10 +136,10 @@ def _embed_distributed(
     n = s3.n_embedding_workers
 
     # Collect + sort all input shards deterministically
-    all_shards = sorted(stage1_dir.glob("part-*.jsonl")) + sorted(stage2_dir.glob("part-*.jsonl"))
+    all_shards = _iter_input_shards(input_dirs)
     if not all_shards:
-        logger.warning("Stage3 distributed: no input JSONL shards found in %s or %s",
-                       stage1_dir, stage2_dir)
+        logger.warning("Stage3 distributed: no input JSONL shards found in %s",
+                       [str(d) for d in input_dirs])
         return
 
     # Round-robin split → each worker gets every N-th shard, interleaved for
@@ -237,6 +258,8 @@ def run_stage3(
 
     stage1_dir = Path(s1.output_dir)
     stage2_dir = Path(s2.output_dir)
+    # Read the decontaminated pool when present, else the raw stage1/stage2 pool.
+    input_dirs = _resolve_input_dirs(cfg)
 
     # ------------------------------------------------------------------
     # Dump mode fast-path: only needs the raw prompt list — skip all
@@ -245,23 +268,24 @@ def run_stage3(
     if dump_annotations_path is not None:
         from sft_pipeline.clustering.annotator import build_annotation_request
 
-        stage1_shards = list(stage1_dir.glob("part-*.jsonl"))
-        if not stage1_shards:
+        input_shards = _iter_input_shards(input_dirs)
+        if not input_shards:
             raise FileNotFoundError(
-                f"Stage 3 --dump-annotations: no part-*.jsonl shards found in {stage1_dir}."
+                f"Stage 3 --dump-annotations: no *.jsonl shards found in "
+                f"{[str(d) for d in input_dirs]}."
             )
 
         dump_annotations_path = Path(dump_annotations_path)
         dump_annotations_path.parent.mkdir(parents=True, exist_ok=True)
 
         logger.info(
-            "Stage3 --dump-annotations: streaming prompts from %s + %s → %s",
-            stage1_dir, stage2_dir, dump_annotations_path,
+            "Stage3 --dump-annotations: streaming prompts from %s → %s",
+            [str(d) for d in input_dirs], dump_annotations_path,
         )
 
         n_written = 0
         with open(dump_annotations_path, "w", encoding="utf-8") as fh:
-            for rec in _all_prompts_iter(stage1_dir, stage2_dir):
+            for rec in _all_prompts_iter(input_dirs):
                 fh.write(json.dumps(build_annotation_request(rec)) + "\n")
                 n_written += 1
                 if n_written % 100_000 == 0:
@@ -370,7 +394,7 @@ def run_stage3(
 
         total_written = 0
         with ShardedJSONLWriter(out_dir, shard_size_mb=300) as writer:
-            for rec in _all_prompts_iter(stage1_dir, stage2_dir):
+            for rec in _all_prompts_iter(input_dirs):
                 pid = rec["prompt_id"]
                 cluster_info = cluster_map.get(pid, {})
                 ann = annotation_map.get(pid, {})
@@ -401,27 +425,28 @@ def run_stage3(
     # Step A: Embed all prompts from Stages 1 and 2
     # ------------------------------------------------------------------
 
-    # Validate that at least the Stage 1 input directory has shards before
-    # we start a potentially multi-hour embedding job.
-    stage1_shards = list(stage1_dir.glob("part-*.jsonl"))
-    if not stage1_shards:
+    # Validate that the resolved input directories have shards before we start
+    # a potentially multi-hour embedding job.
+    input_shards = _iter_input_shards(input_dirs)
+    if not input_shards:
         raise FileNotFoundError(
-            f"Stage 3: no part-*.jsonl shards found in {stage1_dir}.\n"
-            f"  This is derived from cfg.stage1_collect.output_dir:\n"
+            f"Stage 3: no *.jsonl shards found in {[str(d) for d in input_dirs]}.\n"
+            f"  With decontamination disabled this is cfg.stage1_collect.output_dir:\n"
             f"    {s1.output_dir}\n"
-            f"  Make sure Stage 1 has completed and the path above is correct."
+            f"  Make sure Stage 1 (and, if enabled, decontamination) has completed."
         )
-    logger.info("Stage3: found %d Stage 1 shard(s) in %s", len(stage1_shards), stage1_dir)
+    logger.info("Stage3: found %d input shard(s) in %s",
+                len(input_shards), [str(d) for d in input_dirs])
 
     def _all_prompts():
-        yield from _all_prompts_iter(stage1_dir, stage2_dir)
+        yield from _all_prompts_iter(input_dirs)
 
     emb_shards = list(emb_dir.glob("embeddings_*.parquet"))
     if emb_shards:
         logger.info("Stage3: %d embedding shards found, skipping re-embed", len(emb_shards))
     elif s3.distributed:
         logger.info("Stage3: distributed embedding — dispatching %d Ray workers", s3.n_embedding_workers)
-        _embed_distributed(stage1_dir, stage2_dir, emb_dir, cfg)
+        _embed_distributed(input_dirs, emb_dir, cfg)
     else:
         logger.info("Stage3: single-node embedding → %s", emb_dir)
         n_embedded = embed_prompts(

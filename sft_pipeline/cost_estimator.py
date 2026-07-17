@@ -41,6 +41,16 @@ def estimate_and_print(cfg: PipelineConfig) -> None:
     rows.append(("Stage 1 — Collect", _fmt(s1_count), "~fast", "—"))
     rows.append(("Stage 2 — Generate", _fmt(s2_count), "~fast (depends on LLM)", "—"))
 
+    # Decontaminate: one CPU pass over the pool (only if evals configured)
+    dc = cfg.decontaminate
+    if dc.enabled and dc.evals:
+        rows.append((
+            "Decontaminate",
+            _fmt(s1_count + s2_count),
+            f"~1 pass, CPU ({len(dc.evals)} evals)",
+            "—",
+        ))
+
     # Stage 3: embedding estimate
     total_pool = max(s1_count + s2_count, cfg.stage4_sample.total_prompts)
     emb_gpus = 1 if cfg.global_.device == "cpu" else 1

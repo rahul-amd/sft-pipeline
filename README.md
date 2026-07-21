@@ -14,6 +14,8 @@ The pipeline chains together:
 6. **Quality filtering** — structural checks, heuristics, SymPy math verification, sandboxed code execution, LLM judge (10% sample). Thresholds calibrated against an LLM judge on real Stage 5 data (see `sanity-checks/`)
 7. **Multilingual expansion** — *(v2, not yet implemented)*
 
+> **Decontamination** *(inserted between steps 2 and 3)* — before clustering, remove any collected/generated prompt that overlaps a configured downstream eval benchmark (13-word-gram containment), so the teacher never trains on benchmark questions. Opt-in via `decontaminate.evals`; Stage 3 auto-reads the cleaned pool. See [`sft_pipeline/decontam/README.md`](sft_pipeline/decontam/README.md).
+
 **Production target**: 32-node AMD MI250X cluster (512 GCDs, ROCm), local disk.
 **Dev environment**: Windows/Linux laptop with NVIDIA GPU (CUDA) or CPU-only.
 
@@ -163,6 +165,21 @@ sbatch scripts/slurm_stage3_annotate.sh
 
 `stage3_annotate.yaml` connects to a running vLLM server at `annotation_api_base` with concurrency 4096 (64 replicas × 64 each). It writes `{base_path}/stage3/annotations.parquet` as a resumable checkpoint, then a second `run-stage stage3_cluster --import-annotations` pass merges the results.
 
+### Decontamination (before Stage 3)
+
+Removes collected/generated prompts that overlap downstream eval benchmarks, so the teacher never trains on questions we plan to benchmark on. Matching is 13-word-gram containment (with an exact fallback for short eval items and a `min_gram_size` floor that discards trivially-short signals).
+
+```bash
+# Standalone against an existing run; a later Stage 3 auto-reads the cleaned pool
+sft-pipeline run-stage decontaminate --config config/decontaminate.yaml
+
+# Output: {base_path}/stage_decontam/clean/     (survivor shards Stage 3 reads)
+#         {base_path}/stage_decontam/removed/   (every dropped prompt + matched eval)
+#         {base_path}/stage_decontam/decontam_report.json
+```
+
+Configure the benchmarks under `decontaminate.evals` (HF datasets with `hf_configs: all` auto-expansion, or `local_jsonl`; one or more `match_fields` matched independently). The stage runs only when `enabled` and at least one eval is set; otherwise Stage 3 falls back to the raw `stage1`/`stage2` pool. Full implementation details — matching algorithm, index, per-shard parallelism, output layout, resume, tuning — are in [`sft_pipeline/decontam/README.md`](sft_pipeline/decontam/README.md).
+
 ### Stage 6 — Quality Filtering
 
 ```bash
@@ -227,6 +244,7 @@ All pipeline parameters live in a single YAML file validated by Pydantic v2. Con
 | `config/stage1_research.yaml` | Stage 1 only; 45 public HF research datasets |
 | `config/stage3_cluster.yaml` | Stage 3 clustering; distributed embedding + torch_kmeans |
 | `config/stage3_annotate.yaml` | Stage 3 annotation only; async LLM calls, no GPU |
+| `config/decontaminate.yaml` | Eval decontamination (before Stage 3); standalone CPU run |
 | `config/stage6_filter_v2.yaml` | Stage 6 rerun with recalibrated verifiers; writes to `stage6_v2/` |
 
 Placeholders `{run_id}` and `{base_path}` are resolved throughout string fields at load time.
@@ -256,6 +274,25 @@ stage1_collect:
     - source: local_jsonl
       path: /data/my-prompts.jsonl
       prompt_field: instruction
+
+decontaminate:
+  enabled: true
+  ngram_size: 13                   # shared-span length for containment
+  min_gram_size: 5                 # drop eval items shorter than this (avoids over-removal)
+  n_workers: null                  # null → os.cpu_count(); per-shard parallelism
+  evals:
+    - name: mmlu
+      source: hf_dataset
+      hf_repo_id: cais/mmlu
+      hf_configs: all              # expand every config; use ["all"] for the config named "all"
+      splits: [test, validation]
+      match_fields: [question, choices]   # matched independently
+    - name: gsm8k
+      source: hf_dataset
+      hf_repo_id: openai/gsm8k
+      hf_configs: [main]
+      splits: [test]
+      match_fields: [question]
 
 stage3_cluster:
   clustering_algorithm: hdbscan    # "hdbscan" | "kmeans" | "flash_kmeans"
@@ -324,6 +361,12 @@ Tests are structured as:
 - `tests/unit/` — per-module unit tests (no GPU, no HF downloads, synthetic fixtures)
 - `tests/integration/` — end-to-end smoke test + checkpoint resume test
 
+Some integration tests exercise decontamination against real HuggingFace evals (GSM8K, MMLU). They skip automatically when offline or when `datasets` is unavailable; set `SFT_SKIP_NETWORK_TESTS=1` to force-skip them in fully offline CI:
+
+```bash
+SFT_SKIP_NETWORK_TESTS=1 python -m pytest tests/ -q
+```
+
 ## Project Structure
 
 ```
@@ -334,7 +377,8 @@ sft-pipeline/
 │   ├── checkpoint.py            # DuckDB checkpoint tracker
 │   ├── storage.py               # ShardedJSONLWriter + JSONL utilities
 │   ├── cli.py                   # Typer CLI
-│   ├── stages/                  # One module per pipeline stage
+│   ├── stages/                  # One module per pipeline stage (incl. decontaminate.py)
+│   ├── decontam/                # Eval decontamination: tokenizer + n-gram index (see its README)
 │   ├── filters/                 # Stage 6 filter implementations
 │   ├── clustering/              # Embedder, FAISS index, clusterer
 │   ├── inference/               # vLLM batch loop, prompt formatter, output parser

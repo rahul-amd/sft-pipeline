@@ -42,9 +42,12 @@ stage5_inference:
 stage6_filter:
   enabled: true
   parse_responses: true
-  # Fan the filter chain across processes. null → os.cpu_count(). The loop is
-  # CPU/subprocess-bound (code sandbox dominates), so this scales ~linearly.
+  # distributed: true fans the per-shard filter across a Ray cluster (needs
+  # global.ray_address). false → this node only, using n_workers processes.
+  distributed: false
+  # Single-node parallelism is per input shard. null → os.cpu_count().
   n_workers: null
+  # worker_chunk_size is a deprecated no-op (kept so old configs still load).
   worker_chunk_size: 32
   structural:
     min_response_tokens: 20

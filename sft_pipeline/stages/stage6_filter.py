@@ -17,27 +17,25 @@ Debug mode (``stage6_filter.debug_rejections: true``):
 """
 from __future__ import annotations
 
-import itertools
 import json
 import logging
 import os
 import random
 import time
-from collections import defaultdict
+from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
-from typing import Iterable, Iterator
 
 import orjson
 
-from sft_pipeline.checkpoint import CheckpointManager, ItemStatus
+from sft_pipeline.checkpoint import CheckpointManager
 from sft_pipeline.config import PipelineConfig
 from sft_pipeline.filters.code_verifier import check_code
 from sft_pipeline.filters.heuristic import check_heuristic
 from sft_pipeline.filters.llm_judge import check_llm_judge
 from sft_pipeline.filters.math_verifier import check_math
 from sft_pipeline.filters.structural import check_structural
-from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl_dir
+from sft_pipeline.storage import ensure_dir, iter_jsonl, iter_jsonl_dir
 
 logger = logging.getLogger(__name__)
 
@@ -108,106 +106,122 @@ def _apply_filters(record: dict, s6, rng: random.Random, delimiters=None) -> str
 
 
 # ---------------------------------------------------------------------------
-# Parallel filter application
+# Per-shard filtering (shard-map model)
 # ---------------------------------------------------------------------------
 #
-# The filter chain is CPU/subprocess-bound (code sandbox, MSTTR, regex) and
-# each record is independent, so it parallelizes cleanly across processes.
-# The main process keeps ownership of everything stateful — checkpoint DB,
-# output writer, counters — and only the pure _apply_filters call is offloaded.
-
-# Per-worker globals, populated once by the pool initializer so we don't
-# re-serialize the (small but non-trivial) config with every chunk.
-_W_S6 = None
-_W_DELIMITERS = None
-_W_RNG: random.Random | None = None
+# The filter chain is CPU/subprocess-bound (code sandbox dominates) and every
+# record is independent, so the unit of parallelism is a whole INPUT SHARD:
+# each task filters one shard in input order, writes its surviving records to
+# its own output shard (tmp + atomic rename), and returns only a small stats
+# dict. Records never cross a process/node boundary. This one function backs the
+# serial, single-node-pool, and Ray paths alike.
 
 
-def _worker_init(s6, delimiters, seed: int) -> None:
-    global _W_S6, _W_DELIMITERS, _W_RNG
-    _W_S6 = s6
-    _W_DELIMITERS = delimiters
-    # Each worker gets its own RNG. The llm_judge sample subset therefore
-    # differs from a single-process run (it is still ~sample_rate of records);
-    # irrelevant when llm_judge is disabled, which is the common case.
-    _W_RNG = random.Random(seed)
-
-
-def _worker_apply_chunk(records: list[dict]) -> list[tuple[dict, str | None]]:
-    """Run the filter chain over a chunk of records in a worker process.
-
-    Returns (record, reason) pairs. The record is returned so the parent gets
-    the version mutated in-place by ``_parse_record`` (reasoning/answer fields)
-    and writes the same enriched output the serial path would.
-    """
-    return [
-        (rec, _apply_filters(rec, _W_S6, _W_RNG, delimiters=_W_DELIMITERS))
-        for rec in records
-    ]
-
-
-def _chunked(it: Iterator[dict], size: int) -> Iterator[list[dict]]:
-    chunk: list[dict] = []
-    for rec in it:
-        chunk.append(rec)
-        if len(chunk) >= size:
-            yield chunk
-            chunk = []
-    if chunk:
-        yield chunk
-
-
-def _iter_filtered(
-    records: Iterable[dict],
+def _process_shard(
+    shard_path: str,
+    key: str,
+    out_dir: str,
     s6,
     delimiters,
     seed: int,
-    n_workers: int,
-    chunk_size: int,
-) -> Iterator[tuple[dict, str | None]]:
-    """Yield (record, rejection_reason) for each record.
+) -> dict:
+    """Filter one input shard; write survivors to ``out_dir/{key}.jsonl``.
 
-    ``n_workers <= 1`` runs the original serial path (input order). Otherwise
-    records are fanned out to a ``ProcessPoolExecutor``:
-
-    - A bounded sliding window of ``n_workers * 2`` in-flight chunks keeps peak
-      memory flat regardless of dataset size (``executor.map`` would eagerly
-      submit every task).
-    - Results are yielded in **completion order**, not input order. This is the
-      key to avoiding head-of-line blocking: a single slow chunk (e.g. one
-      record whose code sandbox is churning) ties up only its own worker while
-      every other worker keeps producing. Strict input-order yielding would
-      block the whole pipeline on the slowest chunk and drain the pool.
-
-    Output order is therefore not preserved — fine for a filtering stage, where
-    only the pass/reject decision per record matters, not ordering.
+    Returns the stats row for ``_shard_stats.jsonl``. The llm_judge sample RNG is
+    seeded deterministically from ``(seed, key)`` so the sampled subset is stable
+    per run and independent of task scheduling.
     """
-    if n_workers <= 1:
-        rng = random.Random(seed)
-        for rec in records:
-            yield rec, _apply_filters(rec, s6, rng, delimiters=delimiters)
-        return
+    rng = random.Random(f"{seed}:{key}")
+    out_tmp = Path(out_dir) / f"{key}.jsonl.tmp"
+    n_in = n_pass = 0
+    rejection_counts: Counter = Counter()
+    domain_pass: Counter = Counter()
+    domain_fail: Counter = Counter()
 
-    chunks = _chunked(iter(records), chunk_size)
-    max_pending = n_workers * 2
-    with ProcessPoolExecutor(
-        max_workers=n_workers,
-        initializer=_worker_init,
-        initargs=(s6, delimiters, seed),
-    ) as ex:
-        # Prime the window, then top up one chunk per completed chunk so the
-        # pool always has work and the in-flight set never exceeds max_pending.
-        pending = {
-            ex.submit(_worker_apply_chunk, c)
-            for c in itertools.islice(chunks, max_pending)
-        }
-        while pending:
-            done, pending = wait(pending, return_when=FIRST_COMPLETED)
-            for fut in done:
-                yield from fut.result()
-                next_chunk = next(chunks, None)
-                if next_chunk is not None:
-                    pending.add(ex.submit(_worker_apply_chunk, next_chunk))
+    with out_tmp.open("wb") as out_f:
+        for rec in iter_jsonl(shard_path):
+            n_in += 1
+            domain = rec.get("domain", "general")
+            reason = _apply_filters(rec, s6, rng, delimiters=delimiters)
+            if reason:
+                rejection_counts[reason.split(":")[0]] += 1
+                domain_fail[domain] += 1
+            else:
+                out_f.write(orjson.dumps(rec) + b"\n")  # _parse_record enrichment persists
+                n_pass += 1
+                domain_pass[domain] += 1
+
+    out_tmp.replace(Path(out_dir) / f"{key}.jsonl")
+    return {
+        "shard": key, "input": n_in, "passed": n_pass,
+        "rejection_counts": dict(rejection_counts),
+        "domain_pass": dict(domain_pass), "domain_fail": dict(domain_fail),
+    }
+
+
+def _load_shard_stats(stats_path: Path) -> tuple[set[str], dict]:
+    """Load completed-shard stats for resume. Returns (done_keys, aggregate)."""
+    agg = {
+        "input": 0, "passed": 0,
+        "rejection_counts": Counter(), "domain_pass": Counter(), "domain_fail": Counter(),
+    }
+    done: set[str] = set()
+    if not stats_path.exists():
+        return done, agg
+    for row in iter_jsonl(stats_path):
+        key = row.get("shard")
+        if not key or key in done:
+            continue
+        done.add(key)
+        agg["input"] += row.get("input", 0)
+        agg["passed"] += row.get("passed", 0)
+        agg["rejection_counts"].update(row.get("rejection_counts", {}))
+        agg["domain_pass"].update(row.get("domain_pass", {}))
+        agg["domain_fail"].update(row.get("domain_fail", {}))
+    logger.info("Stage6: resuming — %d shard(s) already done", len(done))
+    return done, agg
+
+
+def _record_stats(stats: dict, stats_path: Path, agg: dict) -> None:
+    """Append a completed shard's stats row and fold it into the aggregate."""
+    with stats_path.open("ab") as sf:
+        sf.write(orjson.dumps(stats) + b"\n")
+    agg["input"] += stats["input"]
+    agg["passed"] += stats["passed"]
+    agg["rejection_counts"].update(stats["rejection_counts"])
+    agg["domain_pass"].update(stats["domain_pass"])
+    agg["domain_fail"].update(stats["domain_fail"])
+    n_in, n_pass = stats["input"], stats["passed"]
+    logger.info(
+        "Stage6: %s — %d in, %d passed (%.1f%%)",
+        stats["shard"], n_in, n_pass, 100.0 * n_pass / n_in if n_in else 0.0,
+    )
+
+
+def _run_shards_ray(todo, s6, delimiters, seed, out_dir, stats_path, agg, cfg) -> None:
+    """Fan the shard filter out across a Ray cluster.
+
+    Workers write their own output shards to the shared filesystem and return
+    only stats; the driver is the sole writer of the ledger. A failed shard is
+    left unrecorded so a re-run reprocesses it.
+    """
+    import ray
+
+    from sft_pipeline import ray_utils
+
+    ray_utils.ensure_ray(cfg)
+    remote = ray.remote(num_cpus=1)(_process_shard)
+    future_to_key = {
+        remote.remote(str(shard), key, out_dir, s6, delimiters, seed): key
+        for key, shard in todo
+    }
+    for _done, _total, key, result, err in ray_utils.as_completed(
+        future_to_key, desc="Stage6 shard"
+    ):
+        if err is not None:
+            logger.error("Stage6: shard %s failed; will retry on resume.", key)
+            continue
+        _record_stats(result, stats_path, agg)
 
 
 def _run_debug(cfg: PipelineConfig) -> None:
@@ -277,35 +291,9 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         return
 
     stage5_dir = Path(s5.output_dir)
-    out_dir = Path(s6.output_dir)
-    ensure_dir(out_dir)
+    out_dir = ensure_dir(s6.output_dir)
 
     cm.mark_stage_started(STAGE)
-
-    checkpoint_items = s6.checkpoint_items
-    if checkpoint_items:
-        already_done = cm.processed_count(STAGE)
-        cm.preload_processed(STAGE)
-    else:
-        already_done = 0
-        logger.info("Stage6: per-item checkpointing disabled — no resume support for this run")
-
-    n_workers = s6.n_workers if s6.n_workers is not None else (os.cpu_count() or 1)
-    n_workers = max(1, n_workers)
-
-    logger.info(
-        "Stage6: starting — input=%s  output=%s  already_done=%d  "
-        "checkpoint_items=%s  n_workers=%d",
-        stage5_dir, out_dir, already_done, checkpoint_items, n_workers,
-    )
-
-    # Per-filter rejection counters
-    rejection_counts: dict[str, int] = defaultdict(int)
-    domain_pass: dict[str, int] = defaultdict(int)
-    domain_fail: dict[str, int] = defaultdict(int)
-
-    total_input = 0
-    total_passed = 0
 
     if not s6.parse_responses and (s6.math.enabled or s6.llm_judge.enabled):
         logger.warning(
@@ -315,73 +303,78 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             "Enable stage6_filter.parse_responses or disable these filters."
         )
 
+    n_workers = s6.n_workers if s6.n_workers is not None else (os.cpu_count() or 1)
+    n_workers = max(1, n_workers)
+
+    input_shards = sorted(stage5_dir.glob("*.jsonl"))
+    if not input_shards:
+        raise FileNotFoundError(
+            f"Stage6: no *.jsonl shards found in {stage5_dir}. Run Stage 5 first."
+        )
+
+    # Resume ledger lives in a subdir so it isn't globbed as stage output.
+    stats_path = ensure_dir(out_dir / "_state") / "shard_stats.jsonl"
+    done, agg = _load_shard_stats(stats_path)
+    todo = [(shard.stem, shard) for shard in input_shards if shard.stem not in done]
+
+    logger.info(
+        "Stage6: starting — input=%s  output=%s  %d shard(s), %d to process  "
+        "distributed=%s  n_workers=%d",
+        stage5_dir, out_dir, len(input_shards), len(todo), s6.distributed, n_workers,
+    )
+
+    delimiters = cfg.stage5_inference.delimiters
+    seed = cfg.global_.seed
     t0 = time.time()
-    LOG_EVERY = 10_000
-    CHECKPOINT_EVERY = 100_000
-    checkpoint_buffer: list[tuple[str, ItemStatus, str | None]] = []
 
-    def _records_to_process() -> Iterator[dict]:
-        """Stream input records, skipping any already checkpointed."""
-        for record in iter_jsonl_dir(stage5_dir):
-            if checkpoint_items and cm.is_processed(record.get("prompt_id", ""), STAGE):
-                continue
-            yield record
+    if s6.distributed and todo:
+        _run_shards_ray(todo, s6, delimiters, seed, str(out_dir), stats_path, agg, cfg)
+    elif n_workers <= 1 or len(todo) <= 1:
+        for key, shard in todo:
+            _record_stats(
+                _process_shard(str(shard), key, str(out_dir), s6, delimiters, seed),
+                stats_path, agg,
+            )
+    else:
+        # Single-node parallel: one whole shard per task, bounded submission
+        # window. No barrier — a slow shard occupies only its own worker.
+        executor = ProcessPoolExecutor(max_workers=min(n_workers, len(todo)))
+        try:
+            shard_iter = iter(todo)
+            pending = set()
 
-    with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
-        for record, rejection_reason in _iter_filtered(
-            _records_to_process(),
-            s6,
-            cfg.stage5_inference.delimiters,
-            cfg.global_.seed,
-            n_workers,
-            s6.worker_chunk_size,
-        ):
-            pid = record.get("prompt_id", "")
-            total_input += 1
-            domain = record.get("domain", "general")
+            def _submit_next() -> bool:
+                try:
+                    key, shard = next(shard_iter)
+                except StopIteration:
+                    return False
+                pending.add(executor.submit(
+                    _process_shard, str(shard), key, str(out_dir), s6, delimiters, seed
+                ))
+                return True
 
-            if rejection_reason:
-                rejection_counts[rejection_reason.split(":")[0]] += 1
-                domain_fail[domain] += 1
-                if checkpoint_items:
-                    checkpoint_buffer.append((pid, ItemStatus.SKIPPED, rejection_reason))
-            else:
-                writer.write(record)
-                total_passed += 1
-                domain_pass[domain] += 1
-                if checkpoint_items:
-                    checkpoint_buffer.append((pid, ItemStatus.SUCCESS, None))
-
-            if checkpoint_items and total_input % CHECKPOINT_EVERY == 0:
-                cm.mark_processed_batch(checkpoint_buffer, STAGE)
-                checkpoint_buffer.clear()
-
-            if total_input % LOG_EVERY == 0:
-                elapsed = time.time() - t0
-                rate = total_input / elapsed if elapsed > 0 else 0
-                pass_rate = 100.0 * total_passed / total_input
-                rejection_summary = ", ".join(
-                    f"{k}={v}" for k, v in sorted(rejection_counts.items())
-                ) or "none"
-                logger.info(
-                    "Stage6: %d processed  passed=%d (%.1f%%)  rate=%.0f/s"
-                    "  rejections=[%s]",
-                    total_input, total_passed, pass_rate, rate, rejection_summary,
-                )
-
-        if checkpoint_items and checkpoint_buffer:
-            cm.mark_processed_batch(checkpoint_buffer, STAGE)
-            checkpoint_buffer.clear()
+            for _ in range(n_workers * 2):
+                if not _submit_next():
+                    break
+            while pending:
+                finished, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for fut in finished:
+                    _record_stats(fut.result(), stats_path, agg)
+                    _submit_next()
+        finally:
+            executor.shutdown()
 
     # Write filter report
+    total_input = agg["input"]
+    total_passed = agg["passed"]
     pass_rate = total_passed / max(total_input, 1)
     report = {
         "total_input": total_input,
         "total_passed": total_passed,
         "pass_rate": round(pass_rate, 4),
-        "rejection_counts": dict(rejection_counts),
-        "domain_pass_counts": dict(domain_pass),
-        "domain_fail_counts": dict(domain_fail),
+        "rejection_counts": dict(agg["rejection_counts"]),
+        "domain_pass_counts": dict(agg["domain_pass"]),
+        "domain_fail_counts": dict(agg["domain_fail"]),
     }
     report_path = Path(s6.report_path)
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -390,13 +383,13 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     elapsed = time.time() - t0
     rate = total_input / elapsed if elapsed > 0 else 0
-    cm.mark_stage_complete(STAGE, output_count=already_done + total_passed)
+    cm.mark_stage_complete(STAGE, output_count=total_passed)
     logger.info(
         "Stage6 complete: input=%d  passed=%d (%.1f%%)  elapsed=%.0fs  rate=%.0f/s",
         total_input, total_passed, 100.0 * pass_rate, elapsed, rate,
     )
-    if rejection_counts:
+    if agg["rejection_counts"]:
         logger.info(
             "Stage6 rejection breakdown: %s",
-            ", ".join(f"{k}={v}" for k, v in sorted(rejection_counts.items())),
+            ", ".join(f"{k}={v}" for k, v in sorted(agg["rejection_counts"].items())),
         )

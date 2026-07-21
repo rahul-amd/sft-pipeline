@@ -56,6 +56,7 @@ sft-pipeline/
 ├── sft_pipeline/
 │   ├── config.py                ← Pydantic v2 models + YAML loader
 │   ├── checkpoint.py            ← DuckDB checkpoint tracker
+│   ├── ray_utils.py             ← shared Ray fan-out/collect helpers (Stages 1/3/6, decontam)
 │   ├── storage.py               ← JSONL read/write + ShardedJSONLWriter
 │   ├── cli.py                   ← Typer CLI (run, run-stage, status, estimate)
 │   ├── cost_estimator.py        ← dry-run estimation (GPU-hours, wall clock)
@@ -288,22 +289,33 @@ Runs **between Stage 2 and Stage 3** (stage key `decontaminate`, not renumbered 
 - **Field types** (`extract_field_text`): plain string, dot-notation nested, list→space-joined (e.g. MMLU `choices`), and OpenAI/ShareGPT message list→first-user-turn (reuses Stage 1's `_extract_prompt`).
 - **Eval config**: `EvalDatasetSource` supports `hf_configs: "all"` (auto-expand every config via `get_dataset_config_names`) vs a list; `splits` defaults `[test, validation]`; plus `local_jsonl`.
 - **Output**: writes a **clean survivor pool** to `decontaminate.output_dir` (one output shard per input shard, `{stage1,stage2}-<name>.jsonl`). `output_dir` is a **leaf** directory (default `…/stage_decontam/clean/`) holding *only* survivor shards; the **uncapped** `removed/` dir (`prompt_id, source, matched_eval, matched_ngram`), `decontam_report.json`, and the resume ledger `_shard_stats.jsonl` all live one level up, so Stage 3 can glob the pool (even recursively) without ingesting bookkeeping. A shard counts as done only after the worker's atomic `.tmp`→rename **and** the parent recording its stats row, so re-runs redo at most the shards that were in flight.
-- **Execution — per-SHARD parallelism, not per-record.** Each worker reads, scans, and writes one whole input shard and returns only a small stats dict; records never cross process boundaries. Per-record fan-out (the Stage 6 pattern) loses here: matching one record is microseconds, so pickling records to workers and back dominated. The eval index is shared to workers via **fork copy-on-write** on Linux (module global, no pickling); shipped once per worker via the initializer on spawn/forkserver. Matching is deterministic → parallel output == serial (tested with 3 shards × 2 workers). Serial fallback when `n_workers<=1` or there's ≤1 shard to do.
+- **Execution — per-SHARD parallelism, not per-record.** Each worker reads, scans, and writes one whole input shard and returns only a small stats dict; records never cross process boundaries. Per-record fan-out loses here: matching one record is microseconds, so pickling records to workers and back dominated. Three backends share the one `_process_shard(…, index)` function:
+  - **single-node serial** (`n_workers<=1` or ≤1 shard),
+  - **single-node pool** (`ProcessPoolExecutor`; the eval index is shared via **fork copy-on-write** on Linux / the initializer on spawn, so it isn't pickled per task — this is what `_process_shard_pooled` reads),
+  - **Ray** (`distributed: true`): `_run_shards_ray` does `ray.put(index)` once and fans one task per shard via `ray_utils.as_completed`; workers write their own shards to the shared FS, the **driver** is the sole ledger writer. Requires `global.ray_address`.
+
+  Matching is deterministic → all three produce identical decisions (tested: pool==serial and Ray==serial).
 - **Stage 3 wiring**: `stage3_cluster._resolve_input_dirs(cfg)` returns `[decontam_dir]` if it exists & non-empty, else `[stage1, stage2]`. So Stage 3 auto-uses the clean pool when present and is unchanged otherwise. Enabled-but-no-evals = the stage is a skip/no-op and Stage 3 falls back.
 - **Run gating** (`cli.py`): the `run` command runs it only when `enabled and evals` are set.
 
 ### Stage 6 filter ordering
 Filters run cheapest-first: structural → heuristic → math → code → llm_judge. Each filter is short-circuit: once a record fails, it is not passed to more expensive filters. The LLM judge only sees a 10% sample (`sample_rate: 0.10`).
 
-### Stage 6 parallelism (`stage6_filter.py`)
-The filter chain is CPU/subprocess-bound (code sandbox dominates) and each record is independent, so it fans out across processes. Set `stage6_filter.n_workers` (`null` → `os.cpu_count()`, `1` → the original serial loop). `_iter_filtered()` drives it:
-- A `ProcessPoolExecutor` with an **initializer** that stashes the config in worker globals once (no per-record re-serialization).
-- Work is **chunked** (`worker_chunk_size`, default 32) to amortize IPC. Larger chunks amortize more but hurt load balance when a chunk contains a slow code snippet that hits the sandbox timeout.
-- Results are yielded in **completion order** via `concurrent.futures.wait(FIRST_COMPLETED)`, with a bounded in-flight window (`n_workers * 2` chunks) topped up one-for-one as chunks finish. This is deliberate: completion order means one slow chunk ties up only its own worker while the rest keep producing. **Do not** revert to strict input-order yielding (`popleft().result()`) — that head-of-line-blocks the whole pipeline on the slowest chunk and drains the pool (observed as a multi-minute stall). Also do **not** use `executor.map`, which eagerly submits every task and blows memory at 7M records.
-- Consequence: Stage 6 output shards are in completion order, not input order. Harmless for a filter stage (only the per-record pass/reject matters), but don't rely on Stage 6 output ordering downstream.
-- The main process keeps all state: checkpoint DB, `ShardedJSONLWriter`, counters, report. Workers return the (possibly `_parse_record`-mutated) record so the parent writes the same enriched output the serial path would.
-- Determinism caveat: each worker seeds its own `random.Random`, so the `llm_judge` 10% sample subset differs from a serial run (still ~`sample_rate`). Irrelevant when the judge is disabled, which is the common case.
+### Stage 6 parallelism — per-shard, like decontaminate (`stage6_filter.py`)
+The filter chain is CPU/subprocess-bound (code sandbox dominates) and every record is independent, so the unit of work is a whole **input shard**. `_process_shard(shard, key, out_dir, s6, delimiters, seed)` filters one stage5 shard in input order, writes its survivors to `out_dir/<stem>.jsonl` (tmp + atomic rename), and returns a stats dict `{input, passed, rejection_counts, domain_pass, domain_fail}`. Records never cross a process/node boundary — only stats do. Backends:
+- **single-node serial** (`n_workers<=1` or ≤1 shard),
+- **single-node pool** (`ProcessPoolExecutor`, bounded submission window; the small `s6`/delimiters are passed per task — no globals needed),
+- **Ray** (`distributed: true`): `_run_shards_ray` fans one task per shard via `ray_utils.as_completed`; workers write their own output shards, the **driver** is the sole ledger writer.
+
+Key properties:
+- **Resume is shard-level** via `{out_dir}/_state/shard_stats.jsonl` (a `_state/` subdir so the ledger isn't globbed as stage output). A shard is done only after its atomic rename **and** the parent recording its stats row. This **replaced the old per-item DuckDB checkpoint** — which was the source of the multi-minute 100k-flush stalls. `checkpoint_items` and `worker_chunk_size` are retained as **deprecated no-op** config fields so old YAMLs still load.
+- **Determinism**: the `llm_judge` sample RNG is seeded per shard from `(seed, key)`, so the sampled subset is stable per run and identical across serial/pool/Ray (an improvement over the old per-worker RNG). Filter decisions are otherwise deterministic → all three backends agree (tested).
+- Output shards mirror input shard names (`part-000000.jsonl`) and preserve input order within a shard (the old global completion-order model is gone).
+- **Do not** reintroduce per-record fan-out here: it was measured to lose to serial once IPC dominated the microsecond-scale per-record work.
 - Debug mode (`debug_rejections`) stays serial — it early-exits after N rejections.
+
+### Ray utilities (`ray_utils.py`)
+Stages 1, 3, 6 and decontaminate all fan independent tasks to Ray and drain them with the same `ray.wait(num_returns=1)` progress-logging loop. `ray_utils` holds that once: `ensure_ray(cfg)` (idempotent `ray.init`; a no-op if a cluster/local Ray is already up, so tests pre-init a local one) and `as_completed(future_to_label, desc=…)` → yields `(done, total, label, result, error)` and **never raises** on a task failure (the caller decides whether to record the shard done or leave it for resume). The contract that makes local tests translate to the cluster: **workers write their own uniquely-named output files and return small results; the driver is the sole writer of ledger/report/marks** — so multi-node runs have no write contention. (Stages 1/3 still have their own copies of the loop; folding them onto `ray_utils` is a deferred, behavior-neutral cleanup.)
 
 ### Code sandbox timeout must kill the whole process group (`code_verifier.py`)
 `code.timeout_seconds` is only a real bound if the timeout kills the snippet's **entire process tree**. `subprocess.run(timeout=)` kills only the direct child; a snippet that backgrounds a process (`multiprocessing`, `Popen`, `os.system('… &')`) leaves a grandchild holding the stdout pipe open, and the follow-up `communicate()` then blocks on pipe EOF *indefinitely* — one such record froze a whole Stage 6 run for minutes. `_run_subprocess()` therefore uses `Popen(..., start_new_session=True)` (child leads its own process group) and, on `TimeoutExpired`, `os.killpg(SIGKILL)` the group before a bounded second `communicate(timeout=5)` drains the pipes. `_kill_process_tree()` falls back to `proc.kill()` on Windows / group-lookup failure. Regression test: `test_backgrounded_child_does_not_hang_past_timeout`. `stage6_filter_v2.yaml` sets `code.timeout_seconds: 3`.

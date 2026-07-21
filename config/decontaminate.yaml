@@ -30,7 +30,11 @@ decontaminate:
   # tiny exact-match gram that removes legitimate prompts wholesale. Dropped
   # counts appear in the report as eval_items_dropped_short.
   min_gram_size: 5
-  # Parallelism is per input shard (each worker scans + writes a whole shard).
+  # distributed: true fans the per-shard scan across a Ray cluster (needs
+  # global.ray_address). false → this node only, using n_workers processes.
+  distributed: false
+  # Single-node parallelism is per input shard (each worker scans + writes a
+  # whole shard). Ignored when distributed.
   n_workers: null           # null → os.cpu_count(); 1 → serial
   # output_dir is a LEAF dir holding only survivor shards; report/removed/state
   # live one level up so Stage 3 can never ingest bookkeeping files.

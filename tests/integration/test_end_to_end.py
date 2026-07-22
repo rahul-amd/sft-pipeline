@@ -196,12 +196,11 @@ export:
 
 
 def test_checkpoint_resume(tmp_path):
-    """Verify that re-running Stage 6 skips already-processed items."""
+    """Verify that re-running Stage 6 skips already-processed shards (shard-level resume)."""
     import orjson
-    from sft_pipeline.checkpoint import CheckpointManager, ItemStatus
+    from sft_pipeline.checkpoint import CheckpointManager
     from sft_pipeline.config import load_config
     from sft_pipeline.stages.stage6_filter import run_stage6
-    from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir
 
     tp = tmp_path.as_posix()
 
@@ -259,18 +258,23 @@ export:
         for rec in responses:
             f.write(orjson.dumps(rec) + b"\n")
 
-    # First run
+    ledger = Path(cfg.stage6_filter.output_dir) / "_state" / "shard_stats.jsonl"
+
+    def _ledger_lines() -> int:
+        return sum(1 for _ in ledger.read_text().splitlines() if _.strip())
+
+    # First run — processes the one input shard, records it in the ledger.
     with CheckpointManager(cfg.global_.checkpoint_db) as cm:
         run_stage6(cfg, cm)
-        count_after_first = cm.processed_count("stage6_filter")
+    report1 = json.loads(Path(cfg.stage6_filter.report_path).read_text())
+    assert report1["total_input"] == 10
+    assert _ledger_lines() == 1  # one shard recorded
 
-    assert count_after_first == 10
-
-    # Second run — should skip all (resume)
+    # Second run — the shard is already in the ledger, so it must be skipped:
+    # the ledger is NOT re-appended and the totals are unchanged.
     with CheckpointManager(cfg.global_.checkpoint_db) as cm:
         run_stage6(cfg, cm)
-        count_after_second = cm.processed_count("stage6_filter")
-
-    assert count_after_second == count_after_first, (
-        "Stage 6 re-processed items on second run — checkpoint resume broken"
-    )
+    report2 = json.loads(Path(cfg.stage6_filter.report_path).read_text())
+    assert _ledger_lines() == 1, "Stage 6 re-processed a shard on resume (ledger grew)"
+    assert report2["total_input"] == report1["total_input"]
+    assert report2["total_passed"] == report1["total_passed"]

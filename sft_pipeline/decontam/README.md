@@ -138,18 +138,25 @@ Built once on the head node by `build_index(evals, ngram_size, min_gram_size)`:
 
 **Parallelism is per-shard, not per-record.** Each worker reads, scans, and
 writes one *whole* input shard and returns only a small stats dict — records
-never cross the process boundary. Per-record fan-out was measured to *lose* to
-serial: the per-record work (tokenize + dict lookups) is microseconds, so
-pickling each record to a worker and back dominated.
+never cross the process/node boundary. Per-record fan-out was measured to *lose*
+to serial: the per-record work (tokenize + dict lookups) is microseconds, so
+pickling each record to a worker and back dominated. One `_process_shard(…,
+index)` function backs three interchangeable backends:
 
-- `n_workers` (`null` → `os.cpu_count()`, `1` → serial) sets the pool size.
-- **Index sharing**: on Linux the index is set as a module global and shared to
-  workers via **`fork` copy-on-write** (no pickling). On spawn/forkserver
-  (Windows/macOS dev) it's shipped once per worker via the pool initializer.
-- Bounded submission window (`n_workers * 2` in-flight) with **no barrier**
-  between shards — a slow shard occupies only its own worker.
-- Matching is deterministic (no RNG), so **parallel output == serial output**
-  (asserted by `test_parallel_matches_serial`).
+- **single-node serial** — `n_workers <= 1` (or ≤1 shard to do).
+- **single-node pool** — `ProcessPoolExecutor`; the index is shared to workers
+  via **`fork` copy-on-write** on Linux (no pickling) / the pool initializer on
+  spawn (Windows/macOS dev). Bounded submission window (`n_workers * 2` in-flight),
+  no barrier between shards — a slow shard occupies only its own worker.
+- **Ray** (`distributed: true`) — the multi-node path. `_run_shards_ray` does
+  `ray.put(index)` once and fans one task per shard via
+  [`ray_utils.as_completed`](../ray_utils.py); workers write their own shards to
+  the shared filesystem and the **driver** is the sole ledger writer. Needs
+  `global.ray_address`; reuses the same Ray+Slurm setup as Stages 1/3/5.
+
+Matching is deterministic (no RNG), so **all three backends produce identical
+decisions** — asserted by `test_parallel_matches_serial` (pool) and
+`test_decontaminate_ray` (Ray == single-node).
 
 ---
 
@@ -235,7 +242,8 @@ sft-pipeline run --config config/prod.yaml
 |---|---|---|
 | `ngram_size` | 13 | Shared-span length. Smaller → higher recall, more false positives. |
 | `min_gram_size` | 5 | Floor below which eval items are dropped. Lower → more aggressive, risks over-removal from short fields. |
-| `n_workers` | 1 (configs: `null`) | Per-shard worker processes. `null` → `os.cpu_count()`. |
+| `distributed` | `false` | `true` → fan the per-shard scan across a Ray cluster (needs `global.ray_address`). `false` → this node only. |
+| `n_workers` | 1 (configs: `null`) | Single-node per-shard worker processes (ignored when `distributed`). `null` → `os.cpu_count()`. |
 | `match_fields` | — | Which eval fields count as contamination signal. |
 
 ---
@@ -250,6 +258,9 @@ sft-pipeline run --config config/prod.yaml
   serial == parallel.
 - Integration (real, network-gated): [`../../tests/integration/test_decontaminate_real.py`](../../tests/integration/test_decontaminate_real.py)
   — real GSM8K + MMLU; skips when offline or `SFT_SKIP_NETWORK_TESTS` is set.
+- Integration (Ray): [`../../tests/integration/test_decontaminate_ray.py`](../../tests/integration/test_decontaminate_ray.py)
+  — `distributed` path on real local Ray workers: Ray == single-node + resume;
+  skips when `ray` isn't installed.
 
 ```bash
 python -m pytest tests/unit/decontam tests/integration/test_decontaminate.py -v

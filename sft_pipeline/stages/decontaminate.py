@@ -85,17 +85,15 @@ def _process_shard(
     key: str,
     out_dir: str,
     removed_dir: str,
+    index: EvalNGramIndex,
 ) -> dict:
-    """Scan ONE input shard against the module-global index.
+    """Scan ONE input shard against *index*.
 
-    Runs in a worker process (or inline for the serial path). Writes the clean
-    and removed shards via tmp-file + atomic rename, and returns the stats row
-    for ``_shard_stats.jsonl``. Only these small stats cross the process
-    boundary — records never do.
+    Runs inline (serial), in a worker process (ProcessPool), or as a Ray task.
+    Writes the clean and removed shards via tmp-file + atomic rename, and returns
+    the stats row for ``_shard_stats.jsonl``. Only these small stats cross the
+    process/node boundary — records never do.
     """
-    index = _WORKER_INDEX
-    assert index is not None, "worker index not initialized"
-
     out_tmp = Path(out_dir) / f"{key}.jsonl.tmp"
     rem_tmp = Path(removed_dir) / f"{key}.jsonl.tmp"
     n_in = n_removed = 0
@@ -129,6 +127,16 @@ def _process_shard(
         "shard": key, "input": n_in, "removed": n_removed,
         "per_eval": dict(per_eval), "per_source": dict(per_source),
     }
+
+
+def _process_shard_pooled(shard_path: str, key: str, out_dir: str, removed_dir: str) -> dict:
+    """ProcessPool adapter: read the fork/initializer-shared global index.
+
+    Kept so the single-node pool doesn't pickle the (possibly large) index with
+    every task. The Ray path instead passes the index explicitly via ray.put.
+    """
+    assert _WORKER_INDEX is not None, "worker index not initialized"
+    return _process_shard(shard_path, key, out_dir, removed_dir, _WORKER_INDEX)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +188,44 @@ def _record_stats(stats: dict, stats_path: Path, agg: dict) -> None:
         "Decontaminate: %s — %d in, %d removed (%.2f%%)",
         stats["shard"], n_in, n_removed, 100.0 * n_removed / n_in if n_in else 0.0,
     )
+
+
+def _run_shards_ray(
+    todo: list[tuple[str, Path]],
+    index: EvalNGramIndex,
+    out_dir: str,
+    removed_dir: str,
+    stats_path: Path,
+    agg: dict,
+    cfg: PipelineConfig,
+) -> None:
+    """Fan the shard scan out across a Ray cluster.
+
+    Workers write their own clean/removed shards to the shared filesystem and
+    return only a stats dict; the driver (here) is the sole writer of the ledger.
+    The index is broadcast once via ``ray.put`` — Ray materializes it in each
+    worker rather than pickling it per task. A failed shard is left unrecorded
+    so a re-run reprocesses it.
+    """
+    import ray
+
+    from sft_pipeline import ray_utils
+
+    ray_utils.ensure_ray(cfg)
+    index_ref = ray.put(index)
+    remote = ray.remote(num_cpus=1)(_process_shard)
+
+    future_to_key = {
+        remote.remote(str(shard), key, out_dir, removed_dir, index_ref): key
+        for key, shard in todo
+    }
+    for _done, _total, key, result, err in ray_utils.as_completed(
+        future_to_key, desc="Decontaminate shard"
+    ):
+        if err is not None:
+            logger.error("Decontaminate: shard %s failed; will retry on resume.", key)
+            continue
+        _record_stats(result, stats_path, agg)
 
 
 # ---------------------------------------------------------------------------
@@ -248,17 +294,17 @@ def run_decontaminate(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         len(input_shards), len(todo), n_workers,
     )
 
-    if n_workers <= 1 or len(todo) <= 1:
-        # Serial: run shards inline with the index as the module global.
-        global _WORKER_INDEX
-        _WORKER_INDEX = index
+    if s.distributed and todo:
+        _run_shards_ray(todo, index, str(out_dir), str(removed_dir), stats_path, agg, cfg)
+    elif n_workers <= 1 or len(todo) <= 1:
+        # Serial: run shards inline.
         for key, shard in todo:
-            stats = _process_shard(str(shard), key, str(out_dir), str(removed_dir))
+            stats = _process_shard(str(shard), key, str(out_dir), str(removed_dir), index)
             _record_stats(stats, stats_path, agg)
     else:
-        # Parallel: one whole shard per task, bounded submission window so a
-        # huge shard list doesn't pile up futures. No barrier between shards —
-        # a slow shard only occupies its own worker.
+        # Single-node parallel: one whole shard per task, bounded submission
+        # window so a huge shard list doesn't pile up futures. No barrier between
+        # shards — a slow shard only occupies its own worker.
         executor = _make_executor(min(n_workers, len(todo)), index)
         try:
             shard_iter = iter(todo)
@@ -270,7 +316,7 @@ def run_decontaminate(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                 except StopIteration:
                     return False
                 pending.add(executor.submit(
-                    _process_shard, str(shard), key, str(out_dir), str(removed_dir)
+                    _process_shard_pooled, str(shard), key, str(out_dir), str(removed_dir)
                 ))
                 return True
 

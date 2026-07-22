@@ -165,10 +165,14 @@ class DecontaminateConfig(BaseModel):
     # like "0 1 2 3" becomes a tiny exact-containment gram that removes huge
     # swathes of legitimate prompts.
     min_gram_size: int = Field(5, ge=1)
-    # Worker processes for the shard scan. Parallelism is per-shard (each worker
-    # scans + writes a whole shard; only stats cross process boundaries).
-    # 1 = serial; example configs set null (→ os.cpu_count()). Matching is
-    # deterministic, so parallel == serial.
+    # Distribute the per-shard scan across a Ray cluster (multi-node). Requires
+    # global.ray_address. When false, runs on this node only (see n_workers).
+    # Matching is deterministic, so distributed output == single-node output.
+    distributed: bool = False
+    # Single-node worker processes for the shard scan (ignored when distributed).
+    # Parallelism is per-shard (each worker scans + writes a whole shard; only
+    # stats cross process boundaries). 1 = serial; example configs set null
+    # (→ os.cpu_count()). Matching is deterministic, so parallel == serial.
     n_workers: int | None = 1
     # Clean-pool directory. Deliberately a LEAF directory containing only the
     # survivor shards — report/removed/state all live outside it, so Stage 3
@@ -380,20 +384,21 @@ class Stage6Config(BaseModel):
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
     output_dir: str = "{base_path}/stage6"
     report_path: str = "{base_path}/stage6/filter_report.json"
-    # Number of worker processes for the filter chain. 1 (default) runs the
-    # original single-process serial loop. >1 fans _apply_filters out across a
-    # ProcessPoolExecutor — the loop is CPU/subprocess-bound (code sandbox,
-    # regex, MSTTR) and embarrassingly parallel, so this scales ~linearly with
-    # cores. None resolves to os.cpu_count() at runtime.
+    # Distribute the per-shard filter across a Ray cluster (multi-node). Requires
+    # global.ray_address. When false, runs on this node only (see n_workers).
+    # Filter decisions are deterministic, so distributed output == single-node.
+    distributed: bool = False
+    # Single-node worker processes for the filter (ignored when distributed).
+    # Parallelism is per-shard: each worker filters one whole input shard and
+    # writes its own output shard; only stats cross process boundaries.
+    # 1 = serial; None resolves to os.cpu_count() at runtime.
     n_workers: int | None = 1
-    # Records per unit of work handed to a worker process. Larger amortizes IPC
-    # but hurts load balance when a chunk contains a slow code snippet that hits
-    # the sandbox timeout. 32 is a reasonable middle.
+    # DEPRECATED (no-op): retained so existing configs load. The per-record chunk
+    # model was replaced by per-shard tasks.
     worker_chunk_size: int = Field(32, ge=1)
-    # When False, per-item checkpoint writes to DuckDB are skipped entirely.
-    # The stage-level start/complete markers are still written.
-    # Use this when throughput matters more than crash-resume granularity
-    # (e.g. the stage runs in < 1 hour and a full restart is acceptable).
+    # DEPRECATED (no-op): per-item DuckDB checkpointing was replaced by
+    # shard-level resume (a _state/shard_stats.jsonl ledger). Retained so
+    # existing configs load without error.
     checkpoint_items: bool = True
     # Debug mode: collect the first N rejected records, write them with their
     # rejection reason to a JSONL file, then stop.  Does not write normal output

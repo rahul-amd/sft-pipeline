@@ -90,6 +90,33 @@ decontaminate:
       splits: [test]
       match_fields: [input]
 
+    - name: arc_challenge
+      source: hf_dataset
+      hf_repo_id: allenai/ai2_arc
+      hf_configs: [ARC-Challenge]
+      splits: [test, validation]
+      match_fields: [question, choices.text]   # choices is {text:[...], label:[...]}
+
+    - name: mmlu
+      source: hf_dataset
+      hf_repo_id: cais/mmlu
+      hf_configs: [all]                  # combined-subjects config (not the "all" expansion)
+      splits: [test, validation]
+      match_fields: [question, choices]
+
+    - name: truthfulqa_mc2
+      source: hf_dataset
+      hf_repo_id: truthfulqa/truthful_qa
+      hf_configs: [multiple_choice]
+      splits: [validation]
+      match_fields: [question]
+
+    - name: goldenswag
+      source: hf_dataset
+      hf_repo_id: PleIAs/GoldenSwag      # filtered HellaSwag validation subset
+      splits: [validation]
+      match_fields: [ctx]
+
     # ── Math ─────────────────────────────────────────────────────────────
     - name: math_500
       source: hf_dataset
@@ -114,6 +141,13 @@ decontaminate:
       hf_repo_id: MathArena/aime_2026
       splits: [train]
       match_fields: [problem]
+
+    - name: gsm8k
+      source: hf_dataset
+      hf_repo_id: openai/gsm8k
+      hf_configs: [main]
+      splits: [test]
+      match_fields: [question]
 
     # ── Code ─────────────────────────────────────────────────────────────
     - name: mbpp

@@ -183,3 +183,64 @@ decontaminate:
       hf_repo_id: Paul/XSTest
       splits: [train]
       match_fields: [prompt]
+
+    # ── FIN-bench-v2 (Finnish eval suite; TurkuNLP) ──────────────────────
+    # 9 subsets, each its own repo. Finnish is Latin-script so the whitespace
+    # tokenizer works normally. Several are Finnish translations of benchmarks
+    # already listed above (arc/goldenswag/truthfulqa/squad) — these catch
+    # Finnish-translated leakage.
+    - name: finbenchv2_arc_c
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-arc-c-fi-ht
+      splits: [test]
+      match_fields: [question, choices.text]
+
+    - name: finbenchv2_belebele
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-belebele-fi-og
+      splits: [test]
+      match_fields: [question]
+
+    - name: finbenchv2_fbv1
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-fbv1-stripped-fi-ht
+      hf_configs: all                    # 8 original FIN-bench tasks
+      splits: [default]                  # split is literally named "default"
+      match_fields: [query]              # only some configs have it; others (word pairs) are dropped
+
+    - name: finbenchv2_goldenswag
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-goldenswag-fi-ht
+      splits: [train]                    # this subset ships under `train`
+      match_fields: [ctx]
+
+    - name: finbenchv2_truthfulqa
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-opengpt-x_truthfulqax-fi-mt
+      hf_configs: [mc_FI]
+      splits: [validation]
+      match_fields: [question]
+
+    - name: finbenchv2_scandisent
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-scandisent-fi-mini
+      splits: [test]
+      match_fields: [text]
+
+    - name: finbenchv2_sib200
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-sib-200-fi-og
+      splits: [test]
+      match_fields: [text]
+
+    - name: finbenchv2_squad
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-squad-strip-fi-mt
+      splits: [validation]
+      match_fields: [question]
+
+    - name: finbenchv2_squad_v2
+      source: hf_dataset
+      hf_repo_id: TurkuNLP/finbenchv2-squad_v2-fi-mt
+      splits: [validation]
+      match_fields: [question]

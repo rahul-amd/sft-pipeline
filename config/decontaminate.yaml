@@ -1,18 +1,27 @@
 # =============================================================================
-# Decontamination — remove collected prompts that overlap downstream evals.
+# Decontamination — scrub the prompt pool against our downstream eval benchmarks.
 #
-# Runs between Stage 2 and Stage 3. Reads the raw stage1(+stage2) pool, removes
-# any prompt that shares a 13-word span (or, for short eval items, exactly
-# contains one) with any configured eval, and writes a CLEAN pool to
-# {base_path}/stage_decontam/ that Stage 3 then reads automatically.
+# Runs between Stage 2 and Stage 3. Removes any collected/generated prompt that
+# shares a 13-word span (or, for short eval items, exactly contains one) with any
+# eval below, and writes a CLEAN pool to {base_path}/stage_decontam/clean/ that
+# Stage 3 reads automatically.
 #
 # Usage (standalone against an existing run):
 #   sft-pipeline run-stage decontaminate --config config/decontaminate.yaml
-# Then run Stage 3 as usual — it auto-detects the decontaminated pool.
 #
-# NOTE: verify each eval's hf_repo_id / splits / match_fields against the actual
-# dataset card before a production run; field names differ across benchmarks.
-# Gated datasets need HF_TOKEN set in the environment.
+# Every repo/config/split/field below was verified against the HF dataset on
+# 2026-07-16. Notes on the non-obvious ones:
+#   - Many eval sets ship their eval data under the `train` split on HF
+#     (AIME 24/25/26, GPQA, MT-Bench, IFEval, IFBench, XSTest) — splits are set
+#     per-eval accordingly, NOT the [test, validation] default.
+#   - hle (cais/hle) is GATED: needs HF_TOKEN + accepted terms in the run env.
+#   - livecodebench_v6 uses a Parquet CLONE — the official
+#     livecodebench/code_generation_lite is a script dataset that datasets>=4
+#     refuses to load.
+#   - harmbench uses the ungated mariagrandury mirror (walledai/HarmBench is gated).
+#   - Dropped from the requested list: OneRuler (no static HF dataset — generated
+#     synthetically) and BFCL v3 (not load_dataset-compatible; function-calling
+#     format is a poor fit for prompt n-gram decontamination).
 # =============================================================================
 
 global:
@@ -20,73 +29,123 @@ global:
   run_id: "research_stage3_001"
   base_path: "/shared_silo/scratch/rahul.aralikatte@amd.com/sft-pipeline/runs/{run_id}"
   checkpoint_db: "{base_path}/checkpoints.duckdb"
+  # ray_address: "auto"   # uncomment + set distributed: true for a multi-node run
 
-# Stage 3 will read {base_path}/stage_decontam/clean/ once this stage has run.
 decontaminate:
   enabled: true
   ngram_size: 13
-  # Eval items shorter than this many tokens are dropped from the index (not
-  # matched). Without this floor a short field ("True", "0 1 2 3") becomes a
-  # tiny exact-match gram that removes legitimate prompts wholesale. Dropped
-  # counts appear in the report as eval_items_dropped_short.
   min_gram_size: 5
-  # distributed: true fans the per-shard scan across a Ray cluster (needs
-  # global.ray_address). false → this node only, using n_workers processes.
+  # Flip to true (with global.ray_address) to fan the per-shard scan across a
+  # Ray cluster for the full 14.8M-prompt pool. false → this node only.
   distributed: false
-  # Single-node parallelism is per input shard (each worker scans + writes a
-  # whole shard). Ignored when distributed.
-  n_workers: null           # null → os.cpu_count(); 1 → serial
-  # output_dir is a LEAF dir holding only survivor shards; report/removed/state
-  # live one level up so Stage 3 can never ingest bookkeeping files.
+  n_workers: null           # null → os.cpu_count(); ignored when distributed
   output_dir: "{base_path}/stage_decontam/clean"
   report_path: "{base_path}/stage_decontam/decontam_report.json"
   removed_dir: "{base_path}/stage_decontam/removed"
 
   evals:
-    # MMLU — hf_configs "all" expands to EVERY config (57 subjects). To use only
-    # the dataset's own config literally named "all", write: hf_configs: ["all"].
-    - name: mmlu
+    # ── Instruction following ────────────────────────────────────────────
+    - name: mtbench
       source: hf_dataset
-      hf_repo_id: cais/mmlu
-      hf_configs: all
-      splits: [test, validation]
-      match_fields: [question, choices]
+      hf_repo_id: HuggingFaceH4/mt_bench_prompts
+      splits: [train]
+      match_fields: [prompt]              # list of turns → space-joined
 
-    - name: gsm8k
+    - name: ifeval
       source: hf_dataset
-      hf_repo_id: openai/gsm8k
-      hf_configs: [main]
+      hf_repo_id: google/IFEval
+      splits: [train]
+      match_fields: [prompt]
+
+    - name: ifbench
+      source: hf_dataset
+      hf_repo_id: allenai/IFBench_test
+      splits: [train]
+      match_fields: [prompt]
+
+    - name: multi_if
+      source: hf_dataset
+      hf_repo_id: facebook/Multi-IF     # multilingual (CJK/Thai match degrades)
+      splits: [train]
+      match_fields: [turn_1_prompt, turn_2_prompt, turn_3_prompt]
+
+    # ── Knowledge / reasoning QA ─────────────────────────────────────────
+    - name: gpqa_diamond
+      source: hf_dataset
+      hf_repo_id: Idavidrein/gpqa
+      hf_configs: [gpqa_diamond]
+      splits: [train]
+      match_fields: [Question]
+
+    - name: hle                          # GATED — needs HF_TOKEN + accepted terms
+      source: hf_dataset
+      hf_repo_id: cais/hle
       splits: [test]
       match_fields: [question]
+
+    - name: bbh
+      source: hf_dataset
+      hf_repo_id: lukaemon/bbh
+      hf_configs: all                    # 27 subjects
+      splits: [test]
+      match_fields: [input]
+
+    # ── Math ─────────────────────────────────────────────────────────────
+    - name: math_500
+      source: hf_dataset
+      hf_repo_id: HuggingFaceH4/MATH-500
+      splits: [test]
+      match_fields: [problem]
+
+    - name: aime_2024
+      source: hf_dataset
+      hf_repo_id: Maxwell-Jia/AIME_2024
+      splits: [train]
+      match_fields: [Problem]           # note: capital P in this repo
+
+    - name: aime_2025
+      source: hf_dataset
+      hf_repo_id: yentinglin/aime_2025
+      splits: [train]
+      match_fields: [problem]
+
+    - name: aime_2026
+      source: hf_dataset
+      hf_repo_id: MathArena/aime_2026
+      splits: [train]
+      match_fields: [problem]
+
+    # ── Code ─────────────────────────────────────────────────────────────
+    - name: mbpp
+      source: hf_dataset
+      hf_repo_id: google-research-datasets/mbpp
+      hf_configs: [full]
+      splits: [test]                     # eval split only, per request
+      match_fields: [text]
 
     - name: humaneval
       source: hf_dataset
       hf_repo_id: openai/openai_humaneval
+      hf_configs: [openai_humaneval]
       splits: [test]
       match_fields: [prompt]
 
-    - name: arc
+    - name: livecodebench_v6
       source: hf_dataset
-      hf_repo_id: allenai/ai2_arc
-      hf_configs: [ARC-Challenge, ARC-Easy]
-      splits: [test, validation]
-      match_fields: [question, choices.text]   # dot-notation nested list → joined
+      hf_repo_id: sam-paech/livecodebench-code_generation_lite  # Parquet clone
+      splits: [release_v6]
+      match_fields: [question_content]
 
-    - name: truthful_qa
+    # ── Safety ───────────────────────────────────────────────────────────
+    - name: harmbench
       source: hf_dataset
-      hf_repo_id: truthful_qa
-      hf_configs: [generation]
-      splits: [validation]
-      match_fields: [question]
+      hf_repo_id: mariagrandury/harmbench   # ungated mirror
+      hf_configs: [DirectRequest]
+      splits: [val, test]
+      match_fields: [Behavior]
 
-    - name: hellaswag
+    - name: xstest
       source: hf_dataset
-      hf_repo_id: Rowan/hellaswag
-      splits: [validation]
-      match_fields: [ctx]
-
-    # Local eval file example (JSONL with a "prompt" field):
-    # - name: internal_holdout
-    #   source: local_jsonl
-    #   path: "{base_path}/evals/internal_holdout.jsonl"
-    #   match_fields: [prompt]
+      hf_repo_id: Paul/XSTest
+      splits: [train]
+      match_fields: [prompt]

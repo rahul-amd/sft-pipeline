@@ -35,6 +35,7 @@ decontaminate:
   enabled: true
   ngram_size: 13
   min_gram_size: 5
+  input_stages: [stage5_filter_v2]
   # Flip to true (with global.ray_address) to fan the per-shard scan across a
   # Ray cluster for the full 14.8M-prompt pool. false → this node only.
   distributed: false

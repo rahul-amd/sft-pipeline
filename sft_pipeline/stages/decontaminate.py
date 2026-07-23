@@ -143,16 +143,27 @@ def _process_shard_pooled(shard_path: str, key: str, out_dir: str, removed_dir: 
 # Input shards + resume bookkeeping
 # ---------------------------------------------------------------------------
 
+# Stage key → (filename tag, output-dir accessor). The tag prefixes output
+# shard names so stage1/stage2 shards of the same index don't collide.
+_STAGE_SPECS: dict[str, tuple[str, str]] = {
+    "stage1_collect": ("stage1", "stage1_collect"),
+    "stage2_generate": ("stage2", "stage2_generate"),
+}
+
+
 def _collect_input_shards(cfg: PipelineConfig) -> list[tuple[str, Path]]:
-    """(source_tag, shard_path) for every stage1/stage2 input shard, in order."""
+    """(source_tag, shard_path) for input shards of the configured input_stages."""
     shards: list[tuple[str, Path]] = []
-    for tag, dir_str in (
-        ("stage1", cfg.stage1_collect.output_dir),
-        ("stage2", cfg.stage2_generate.output_dir),
-    ):
-        d = Path(dir_str)
+    for stage_key in cfg.decontaminate.input_stages:
+        tag, cfg_attr = _STAGE_SPECS[stage_key]
+        d = Path(getattr(cfg, cfg_attr).output_dir)
         if d.exists():
             shards.extend((tag, p) for p in sorted(d.glob("part-*.jsonl")))
+        else:
+            logger.warning(
+                "Decontaminate: input stage '%s' output dir does not exist (%s) — skipping",
+                stage_key, d,
+            )
     return shards
 
 

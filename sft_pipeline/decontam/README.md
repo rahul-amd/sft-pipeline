@@ -212,14 +212,33 @@ A large `eval_items_dropped_short` value means a `match_field` is mostly noise
 
 ---
 
+## Choosing which stages to decontaminate (`input_stages`)
+
+By default decontamination covers **both** upstream prompt-producing stages
+(`["stage1_collect", "stage2_generate"]`). Set `input_stages` to a subset to
+scrub only those:
+
+```yaml
+decontaminate:
+  input_stages: [stage1_collect]   # decontaminate the collected pool only
+```
+
+**A stage you don't list is not dropped** — it flows through to Stage 3 raw (see
+below). A listed stage whose output dir is missing/empty is skipped with a
+warning. Output shards are prefixed by stage (`stage1-…`, `stage2-…`) so the
+clean pool never has name collisions.
+
 ## Stage 3 integration
 
 Stage 3 does **not** hard-code the decontaminated dir. `stage3_cluster.
-_resolve_input_dirs(cfg)` returns `[decontaminate.output_dir]` when that dir
-exists and is non-empty, otherwise `[stage1, stage2]`. So:
+_resolve_input_dirs(cfg)`:
 
-- decontamination **enabled + evals set** → Stage 3 reads the clean pool;
-- **disabled**, **no evals**, or **not yet run** → Stage 3 reads the raw pool.
+- decontamination **enabled + evals set + has run** → returns the clean pool
+  `[decontaminate.output_dir]`, **plus** the raw output dir of any stage *not*
+  in `input_stages` (so a stage you chose not to decontaminate still reaches
+  Stage 3 instead of vanishing);
+- **disabled**, **no evals**, or **not yet run** → returns the raw
+  `[stage1, stage2]` pool.
 
 Existing runs are therefore unaffected, and the `run` command only executes the
 stage when `enabled and evals` are both set.
@@ -242,6 +261,7 @@ sft-pipeline run --config config/prod.yaml
 |---|---|---|
 | `ngram_size` | 13 | Shared-span length. Smaller → higher recall, more false positives. |
 | `min_gram_size` | 5 | Floor below which eval items are dropped. Lower → more aggressive, risks over-removal from short fields. |
+| `input_stages` | `[stage1_collect, stage2_generate]` | Which upstream stages to decontaminate. Unlisted stages pass through to Stage 3 raw. |
 | `distributed` | `false` | `true` → fan the per-shard scan across a Ray cluster (needs `global.ray_address`). `false` → this node only. |
 | `n_workers` | 1 (configs: `null`) | Single-node per-shard worker processes (ignored when `distributed`). `null` → `os.cpu_count()`. |
 | `match_fields` | — | Which eval fields count as contamination signal. |

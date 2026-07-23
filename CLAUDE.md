@@ -295,7 +295,8 @@ Runs **between Stage 2 and Stage 3** (stage key `decontaminate`, not renumbered 
   - **Ray** (`distributed: true`): `_run_shards_ray` does `ray.put(index)` once and fans one task per shard via `ray_utils.as_completed`; workers write their own shards to the shared FS, the **driver** is the sole ledger writer. Requires `global.ray_address`.
 
   Matching is deterministic → all three produce identical decisions (tested: pool==serial and Ray==serial).
-- **Stage 3 wiring**: `stage3_cluster._resolve_input_dirs(cfg)` returns `[decontam_dir]` if it exists & non-empty, else `[stage1, stage2]`. So Stage 3 auto-uses the clean pool when present and is unchanged otherwise. Enabled-but-no-evals = the stage is a skip/no-op and Stage 3 falls back.
+- **Which stages** (`input_stages`, default both): decontamination covers `stage1_collect` and/or `stage2_generate`. `_collect_input_shards` reads only the listed stages. A stage **not** listed is not dropped — Stage 3 reads it raw (see wiring). Output shards are stage-prefixed (`stage1-…`/`stage2-…`) to avoid index collisions.
+- **Stage 3 wiring**: `stage3_cluster._resolve_input_dirs(cfg)` returns `[decontam_dir]` (when it exists & non-empty) **plus the raw dir of any stage not in `input_stages`**, so a stage the user chose not to decontaminate still reaches Stage 3. Falls back to `[stage1, stage2]` when decontam is disabled/no-evals/not-run. Existing runs unchanged.
 - **Run gating** (`cli.py`): the `run` command runs it only when `enabled and evals` are set.
 
 ### Stage 6 filter ordering

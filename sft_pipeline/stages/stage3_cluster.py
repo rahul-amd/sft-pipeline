@@ -50,15 +50,28 @@ STAGE = "stage3_cluster"
 def _resolve_input_dirs(cfg: PipelineConfig) -> list[Path]:
     """Directories Stage 3 should read prompts from.
 
-    If the decontamination stage produced a clean pool, read that instead of the
-    raw stage1/stage2 output. Falls back to stage1(+stage2) when decontamination
-    is disabled, has no evals, or hasn't run — so existing runs are unaffected.
+    If the decontamination stage produced a clean pool, read that — PLUS the raw
+    output of any upstream stage that decontamination did NOT cover
+    (``decontaminate.input_stages``), so a stage the user chose not to
+    decontaminate still reaches Stage 3 rather than being dropped. Falls back to
+    the raw stage1(+stage2) pool when decontamination is disabled, has no evals,
+    or hasn't run — so existing runs are unaffected.
     """
+    stage_dirs = {
+        "stage1_collect": Path(cfg.stage1_collect.output_dir),
+        "stage2_generate": Path(cfg.stage2_generate.output_dir),
+    }
     decontam_dir = Path(cfg.decontaminate.output_dir)
     if decontam_dir.exists() and any(decontam_dir.glob("*.jsonl")):
-        logger.info("Stage3: reading decontaminated pool from %s", decontam_dir)
-        return [decontam_dir]
-    return [Path(cfg.stage1_collect.output_dir), Path(cfg.stage2_generate.output_dir)]
+        dirs = [decontam_dir]
+        # Stages that were NOT decontaminated still flow through raw.
+        for stage_key, d in stage_dirs.items():
+            if stage_key not in cfg.decontaminate.input_stages and d.exists():
+                dirs.append(d)
+        logger.info("Stage3: reading decontaminated pool from %s (+ %d raw passthrough dir(s))",
+                    decontam_dir, len(dirs) - 1)
+        return dirs
+    return list(stage_dirs.values())
 
 
 def _all_prompts_iter(input_dirs: list[Path]):

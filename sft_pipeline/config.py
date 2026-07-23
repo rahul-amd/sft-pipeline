@@ -156,6 +156,13 @@ class DecontaminateConfig(BaseModel):
     # Downstream evals to scrub the pool against. If empty, the stage is a no-op
     # and Stage 3 reads the raw stage1(+stage2) pool.
     evals: list[EvalDatasetSource] = Field(default_factory=list)
+    # Which upstream prompt-producing stages to decontaminate. Default = both.
+    # Stages NOT listed here are left untouched and still flow through to Stage 3
+    # (they are not dropped) — decontamination is applied only to the chosen
+    # stages. A listed stage whose output dir is missing/empty is skipped.
+    input_stages: list[Literal["stage1_collect", "stage2_generate"]] = Field(
+        default_factory=lambda: ["stage1_collect", "stage2_generate"]
+    )
     # Contiguous word-gram length that defines a "shared span". Eval items with
     # fewer than ngram_size tokens fall back to exact whole-item containment.
     ngram_size: int = Field(13, ge=1)
@@ -189,6 +196,14 @@ class DecontaminateConfig(BaseModel):
             raise ValueError(
                 f"min_gram_size ({self.min_gram_size}) must be <= ngram_size ({self.ngram_size})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_input_stages(self) -> DecontaminateConfig:
+        if self.enabled and self.evals and not self.input_stages:
+            raise ValueError("input_stages must be non-empty when decontamination is enabled")
+        if len(set(self.input_stages)) != len(self.input_stages):
+            raise ValueError(f"input_stages has duplicates: {self.input_stages}")
         return self
 
 

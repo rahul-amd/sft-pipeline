@@ -35,14 +35,19 @@ decontaminate:
   enabled: true
   ngram_size: 13
   min_gram_size: 5
-  input_stages: [stage5_filter_v2]
+  # Decontaminate the FINAL Stage 6 output directly (stage1/stage2 data is gone).
+  # input_dirs overrides input_stages and scrubs these exact dirs; it is an
+  # ad-hoc pass, NOT auto-fed to Stage 3. Records need a `prompt` field (Stage 6
+  # output has one). To instead scrub the pre-Stage-3 prompt pool, delete this
+  # line and set e.g. `input_stages: [stage1_collect]`.
+  input_dirs: ["{base_path}/stage6_v2"]
   # Flip to true (with global.ray_address) to fan the per-shard scan across a
-  # Ray cluster for the full 14.8M-prompt pool. false → this node only.
+  # Ray cluster. false → this node only.
   distributed: false
   n_workers: null           # null → os.cpu_count(); ignored when distributed
-  output_dir: "{base_path}/stage_decontam/clean"
-  report_path: "{base_path}/stage_decontam/decontam_report.json"
-  removed_dir: "{base_path}/stage_decontam/removed"
+  output_dir: "{base_path}/stage6_v2_decontam/clean"
+  report_path: "{base_path}/stage6_v2_decontam/decontam_report.json"
+  removed_dir: "{base_path}/stage6_v2_decontam/removed"
 
   evals:
     # ── Instruction following ────────────────────────────────────────────

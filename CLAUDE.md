@@ -296,6 +296,7 @@ Runs **between Stage 2 and Stage 3** (stage key `decontaminate`, not renumbered 
 
   Matching is deterministic → all three produce identical decisions (tested: pool==serial and Ray==serial).
 - **Which stages** (`input_stages`, default both): decontamination covers `stage1_collect` and/or `stage2_generate`. `_collect_input_shards` reads only the listed stages. A stage **not** listed is not dropped — Stage 3 reads it raw (see wiring). Output shards are stage-prefixed (`stage1-…`/`stage2-…`) to avoid index collisions.
+- **Arbitrary dirs** (`input_dirs`, default `null`): explicit directories to scrub instead of `input_stages` — for cleaning any stage's output (e.g. the final `stage6_v2` dataset when the upstream pool is gone). Overrides `input_stages`, reads each dir's `part-*.jsonl`, tags shards by dir name. **Ad-hoc**: `_resolve_input_dirs` returns early so Stage 3 ignores it (not the pre-Stage-3 pool).
 - **Stage 3 wiring**: `stage3_cluster._resolve_input_dirs(cfg)` returns `[decontam_dir]` (when it exists & non-empty) **plus the raw dir of any stage not in `input_stages`**, so a stage the user chose not to decontaminate still reaches Stage 3. Falls back to `[stage1, stage2]` when decontam is disabled/no-evals/not-run. Existing runs unchanged.
 - **Run gating** (`cli.py`): the `run` command runs it only when `enabled and evals` are set.
 

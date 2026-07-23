@@ -163,6 +163,13 @@ class DecontaminateConfig(BaseModel):
     input_stages: list[Literal["stage1_collect", "stage2_generate"]] = Field(
         default_factory=lambda: ["stage1_collect", "stage2_generate"]
     )
+    # Escape hatch: explicit directories to decontaminate, overriding input_stages.
+    # Use this to scrub ANY stage's output (e.g. the final stage6 dataset) rather
+    # than the pre-Stage-3 prompt pool. Each dir is read for its part-*.jsonl
+    # shards; records need a `prompt` field. {base_path}/{run_id} placeholders are
+    # resolved. NOTE: this is an ad-hoc scrub — the result is NOT auto-fed to
+    # Stage 3 (that is what input_stages is for).
+    input_dirs: list[str] | None = None
     # Contiguous word-gram length that defines a "shared span". Eval items with
     # fewer than ngram_size tokens fall back to exact whole-item containment.
     ngram_size: int = Field(13, ge=1)
@@ -200,8 +207,13 @@ class DecontaminateConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_input_stages(self) -> DecontaminateConfig:
-        if self.enabled and self.evals and not self.input_stages:
-            raise ValueError("input_stages must be non-empty when decontamination is enabled")
+        # input_dirs (when set) overrides input_stages, so only require a valid
+        # input_stages when input_dirs is not used.
+        if self.input_dirs is not None and not self.input_dirs:
+            raise ValueError("input_dirs must be non-empty when set (use null to disable)")
+        if self.input_dirs is None:
+            if self.enabled and self.evals and not self.input_stages:
+                raise ValueError("input_stages must be non-empty when decontamination is enabled")
         if len(set(self.input_stages)) != len(self.input_stages):
             raise ValueError(f"input_stages has duplicates: {self.input_stages}")
         return self

@@ -105,3 +105,65 @@ def test_decontaminate_both_stages_default(tmp_path):
     report = json.loads(Path(cfg.decontaminate.report_path).read_text())
     assert report["total_removed"] == 2
     assert report["removed_per_source"] == {"stage1": 1, "stage2": 1}
+
+
+def test_input_dirs_scrubs_arbitrary_dir(tmp_path):
+    """input_dirs decontaminates an arbitrary output dir (e.g. final stage6),
+    overrides input_stages, and is NOT fed to Stage 3."""
+    from sft_pipeline.config import load_config as _load
+
+    # A stage6-like output dir: records carry prompt + response.
+    final = tmp_path / "stage6_v2"
+    final.mkdir()
+    contam = f"Note that {_EVAL_Q} per the textbook."
+    clean = "Write a poem about autumn leaves"
+    with (final / "part-000000.jsonl").open("w") as f:
+        for p in (contam, clean):
+            f.write(json.dumps({"prompt_id": prompt_id(p), "prompt": p,
+                                "response": "...", "source": "teacher"}) + "\n")
+    # A raw stage1 dir must remain what Stage 3 resolves to (ad-hoc mode).
+    (tmp_path / "stage1").mkdir()
+    (tmp_path / "stage1" / "part-000000.jsonl").write_text(
+        json.dumps({"prompt_id": "s1", "prompt": "hello", "source": "web"}) + "\n")
+    eval_path = tmp_path / "eval.jsonl"
+    eval_path.write_text(json.dumps({"question": _EVAL_Q}) + "\n")
+
+    cfg_text = (
+        "global: {seed: 42, run_id: t, base_path: \"%s\", checkpoint_db: \"%s\", device: cpu}\n"
+        "stage1_collect: {output_dir: \"%s\"}\n"
+        "stage2_generate: {output_dir: \"%s\"}\n"
+        "decontaminate:\n"
+        "  enabled: true\n"
+        "  n_workers: 1\n"
+        "  input_dirs: [\"%s\"]\n"
+        "  output_dir: \"%s\"\n"
+        "  report_path: \"%s\"\n"
+        "  removed_dir: \"%s\"\n"
+        "  evals:\n"
+        "    - {name: bio, source: local_jsonl, path: \"%s\", match_fields: [question]}\n"
+        % (
+            tmp_path.as_posix(), (tmp_path / "ckpt.duckdb").as_posix(),
+            (tmp_path / "stage1").as_posix(), (tmp_path / "stage2").as_posix(),
+            final.as_posix(),
+            (tmp_path / "sd" / "clean").as_posix(),
+            (tmp_path / "sd" / "report.json").as_posix(),
+            (tmp_path / "sd" / "removed").as_posix(),
+            eval_path.as_posix(),
+        )
+    )
+    cfg_file = tmp_path / "cfg.yaml"
+    cfg_file.write_text(cfg_text)
+    cfg = _load(cfg_file)
+
+    with CheckpointManager(cfg.global_.checkpoint_db) as cm:
+        run_decontaminate(cfg, cm)
+
+    survivors = {r["prompt_id"] for r in iter_jsonl_dir(Path(cfg.decontaminate.output_dir))}
+    assert prompt_id(contam) not in survivors
+    assert prompt_id(clean) in survivors
+    report = json.loads(Path(cfg.decontaminate.report_path).read_text())
+    assert report["total_removed"] == 1
+    assert report["removed_per_source"] == {"teacher": 1}   # source field preserved
+    # Ad-hoc: Stage 3 ignores the decontam output and reads the raw pool.
+    assert _resolve_input_dirs(cfg) == [Path(cfg.stage1_collect.output_dir),
+                                        Path(cfg.stage2_generate.output_dir)]

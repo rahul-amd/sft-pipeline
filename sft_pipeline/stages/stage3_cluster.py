@@ -61,6 +61,10 @@ def _resolve_input_dirs(cfg: PipelineConfig) -> list[Path]:
         "stage1_collect": Path(cfg.stage1_collect.output_dir),
         "stage2_generate": Path(cfg.stage2_generate.output_dir),
     }
+    # Ad-hoc mode: decontaminating explicit input_dirs is not the pre-Stage-3
+    # prompt pool, so Stage 3 ignores that output and reads the raw pool.
+    if cfg.decontaminate.input_dirs:
+        return list(stage_dirs.values())
     decontam_dir = Path(cfg.decontaminate.output_dir)
     if decontam_dir.exists() and any(decontam_dir.glob("*.jsonl")):
         dirs = [decontam_dir]

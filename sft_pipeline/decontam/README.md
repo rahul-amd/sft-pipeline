@@ -228,6 +228,23 @@ below). A listed stage whose output dir is missing/empty is skipped with a
 warning. Output shards are prefixed by stage (`stage1-…`, `stage2-…`) so the
 clean pool never has name collisions.
 
+### Decontaminating an arbitrary directory (`input_dirs`)
+
+To scrub **any** stage's output — e.g. the final Stage 6 dataset, when the
+upstream pool is gone — set `input_dirs` to explicit paths. It overrides
+`input_stages`, reads each dir's `part-*.jsonl` shards (records just need a
+`prompt` field), and tags output shards by dir name:
+
+```yaml
+decontaminate:
+  input_dirs: ["{base_path}/stage6_v2"]
+  output_dir: "{base_path}/stage6_v2_decontam/clean"
+```
+
+This is an **ad-hoc** pass: the result is **not** auto-fed to Stage 3 (Stage 3
+keeps reading the raw pre-Stage-3 pool). Use it to clean a finished dataset in
+place of the pipeline-position scrub.
+
 ## Stage 3 integration
 
 Stage 3 does **not** hard-code the decontaminated dir. `stage3_cluster.
@@ -262,6 +279,7 @@ sft-pipeline run --config config/prod.yaml
 | `ngram_size` | 13 | Shared-span length. Smaller → higher recall, more false positives. |
 | `min_gram_size` | 5 | Floor below which eval items are dropped. Lower → more aggressive, risks over-removal from short fields. |
 | `input_stages` | `[stage1_collect, stage2_generate]` | Which upstream stages to decontaminate. Unlisted stages pass through to Stage 3 raw. |
+| `input_dirs` | `null` | Explicit dirs to scrub instead (any stage's output, e.g. final stage6). Overrides `input_stages`; ad-hoc, not fed to Stage 3. |
 | `distributed` | `false` | `true` → fan the per-shard scan across a Ray cluster (needs `global.ray_address`). `false` → this node only. |
 | `n_workers` | 1 (configs: `null`) | Single-node per-shard worker processes (ignored when `distributed`). `null` → `os.cpu_count()`. |
 | `match_fields` | — | Which eval fields count as contamination signal. |

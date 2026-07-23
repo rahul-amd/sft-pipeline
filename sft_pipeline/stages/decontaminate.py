@@ -31,6 +31,7 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import re
 import time
 from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
@@ -152,9 +153,26 @@ _STAGE_SPECS: dict[str, tuple[str, str]] = {
 
 
 def _collect_input_shards(cfg: PipelineConfig) -> list[tuple[str, Path]]:
-    """(source_tag, shard_path) for input shards of the configured input_stages."""
+    """(source_tag, shard_path) for the input shards to decontaminate.
+
+    ``input_dirs`` (when set) overrides ``input_stages`` and scrubs those exact
+    directories; the tag prefixing output shard names is derived from each dir's
+    name. Otherwise the configured upstream ``input_stages`` are read.
+    """
+    dc = cfg.decontaminate
     shards: list[tuple[str, Path]] = []
-    for stage_key in cfg.decontaminate.input_stages:
+
+    if dc.input_dirs:
+        for d_str in dc.input_dirs:
+            d = Path(d_str)
+            tag = re.sub(r"[^0-9A-Za-z]+", "_", d.name).strip("_") or "dir"
+            if d.exists():
+                shards.extend((tag, p) for p in sorted(d.glob("part-*.jsonl")))
+            else:
+                logger.warning("Decontaminate: input_dir does not exist (%s) — skipping", d)
+        return shards
+
+    for stage_key in dc.input_stages:
         tag, cfg_attr = _STAGE_SPECS[stage_key]
         d = Path(getattr(cfg, cfg_attr).output_dir)
         if d.exists():

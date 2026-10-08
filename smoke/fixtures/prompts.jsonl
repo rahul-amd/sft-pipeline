@@ -1,0 +1,12 @@
+{"prompt":"Write a Python function that returns the sum of the squares of integers from one to n. Include an explanation and a runnable assertion for n equal to three.","domain":"code"}
+{"prompt":"Implement iterative binary search in Python and explain why the search interval becomes smaller after each comparison.","domain":"code"}
+{"prompt":"Write a Python function that counts the frequency of each word in a string. Explain your approach and test it on a short sentence.","domain":"code"}
+{"prompt":"Explain the difference between electrical power and electrical energy using a 100 watt lamp that runs for three hours.","domain":"science"}
+{"prompt":"Explain how evaporation and condensation differ, and give one everyday example of each process.","domain":"science"}
+{"prompt":"Why does a metal spoon often feel colder than a wooden spoon at the same room temperature? Explain the role of thermal conductivity.","domain":"science"}
+{"prompt":"A rectangle is eight centimetres long and five centimetres wide. Calculate its area and perimeter, showing the steps.","domain":"math"}
+{"prompt":"Two fair six-sided dice are rolled. Derive the probability that their sum is eight by listing the successful ordered pairs.","domain":"math"}
+{"prompt":"A shop reduces a 120 dollar item by 25 percent and then adds 10 percent sales tax. Calculate the final price step by step.","domain":"math"}
+{"prompt":"A RECTANGLE IS EIGHT CENTIMETRES LONG AND FIVE CENTIMETRES WIDE. CALCULATE ITS AREA AND PERIMETER, SHOWING THE STEPS.","domain":"math"}
+{"prompt":"Explain why the old library clock rings exactly thirteen times at midnight every winter.","domain":"general"}
+{"prompt":"A rectangle is eight centimetres long and five centimetres wide. Calculate its area and perimeter, showing the steps.","domain":"math"}

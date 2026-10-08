@@ -8,7 +8,7 @@
 #   - Reads the enriched JSONL from Stage 3 (domain, difficulty, cluster_id)
 #   - Loads sentence embeddings for cosine near-dedup
 #   - Enforces domain × difficulty quotas to produce a balanced ~7M prompt set
-#   - Writes deduplicated, sorted output ready for Stage 5 inference
+#   - Writes deduplicated, quota-sampled output ready for Stage 5 inference
 #
 # Prerequisites:
 #   - Stage 3 complete: runs/research_stage3_001/stage3/part-*.jsonl must exist
@@ -127,8 +127,9 @@ stage4_sample:
 
   # ── Near-dedup ────────────────────────────────────────────────────────────
   # Cosine similarity threshold above which two prompts are considered
-  # near-duplicates. Higher = more aggressive dedup (fewer prompts kept).
-  # 0.92 is a good default; lower to 0.88 if output is still too small.
+  # near-duplicates. Lower = more aggressive dedup (fewer prompts kept).
+  # Raise the threshold to retain more prompts; lower it to reject more.
+  semantic_dedup_enabled: false
   dedup_cosine_threshold: 0.92
 
   output_dir: "{base_path}/stage4"

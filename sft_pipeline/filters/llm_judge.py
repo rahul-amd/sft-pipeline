@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import re
 
 import httpx
 from json_repair import repair_json
@@ -41,13 +42,16 @@ Answer: {answer}
 Rate this response."""
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=5))
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=5), reraise=True)
 def _call_judge(
     prompt: str,
     reasoning: str,
     answer: str,
     endpoint: str,
     model: str,
+    api_key: str = "EMPTY",
+    max_tokens: int = 512,
+    request_timeout: float = 120.0,
 ) -> dict | None:
     """Call the LLM judge and return the parsed score dict."""
     payload = {
@@ -64,15 +68,20 @@ def _call_judge(
             },
         ],
         "temperature": 0.0,
-        "max_tokens": 200,
+        "max_tokens": max_tokens,
     }
     resp = httpx.post(
         f"{endpoint.rstrip('/')}/chat/completions",
         json=payload,
-        timeout=30.0,
+        timeout=request_timeout,
+        headers={"Authorization": f"Bearer {api_key}"},
     )
     resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"].strip()
+    choice = resp.json()["choices"][0]
+    if choice.get("finish_reason") == "length":
+        raise ValueError("Judge response was truncated; increase llm_judge.max_tokens")
+    content = choice["message"].get("content") or ""
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
     try:
         return json.loads(content)
@@ -107,18 +116,31 @@ def check_llm_judge(
             answer=record.get("answer", ""),
             endpoint=cfg.model_endpoint,
             model=cfg.model,
+            api_key=cfg.api_key,
+            max_tokens=cfg.max_tokens,
+            request_timeout=cfg.request_timeout,
         )
     except Exception as exc:
+        if cfg.on_error == "raise":
+            raise RuntimeError(
+                f"LLM judge failed; no quality verdict available ({type(exc).__name__}: {exc})"
+            ) from exc
         logger.warning("LLM judge call failed: %s — passing record through", exc)
         return FilterResult(True, reason="judge_error")
 
-    if scores is None:
+    if not isinstance(scores, dict) or "overall" not in scores:
+        if cfg.on_error == "raise":
+            raise ValueError("LLM judge did not return an overall score")
         return FilterResult(True, reason="judge_parse_error")
 
     overall = scores.get("overall", 10)
     try:
         overall = float(overall)
+        if not 1 <= overall <= 10:
+            raise ValueError("Judge score must be between 1 and 10")
     except (TypeError, ValueError):
+        if cfg.on_error == "raise":
+            raise ValueError("LLM judge returned an invalid overall score")
         return FilterResult(True, reason="judge_score_invalid")
 
     if overall < cfg.score_threshold:

@@ -7,10 +7,11 @@ with a clean, standardized schema. Optionally pushes to HuggingFace Hub.
 from __future__ import annotations
 
 import logging
+import tempfile
 from pathlib import Path
 
 from sft_pipeline.config import ExportConfig, PipelineConfig
-from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl_dir
+from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +46,37 @@ def export_final_dataset(cfg: PipelineConfig) -> int:
     s6_dir = Path(cfg.stage6_filter.output_dir)
     exp = cfg.export
     out_dir = Path(exp.final_jsonl_path).parent
-    ensure_dir(out_dir)
+    if out_dir.resolve() == s6_dir.resolve():
+        raise ValueError("Export directory must differ from Stage 6 output")
+    if not list(s6_dir.glob("part-*.jsonl")):
+        raise FileNotFoundError(f"No filtered shards in {s6_dir}")
+    ensure_dir(out_dir.parent)
 
     total = 0
-    with ShardedJSONLWriter(out_dir, shard_size_mb=exp.shard_size_mb) as writer:
-        for rec in iter_jsonl_dir(s6_dir):
-            out_rec = _normalize_record(rec, total)
-            writer.write(out_rec)
-            total += 1
-            if total % 500_000 == 0:
-                logger.info("Export: wrote %d records...", total)
+    seen = set()
+    with tempfile.TemporaryDirectory(prefix=".sft-export-", dir=out_dir.parent) as tmp:
+        with ShardedJSONLWriter(tmp, shard_size_mb=exp.shard_size_mb) as writer:
+            for shard in sorted(s6_dir.glob("part-*.jsonl")):
+                for rec in iter_jsonl(shard, skip_errors=False):
+                    out_rec = _normalize_record(rec, total)
+                    if any(not out_rec[k].strip() for k in ("prompt", "reasoning", "answer")):
+                        raise ValueError(f"Export record {out_rec['id']} has empty training fields")
+                    if out_rec["id"] in seen:
+                        raise ValueError(f"Duplicate prompt ID in filtered output: {out_rec['id']}")
+                    seen.add(out_rec["id"])
+                    writer.write(out_rec)
+                    total += 1
+            writer.flush()
+        if not total:
+            raise ValueError("No records survived filtering; refusing an empty final dataset")
+        ensure_dir(out_dir)
+        new_shards = list(Path(tmp).glob("part-*.jsonl"))
+        new_names = {p.name for p in new_shards}
+        for shard in new_shards:
+            shard.replace(out_dir / shard.name)
+        for old in out_dir.glob("part-*.jsonl"):
+            if old.name not in new_names:
+                old.unlink()
 
     logger.info("Export complete: %d records in %d shards", total, len(writer.written_shards))
 

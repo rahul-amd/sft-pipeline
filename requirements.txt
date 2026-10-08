@@ -29,11 +29,6 @@ pyarrow>=16.0
 duckdb>=0.10
 
 # Quality filtering
-sympy>=1.12
-# Required by sympy.parsing.latex.parse_latex (the math verifier). Without it
-# every LaTeX answer is treated as "uncertain" and the math filter no-ops.
-# sympy 1.13/1.14 require the 4.11 line specifically.
-antlr4-python3-runtime>=4.11,<4.12
 json-repair>=0.25
 
 # LLM API clients — Stage 3 annotator, Stage 5 openai_api mode, LLM judge

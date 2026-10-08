@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -193,9 +195,47 @@ class ShardedJSONLWriter:
         for r in records:
             self.write(r)
 
+    def flush(self) -> None:
+        """Make output durable before recording successful items in a checkpoint."""
+        if self._current_file is not None and not self._current_file.closed:
+            self._current_file.flush()
+            os.fsync(self._current_file.fileno())
+
     @property
     def total_records(self) -> int:
         return self._total_records
+
+
+@contextmanager
+def replacing_jsonl_writer(output_dir: str | Path, shard_size_mb: int = 500):
+    """Stage complete replacement shards before publishing them.
+
+    A failed write leaves the preceding output intact. Publication replaces
+    names instead of appending and removes surplus old shards. Stages must
+    remain incomplete until publication finishes: a process killed between
+    renames is recovered by rerunning the stage, not by reading mixed shards.
+    Metadata and cached embeddings in output_dir are left untouched.
+    """
+    destination = ensure_dir(output_dir)
+    with tempfile.TemporaryDirectory(prefix=".publish-", dir=destination) as temporary:
+        with ShardedJSONLWriter(temporary, shard_size_mb=shard_size_mb) as writer:
+            yield writer
+            writer.flush()
+        shards = sorted(Path(temporary).glob("part-*.jsonl"))
+        names = {p.name for p in shards}
+        for shard in shards:
+            with shard.open("rb") as stream:
+                os.fsync(stream.fileno())
+            shard.replace(destination / shard.name)
+        for previous in destination.glob("part-*.jsonl"):
+            if previous.name not in names:
+                previous.unlink()
+        if os.name == "posix":
+            fd = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
 
 
 # ---------------------------------------------------------------------------

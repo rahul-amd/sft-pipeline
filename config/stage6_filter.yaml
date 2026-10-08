@@ -24,9 +24,9 @@
 #   (with their rejection reason) into debug_rejections.jsonl, then stop.
 #   The checkpoint DB is not modified — safe to repeat after inspecting.
 #
-# Why filters 3–5 are off:
-#   Math verifier (SymPy) and code executor require extra dependencies and add
-#   significant latency. LLM judge requires a running vLLM server.  Run this
+# Why filters 3–4 are off:
+#   The code executor requires Docker and adds latency.
+#   LLM judge requires a running vLLM server. Run this
 #   config first to get a quick pass-rate baseline, then enable those filters
 #   incrementally once you are happy with the structural quality.
 # =============================================================================
@@ -94,10 +94,7 @@ stage6_filter:
     # Flag obvious polarity flips between reasoning and answer.
     flag_self_contradiction: true
 
-  # ── Filters 3–5: disabled ─────────────────────────────────────────────────
-  math:
-    enabled: false
-
+  # ── Filters 3–4: disabled ─────────────────────────────────────────────────
   code:
     enabled: false
 

@@ -1,7 +1,7 @@
 """
-Frozen snapshot of the PRE-IMPROVEMENT-LOOP verifier chain (2026-07-14).
+Historical PRE-IMPROVEMENT-LOOP verifier chain (2026-07-14), minus math filtering.
 
-This is a faithful copy of the filter logic as it stood before the
+This preserves the non-math filter logic as it stood before the
 sanity-check improvement loop, kept so the comparison viz can re-score any
 sample with the old behaviour. Do NOT import this from pipeline code — the
 live filters are in sft_pipeline/filters/.
@@ -12,8 +12,6 @@ Baseline behaviours reproduced here:
     (the join collapses newlines — a real baseline bug).
   - structural: min 50 tokens, 5-gram repeated > 3 times = loop.
   - heuristic: MSTTR < 0.30, boilerplate, self-contradiction ON (no gates).
-  - math: '=N' numbers on both sides; early 'uncertain' exit on unparseable
-    LaTeX (before the consistency check).
   - code: language tag OPTIONAL (any fenced block executes as Python), every
     non-zero exit rejects, stdin left open (input() blocks until timeout).
 """
@@ -189,68 +187,6 @@ def _has_contradiction(reasoning: str, answer: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Baseline math verifier
-# ---------------------------------------------------------------------------
-
-_LATEX_INLINE = re.compile(r"\$([^$]+)\$|\\\((.+?)\\\)")
-_LATEX_DISPLAY = re.compile(r"\$\$(.+?)\$\$|\\\[(.+?)\\\]", re.DOTALL)
-_NUMERIC_RESULT = re.compile(r"=\s*(-?\d+(?:\.\d+)?(?:/\d+)?)\s*(?:$|[^\w])", re.MULTILINE)
-
-
-def check_math(record: dict) -> FilterResult:
-    reasoning = record.get("reasoning", "")
-    answer = record.get("answer", "")
-
-    answer_exprs = _extract_math_strings(answer)
-    if not answer_exprs:
-        return FilterResult(True)
-
-    parse_failures = sum(1 for e in answer_exprs if _try_parse_sympy(e) == "error")
-    if parse_failures == len(answer_exprs):
-        # Baseline: early exit BEFORE the consistency check
-        return FilterResult(True, reason="math_uncertain")
-
-    r_numbers = set(m.group(1) for m in _NUMERIC_RESULT.finditer(reasoning))
-    a_numbers = set(m.group(1) for m in _NUMERIC_RESULT.finditer(answer))
-    if r_numbers and a_numbers:
-        if not (a_numbers & r_numbers) and not _is_subset_derivable(r_numbers, a_numbers):
-            return FilterResult(False, "math_answer_not_in_reasoning")
-    return FilterResult(True)
-
-
-def _extract_math_strings(text: str) -> list[str]:
-    results = []
-    for m in _LATEX_INLINE.finditer(text):
-        results.append(m.group(1) or m.group(2))
-    for m in _LATEX_DISPLAY.finditer(text):
-        results.append(m.group(1) or m.group(2))
-    return [s.strip() for s in results if s and s.strip()]
-
-
-def _try_parse_sympy(expr_str: str) -> str:
-    try:
-        from sympy.parsing.latex import parse_latex
-        parse_latex(expr_str)
-        return "ok"
-    except Exception:
-        return "error"
-
-
-def _is_subset_derivable(r_numbers: set[str], a_numbers: set[str]) -> bool:
-    try:
-        a_vals = {float(n) for n in a_numbers if "/" not in n}
-        r_vals = {float(n) for n in r_numbers if "/" not in n}
-        if not a_vals or not r_vals:
-            return True
-        for av in a_vals:
-            if any(abs(rv - av) < 1e-6 for rv in r_vals):
-                return True
-        return False
-    except (ValueError, ZeroDivisionError):
-        return True
-
-
-# ---------------------------------------------------------------------------
 # Baseline code verifier (optional lang tag — the headline bug)
 # ---------------------------------------------------------------------------
 
@@ -289,7 +225,7 @@ def check_code(record: dict, timeout: int = 10) -> FilterResult:
 
 
 # ---------------------------------------------------------------------------
-# Baseline chain (structural → heuristic → math/code)
+# Baseline chain (structural → heuristic → code)
 # ---------------------------------------------------------------------------
 
 def run_baseline_chain(record: dict, domain: str, code_timeout: int = 10) -> tuple[bool, str]:
@@ -305,11 +241,7 @@ def run_baseline_chain(record: dict, domain: str, code_timeout: int = 10) -> tup
     r = check_heuristic(rec)
     if not r.passed:
         return False, f"heuristic:{r.reason}"
-    if domain == "math":
-        r = check_math(rec)
-        if not r.passed:
-            return False, f"math:{r.reason}"
-    elif domain == "code":
+    if domain == "code":
         r = check_code(rec, timeout=code_timeout)
         if not r.passed:
             return False, f"code:{r.reason}"

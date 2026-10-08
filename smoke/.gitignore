@@ -1,0 +1,5 @@
+!fixtures/prompts.jsonl
+!fixtures/eval.jsonl
+/runs/
+/.venv-rocm/
+/results/pytest-tmp/

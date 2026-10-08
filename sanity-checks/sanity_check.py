@@ -287,7 +287,7 @@ def step_sample(args) -> None:
 def step_verify(args) -> None:
     """
     Run the production Stage 6 deterministic chain (structural → heuristic →
-    math/code, short-circuit) on each record — the same order and configs as
+    code, short-circuit) on each record — the same order and configs as
     stage6_filter._apply_filters, minus the LLM judge (that's our ground truth).
     """
     from sft_pipeline.config import (
@@ -297,13 +297,12 @@ def step_verify(args) -> None:
     )
     from sft_pipeline.filters.code_verifier import check_code
     from sft_pipeline.filters.heuristic import check_heuristic
-    from sft_pipeline.filters.math_verifier import check_math
     from sft_pipeline.filters.structural import check_structural
 
     structural_cfg = StructuralFilterConfig()
     heuristic_cfg = HeuristicFilterConfig()
     code_cfg = CodeFilterConfig(
-        enabled=True, sandbox="subprocess",
+        enabled=True, sandbox="docker",
         timeout_seconds=args.code_timeout, domains=["code"],
     )
 
@@ -314,11 +313,6 @@ def step_verify(args) -> None:
         r = check_heuristic(record, heuristic_cfg)
         if not r.passed:
             return False, f"heuristic:{r.reason}"
-        if domain == "math":
-            r = check_math(record)
-            if not r.passed:
-                return False, f"math:{r.reason}"
-            return True, f"math:{r.reason}" if r.reason else ""
         if domain == "code":
             r = check_code(record, code_cfg)
             if not r.passed:
@@ -641,7 +635,7 @@ def load_config(path: Path) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Sanity-check Stage 6 math/code verifiers against an LLM judge.",
+        description="Sanity-check Stage 6 filters against an LLM judge.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     here = Path(__file__).resolve().parent

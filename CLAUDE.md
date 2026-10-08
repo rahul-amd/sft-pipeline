@@ -74,7 +74,6 @@ sft-pipeline/
 │   ├── filters/
 │   │   ├── structural.py        ← missing fields, length bounds, repetition loops
 │   │   ├── heuristic.py         ← type-token ratio, boilerplate, contradiction
-│   │   ├── math_verifier.py     ← SymPy LaTeX parse + numeric consistency
 │   │   ├── code_verifier.py     ← subprocess / E2B sandbox execution
 │   │   └── llm_judge.py         ← 10%-sample LLM quality scoring (Qwen2.5-7B)
 │   ├── clustering/
@@ -113,7 +112,6 @@ sft-pipeline/
 │   │   ├── test_stage1_extract.py  ← _extract_prompt helper (OpenAI/ShareGPT/plain)
 │   │   ├── filters/
 │   │   │   ├── test_structural.py
-│   │   │   └── test_math_verifier.py
 │   │   ├── decontam/
 │   │   │   ├── test_normalize.py    ← match-time tokenizer
 │   │   │   └── test_eval_index.py   ← 13-gram hit, short-item fallback, attribution, fields
@@ -322,8 +320,8 @@ Stages 1, 3, 6 and decontaminate all fan independent tasks to Ray and drain them
 ### Code sandbox timeout must kill the whole process group (`code_verifier.py`)
 `code.timeout_seconds` is only a real bound if the timeout kills the snippet's **entire process tree**. `subprocess.run(timeout=)` kills only the direct child; a snippet that backgrounds a process (`multiprocessing`, `Popen`, `os.system('… &')`) leaves a grandchild holding the stdout pipe open, and the follow-up `communicate()` then blocks on pipe EOF *indefinitely* — one such record froze a whole Stage 6 run for minutes. `_run_subprocess()` therefore uses `Popen(..., start_new_session=True)` (child leads its own process group) and, on `TimeoutExpired`, `os.killpg(SIGKILL)` the group before a bounded second `communicate(timeout=5)` drains the pipes. `_kill_process_tree()` falls back to `proc.kill()` on Windows / group-lookup failure. Regression test: `test_backgrounded_child_does_not_hang_past_timeout`. `stage6_filter_v2.yaml` sets `code.timeout_seconds: 3`.
 
-### Math filter is non-rejecting (`math_verifier.py`)
-`check_math` **never returns `passed=False`** — every path returns `FilterResult(True, ...)`; the numeric-consistency check is informational only (measured against an LLM judge on 995 labeled records, every rejection it would have made was a false positive). It used to also run SymPy's ANTLR `parse_latex` for a "parse sanity" signal, but the caller only reads `.passed` and discards the `reason`, so that parse — tens of ms per expression on every math/science answer — was pure wasted CPU and has been removed. If you ever make this filter actually reject, re-introduce SymPy verification there.
+### Math filtering removed
+The dedicated math filter, its configuration, and its SymPy/ANTLR dependencies have been removed. Stage 6 runs structural, heuristic, code, and optional LLM-judge filters only. Semantic deduplication is separately opt-in through `stage4_sample.semantic_dedup_enabled`, which defaults to `false`.
 
 ### LLM prompt annotation (`clustering/annotator.py`)
 After clustering, each prompt is annotated with `{domain, difficulty, topics, language, summary}` by calling an OpenAI-compatible API (Qwen3-30B-A3B-Thinking-2507 or similar). Key properties:

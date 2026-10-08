@@ -1,0 +1,11 @@
+srun: ---------------------------------------------------------------
+srun: Submission Filter & QoS
+srun: ---------------------------------------------------------------
+srun: --> ok: runtime limit specified
+srun: User added to docker, video, render groups
+srun: Partition 'hissu' requires qos=backlog for non-owner accounts. Auto-setting qos=backlog (jobs will be preempted if owners need the nodes).
+srun: User 'rahul.aralikatte@amd.com' assigned QoS: 'backlog'
+srun: User added to docker, video, render groups
+srun: Job submission: default_account='not set', partition='hissu', qos='backlog'
+.....................                                                    [100%]
+21 passed in 11.70s

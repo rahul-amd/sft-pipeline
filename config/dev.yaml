@@ -56,7 +56,7 @@ stage6_filter:
   llm_judge:
     enabled: false   # skip judge for dev
   code:
-    sandbox: "subprocess"
+    sandbox: "docker"
 
 export:
   final_jsonl_path: "{base_path}/final/dataset.jsonl"

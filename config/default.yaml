@@ -118,9 +118,11 @@ stage4_sample:
     general: 0.20
     language: 0.15
   difficulty_quotas:
-    easy: 0.20
-    medium: 0.50
-    hard: 0.30
+    default:
+      easy: 0.20
+      medium: 0.50
+      hard: 0.30
+  semantic_dedup_enabled: false
   dedup_cosine_threshold: 0.92
   output_dir: "{base_path}/stage4"
 
@@ -161,8 +163,8 @@ stage5_inference:
 stage6_filter:
   enabled: true
   # Parse raw Stage 5 responses into reasoning/answer (using
-  # stage5_inference.delimiters) before filtering. Required for the math and
-  # code filters to see anything on raw 'response' records.
+  # stage5_inference.delimiters) before filtering. Required for code and judge
+  # filters to receive parsed content from raw 'response' records.
   parse_responses: true
   # Thresholds below were calibrated against an LLM judge on 1000 real Stage 5
   # records per domain (see sanity-checks/) — the previous values falsely
@@ -178,12 +180,9 @@ stage6_filter:
     min_info_density: 0.20
     # Measured ~4% precision (equal to the bad-response base rate) — keep off.
     flag_self_contradiction: false
-  math:
-    enabled: true
-    domains: ["math", "science"]
   code:
     enabled: true
-    sandbox: "subprocess"   # change to "e2b" for stronger isolation
+    sandbox: "docker"       # pre-pull python:3.12-slim on each worker
     timeout_seconds: 10
     domains: ["code"]
   llm_judge:

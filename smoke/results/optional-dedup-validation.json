@@ -1,0 +1,15 @@
+{
+  "validation_date": "2026-10-08",
+  "tests_passed": 220,
+  "tests_skipped": 17,
+  "skip_reasons": {
+    "gpu_flash_kmeans": 11,
+    "network_test_module": 1,
+    "opt_in_docker": 5
+  },
+  "semantic_dedup_default": false,
+  "math_filter": "removed",
+  "config_sha256": "b8c07186f34517fd8a1a62fb7a19d20a6aac192f1ea9c51e8b9506134b5d675f",
+  "test_log": "smoke/runs/optional_dedup/tests.log",
+  "live_model_run_repeated": false
+}

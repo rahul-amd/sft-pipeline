@@ -1,0 +1,1083 @@
+{
+  "status": "functional_validation_passed",
+  "run_id": "freeze_scale_v2",
+  "scope": "Unattended built-in HTTP flow, GPU embeddings/clustering, Docker filtering, export and unchanged-output resume",
+  "slurm": {
+    "job_id": 54437,
+    "partition": "amd-tw-verification",
+    "gpus": 4
+  },
+  "models": {
+    "teacher": "Qwen/Qwen3-4B",
+    "helper": "Qwen/Qwen3-8B",
+    "auditor": "Qwen/Qwen3-32B",
+    "embedder": "sentence-transformers/all-MiniLM-L6-v2"
+  },
+  "tests": {
+    "tests": 259,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "smoke": {
+    "status": "passed",
+    "counts": {
+      "stage1_collect": 9924,
+      "stage2_generate": 1002,
+      "decontaminate": 10913,
+      "stage3_cluster": 10913,
+      "stage4_sample": 3805,
+      "stage5_inference": 3805,
+      "stage6_filter": 3131,
+      "export": 3131
+    },
+    "generated_prompts_in_final": 181,
+    "decontamination": {
+      "total_input": 10926,
+      "total_removed": 13,
+      "total_survivors": 10913,
+      "removal_rate": 0.00119,
+      "ngram_size": 13,
+      "min_gram_size": 5,
+      "gram_lengths": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "total_eval_ngrams": 60097,
+      "eval_items_loaded": {
+        "smoke_canary": 1,
+        "gsm8k_test": 1319,
+        "arc_challenge_test": 1172
+      },
+      "eval_loading": [
+        {
+          "eval": "smoke_canary",
+          "source": "smoke/fixtures/eval.jsonl",
+          "status": "loaded",
+          "rows": 1,
+          "match_texts": 1
+        },
+        {
+          "eval": "gsm8k_test",
+          "source": "openai/gsm8k",
+          "config": "main",
+          "split": "test",
+          "status": "loaded",
+          "rows": 1319,
+          "dataset_fingerprint": "59ec1b7f9357c7a2",
+          "match_texts": 1319
+        },
+        {
+          "eval": "arc_challenge_test",
+          "source": "allenai/ai2_arc",
+          "config": "ARC-Challenge",
+          "split": "test",
+          "status": "loaded",
+          "rows": 1172,
+          "dataset_fingerprint": "a4361c3f3e560fcd",
+          "match_texts": 1172
+        }
+      ],
+      "eval_items_dropped_short": {
+        "arc_challenge_test": 7
+      },
+      "removed_per_eval": {
+        "arc_challenge_test": 9,
+        "smoke_canary": 1,
+        "gsm8k_test": 3
+      },
+      "removed_per_source": {
+        "science.jsonl": 9,
+        "prompts.jsonl": 1,
+        "openai/gsm8k": 3
+      },
+      "elapsed_seconds": 2.5
+    },
+    "filter_report": {
+      "total_input": 3805,
+      "total_passed": 3131,
+      "pass_rate": 0.8229,
+      "rejection_counts": {
+        "llm_judge": 379,
+        "structural": 271,
+        "code": 24
+      },
+      "domain_pass_counts": {
+        "code": 564,
+        "math": 1724,
+        "science": 435,
+        "knowledge": 302,
+        "reasoning": 73,
+        "writing": 14,
+        "instruction": 17,
+        "language": 2
+      },
+      "domain_fail_counts": {
+        "code": 390,
+        "math": 176,
+        "science": 41,
+        "knowledge": 34,
+        "reasoning": 30,
+        "instruction": 3
+      }
+    },
+    "resume_unchanged": true,
+    "elapsed_seconds": 3073.54,
+    "teacher_model": "freeze-teacher",
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "max_sampled_pairwise_cosine": null,
+    "semantic_dedup_enabled": false,
+    "sampling_report": {
+      "input_records": 10913,
+      "unique_input_ids": 10913,
+      "target": 4000,
+      "selected": 3805,
+      "semantic_dedup_enabled": false,
+      "dedup_cosine_threshold": 0.92,
+      "dedup_method": null,
+      "dedup_comparison_tolerance": 1e-06,
+      "duplicate_candidates": 0,
+      "cells": [
+        {
+          "domain": "math",
+          "difficulty": "easy",
+          "target": 1000,
+          "available": 3464,
+          "selected": 1000,
+          "duplicate_candidates": 0,
+          "shortfall": 0
+        },
+        {
+          "domain": "math",
+          "difficulty": "medium",
+          "target": 900,
+          "available": 1478,
+          "selected": 900,
+          "duplicate_candidates": 0,
+          "shortfall": 0
+        },
+        {
+          "domain": "code",
+          "difficulty": "easy",
+          "target": 500,
+          "available": 985,
+          "selected": 500,
+          "duplicate_candidates": 0,
+          "shortfall": 0
+        },
+        {
+          "domain": "code",
+          "difficulty": "medium",
+          "target": 450,
+          "available": 1038,
+          "selected": 450,
+          "duplicate_candidates": 0,
+          "shortfall": 0
+        },
+        {
+          "domain": "code",
+          "difficulty": "hard",
+          "target": 50,
+          "available": 4,
+          "selected": 4,
+          "duplicate_candidates": 0,
+          "shortfall": 46
+        },
+        {
+          "domain": "science",
+          "difficulty": "easy",
+          "target": 250,
+          "available": 742,
+          "selected": 250,
+          "duplicate_candidates": 0,
+          "shortfall": 0
+        },
+        {
+          "domain": "science",
+          "difficulty": "medium",
+          "target": 225,
+          "available": 406,
+          "selected": 225,
+          "duplicate_candidates": 0,
+          "shortfall": 0
+        },
+        {
+          "domain": "science",
+          "difficulty": "hard",
+          "target": 25,
+          "available": 1,
+          "selected": 1,
+          "duplicate_candidates": 0,
+          "shortfall": 24
+        },
+        {
+          "domain": "general",
+          "difficulty": "easy",
+          "target": 250,
+          "available": 1870,
+          "selected": 250,
+          "duplicate_candidates": 0,
+          "shortfall": 0
+        },
+        {
+          "domain": "general",
+          "difficulty": "medium",
+          "target": 225,
+          "available": 925,
+          "selected": 225,
+          "duplicate_candidates": 0,
+          "shortfall": 0
+        }
+      ]
+    },
+    "code_sandbox": "docker",
+    "sandbox_image": "python:3.12-slim",
+    "config_sha256": "ddaa10deb688fc81a1002d21d8783c585c1feb6784bc678c5fc2456d9d0f06ea",
+    "versions": {
+      "pydantic": "2.12.5",
+      "datasets": "4.8.4",
+      "sentence-transformers": "5.5.1",
+      "faiss-cpu": "1.14.2",
+      "openai": "2.30.0"
+    },
+    "artifact_sha256": {
+      "stage1/part-000000.jsonl": "051326839aa5cf7899eb5b2496d19f379577fcee1824edb8159134eb7b703bdf",
+      "stage2/part-000000.jsonl": "cece4d19bd0073290fe7faee384ce58fad1a023c2b0ddaf0ccc5bfad210d9be3",
+      "stage_decontam/clean/stage2-part-000000.jsonl": "cece4d19bd0073290fe7faee384ce58fad1a023c2b0ddaf0ccc5bfad210d9be3",
+      "stage_decontam/clean/stage1-part-000000.jsonl": "69848be7db5c889f5f29c72f4e2dac1687829decf0a46230772a5f6c7d94beb1",
+      "stage3/part-000000.jsonl": "ab8263f9c90373f03790c8122285c1a67306fe5c967ebf449394b1058d482ff0",
+      "stage4/part-000000.jsonl": "a7029432ad0d560166b4eeda7feb68b8003454d97641aaab25b14f59f7595d35",
+      "stage5/part-000007.jsonl": "e5af18ac415455860eeb0d2d8703473c0e54c2933820f26fe06389ba200f1603",
+      "stage5/part-000001.jsonl": "b6dacda12ce06dbd83433d56941937c991add35dba5e0ff426a4da7e572267e8",
+      "stage5/part-000002.jsonl": "6b11136bf2cab91eac6114530d961487c8c6397cac971de90e622b130e464f87",
+      "stage5/part-000003.jsonl": "a17623e7c31fe85b8a7566fb186e2531234595cccc858a69ac7094bc7fd36609",
+      "stage5/part-000006.jsonl": "9ed53e825e000afc4f63c0cda755215d4f6c80f068b2c0123df8c3ceca3ccb77",
+      "stage5/part-000000.jsonl": "3f4921e7d6ca94b44658b7624234a30dd4ba77770db0a439444f3f2c595c878c",
+      "stage5/part-000004.jsonl": "d7189b4728ecde5851f80f79fa6feebb7ad52f88f674891b80a4fd2f100eaed2",
+      "stage5/part-000008.jsonl": "1e1cb228df3b530087fee47a345694b5c051c4794ded74c893d719b68363d8f2",
+      "stage5/part-000005.jsonl": "59003718102d806ea32e05b34e4f8c5c64081a1f842b0d60ab2bbddb40023ff3",
+      "stage6/part-000000.jsonl": "5a8dedf209db3ee5918a792843dc1b4e4f55fc66907412438bd89f86209e61df",
+      "stage6/part-000001.jsonl": "08b485685a3cdbce7a48d27d9be4622f80107c57ea985155ef82ad35cabf73a9",
+      "stage6/part-000006.jsonl": "600afde7447263b7b0cfe482b68356d06c440eb5fbde592b06904b5bac793684",
+      "stage6/part-000003.jsonl": "e52c6500980f902b0e02abe226fe7379658844f5b446cfca98a5b782dbf94a18",
+      "stage6/part-000005.jsonl": "d4954fd871ca1a71cb7a3e8ee61b4b03e81b1cf9514c04768d409fedb7551a92",
+      "stage6/part-000007.jsonl": "d8241a83097ab339c17d428682b03b6bc8a49e0eab22b1550d5b4c35cde90a21",
+      "stage6/part-000002.jsonl": "357c064650f3483ec6710e5ee5e376e8aaae7f7ebee868d49ec5e3f7edee654a",
+      "stage6/part-000008.jsonl": "84f8969f24b05db76dee2536fce5107f67579463c683a19e2f3be7cea3e5b26e",
+      "stage6/part-000004.jsonl": "1147a8de89771ea002d1269ca6239828b795251370fdcd1109df4d4f31c45503",
+      "final/part-000004.jsonl": "bc926128c97835fb09d7f600d54ce3e46899b05f4c89a9473c113d6af57043c1",
+      "final/part-000003.jsonl": "841542610261a18aa24487653914b6566b741c8f5e2b6c169edc5f4e61088a29",
+      "final/part-000002.jsonl": "2be042dacfc105d8ee481b893b782d280d31b5c7c0ba679dcffa55c3426984ce",
+      "final/part-000000.jsonl": "078434a5836555cdf3374ba1ee0c984e93cadb7d41cb2c70c9ce68a425508608",
+      "final/part-000001.jsonl": "3a1f23c27b697d5244e29b53a61aa87f232349337357a226e738779fcf89577e"
+    }
+  },
+  "recovery": {
+    "stage3_cluster": {
+      "status": "passed",
+      "killed_exit_code": -9,
+      "prior_output_preserved": true,
+      "retry_rows": 160,
+      "unique_ids": true
+    },
+    "stage4_sample": {
+      "status": "passed",
+      "killed_exit_code": -9,
+      "prior_output_preserved": true,
+      "retry_rows": 15,
+      "unique_ids": true
+    },
+    "stage5_inference": {
+      "status": "passed",
+      "killed_exit_code": -9,
+      "durable_before_kill": 16,
+      "after_retry": 96,
+      "unique_ids": true,
+      "durable_responses_unchanged": true
+    }
+  },
+  "annotation_import_live": {
+    "status": "passed",
+    "rows": 3,
+    "imported": 1,
+    "empty_response_filled_online": 1,
+    "missing_response_filled_online": 1,
+    "centroid_similarity_preserved": true
+  },
+  "environment": {
+    "python": "3.12.13",
+    "versions": {
+      "torch": "2.10.0+git8514f05",
+      "vllm": "0.18.2rc1.dev71+ge92668e83.rocm721",
+      "transformers": "5.5.0",
+      "ray": "2.59.0",
+      "sentence-transformers": "5.5.1",
+      "faiss-cpu": "1.14.2",
+      "openai": "2.30.0",
+      "datasets": "4.8.4",
+      "pydantic": "2.12.5",
+      "flash-kmeans": "0.3.1"
+    },
+    "docker_version": "29.1.3",
+    "docker_image_id": "sha256:df18428df8a0f9189c84e7424d214b4c50092af1f9dca5842a00c41c39bda316",
+    "docker_image_digests": [
+      "python@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f"
+    ]
+  },
+  "docker_container_actions": {
+    "create": 772,
+    "attach": 772,
+    "start": 772,
+    "die": 772,
+    "destroy": 772,
+    "kill": 2
+  },
+  "sampling_comparison": {
+    "off": {
+      "sampling_seconds": 0.14393733255565166,
+      "selected": 3805,
+      "maximum_pairwise_cosine": 0.9999999999926967,
+      "pairs_at_or_above_threshold_plus_tolerance": 39,
+      "sampling_report": {
+        "input_records": 10913,
+        "unique_input_ids": 10913,
+        "target": 4000,
+        "selected": 3805,
+        "shortfall": 195,
+        "quota_rounding_shortfall": 0,
+        "semantic_dedup_enabled": false,
+        "dedup_cosine_threshold": 0.92,
+        "dedup_method": null,
+        "dedup_comparison_tolerance": 1e-06,
+        "duplicate_candidates": 0,
+        "cells": [
+          {
+            "domain": "math",
+            "difficulty": "easy",
+            "target": 1000,
+            "available": 3464,
+            "selected": 1000,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "math",
+            "difficulty": "medium",
+            "target": 900,
+            "available": 1478,
+            "selected": 900,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "math",
+            "difficulty": "hard",
+            "target": 100,
+            "available": 0,
+            "selected": 0,
+            "duplicate_candidates": 0,
+            "shortfall": 100
+          },
+          {
+            "domain": "code",
+            "difficulty": "easy",
+            "target": 500,
+            "available": 985,
+            "selected": 500,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "code",
+            "difficulty": "medium",
+            "target": 450,
+            "available": 1038,
+            "selected": 450,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "code",
+            "difficulty": "hard",
+            "target": 50,
+            "available": 4,
+            "selected": 4,
+            "duplicate_candidates": 0,
+            "shortfall": 46
+          },
+          {
+            "domain": "science",
+            "difficulty": "easy",
+            "target": 250,
+            "available": 742,
+            "selected": 250,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "science",
+            "difficulty": "medium",
+            "target": 225,
+            "available": 406,
+            "selected": 225,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "science",
+            "difficulty": "hard",
+            "target": 25,
+            "available": 1,
+            "selected": 1,
+            "duplicate_candidates": 0,
+            "shortfall": 24
+          },
+          {
+            "domain": "general",
+            "difficulty": "easy",
+            "target": 250,
+            "available": 1870,
+            "selected": 250,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "general",
+            "difficulty": "medium",
+            "target": 225,
+            "available": 925,
+            "selected": 225,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "general",
+            "difficulty": "hard",
+            "target": 25,
+            "available": 0,
+            "selected": 0,
+            "duplicate_candidates": 0,
+            "shortfall": 25
+          }
+        ]
+      }
+    },
+    "on": {
+      "sampling_seconds": 0.4253629678860307,
+      "selected": 3805,
+      "maximum_pairwise_cosine": 0.9193000955119739,
+      "pairs_at_or_above_threshold_plus_tolerance": 0,
+      "sampling_report": {
+        "input_records": 10913,
+        "unique_input_ids": 10913,
+        "target": 4000,
+        "selected": 3805,
+        "shortfall": 195,
+        "quota_rounding_shortfall": 0,
+        "semantic_dedup_enabled": true,
+        "dedup_cosine_threshold": 0.92,
+        "dedup_method": "exact_global_greedy_cosine",
+        "dedup_comparison_tolerance": 1e-06,
+        "duplicate_candidates": 27,
+        "cells": [
+          {
+            "domain": "math",
+            "difficulty": "easy",
+            "target": 1000,
+            "available": 3464,
+            "selected": 1000,
+            "duplicate_candidates": 2,
+            "shortfall": 0
+          },
+          {
+            "domain": "math",
+            "difficulty": "medium",
+            "target": 900,
+            "available": 1478,
+            "selected": 900,
+            "duplicate_candidates": 3,
+            "shortfall": 0
+          },
+          {
+            "domain": "math",
+            "difficulty": "hard",
+            "target": 100,
+            "available": 0,
+            "selected": 0,
+            "duplicate_candidates": 0,
+            "shortfall": 100
+          },
+          {
+            "domain": "code",
+            "difficulty": "easy",
+            "target": 500,
+            "available": 985,
+            "selected": 500,
+            "duplicate_candidates": 15,
+            "shortfall": 0
+          },
+          {
+            "domain": "code",
+            "difficulty": "medium",
+            "target": 450,
+            "available": 1038,
+            "selected": 450,
+            "duplicate_candidates": 7,
+            "shortfall": 0
+          },
+          {
+            "domain": "code",
+            "difficulty": "hard",
+            "target": 50,
+            "available": 4,
+            "selected": 4,
+            "duplicate_candidates": 0,
+            "shortfall": 46
+          },
+          {
+            "domain": "science",
+            "difficulty": "easy",
+            "target": 250,
+            "available": 742,
+            "selected": 250,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "science",
+            "difficulty": "medium",
+            "target": 225,
+            "available": 406,
+            "selected": 225,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "science",
+            "difficulty": "hard",
+            "target": 25,
+            "available": 1,
+            "selected": 1,
+            "duplicate_candidates": 0,
+            "shortfall": 24
+          },
+          {
+            "domain": "general",
+            "difficulty": "easy",
+            "target": 250,
+            "available": 1870,
+            "selected": 250,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "general",
+            "difficulty": "medium",
+            "target": 225,
+            "available": 925,
+            "selected": 225,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "general",
+            "difficulty": "hard",
+            "target": 25,
+            "available": 0,
+            "selected": 0,
+            "duplicate_candidates": 0,
+            "shortfall": 25
+          }
+        ]
+      }
+    }
+  },
+  "audit": {
+    "status": "completed",
+    "reviewer": "freeze-auditor",
+    "sampling": "seed 42; round-robin domain strata, 160 accepted and up to 40 rejected; not population-weighted",
+    "limitations": "Model judgments require spot review; reviewer shares the teacher model family. No math filter is added.",
+    "population": {
+      "accepted": 3131,
+      "rejected": 674
+    },
+    "groups": {
+      "accepted": {
+        "sample_size": 160,
+        "verdicts": {
+          "correct": 137,
+          "incorrect": 21,
+          "uncertain": 2
+        },
+        "major_issues": 23,
+        "domains": {
+          "math": 25,
+          "science": 25,
+          "knowledge": 26,
+          "code": 26,
+          "instruction": 17,
+          "writing": 14,
+          "reasoning": 25,
+          "language": 2
+        },
+        "generated": 15,
+        "with_reference": 145
+      },
+      "rejected": {
+        "sample_size": 40,
+        "verdicts": {
+          "correct": 19,
+          "incorrect": 18,
+          "uncertain": 3
+        },
+        "major_issues": 21,
+        "domains": {
+          "code": 8,
+          "instruction": 3,
+          "math": 7,
+          "reasoning": 7,
+          "knowledge": 8,
+          "science": 7
+        },
+        "generated": 8,
+        "with_reference": 32
+      }
+    }
+  },
+  "resources": {
+    "elapsed_seconds": 3073.94,
+    "samples": 304,
+    "peak_process_tree_rss_bytes": 34398154752,
+    "exit_code": 0,
+    "memory_scope": "pipeline driver and descendants; summed RSS can double-count shared pages; excludes serving processes"
+  },
+  "audit_followup": {
+    "report": "smoke/audit-findings.md",
+    "conclusion": "Functional HTTP release candidate; improve Stage 2 source grounding and judge calibration before a production-sized run or verified-quality claims.",
+    "non_judge_filter_replay": {
+      "status": "completed",
+      "records": [
+        {
+          "prompt_id": "sha256:70b38954aeaa419b23c9642002176ce0",
+          "audit_verdict": "correct",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:7de4c31c9f512f624e595e9011920499",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:ec667b44231b04553a56826a3862baa1",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:2aa2d102403768833ff3688202c5cd39",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:6fdff38339d5194df44d1628b4442e73",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:c2106b9c61a580e9fd2117809ec20fee",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:9115eddd0095521f48f582fefb601a87",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:26a76d129020743da5fd8471301727a1",
+          "audit_verdict": "correct",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:9f0495276b52926f7a603928374c99c5",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:7b6092728da7f58dc8d31bb8454477b7",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:b9eaac5be3414540161a31e1602855b5",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:c99ff1e5f3c5030aa68afebf07b6779e",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:48c10d19f952c73a3c6e2ea306807716",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:6e732f5a5cb7fe6f9f9dc738ecbc764c",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:46cb7ea2d525483f8fcec0efc922d396",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:45ccf1b7b23252713957a30a5a54ce04",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:c90ff42ef8e10e315a00979990056bee",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:fd46335c8495e166bbd4bca6556917ed",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:f359001c20886e689384ff74febc3618",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:0c091470c017c19e1600083357c33d33",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:659dea54618df3934594310ed1bc601a",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:2e8034e04bc3933c4c19f3b71d956806",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:f0d4a4192ad5ac10587f4e7c40c10cc9",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:dfcea3b0170857de1ff44b148d18cc5e",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:b9be0d34379547408c7542444d6c8a06",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:89cc3d446c7c1002159289e525888e5a",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:93c322025fc21da7e5255e68a45e2b62",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:c454659f39f0c3182d91df5f865ca9a7",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:c3cee9b4db15835b54a64b351f85a8e6",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:30434fb07657816372e821dcaa84b1f5",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:49e29a2b8725a8248b6f392450bd47fc",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:2605a6bda318da86c3798e0f6f6342d8",
+          "audit_verdict": "incorrect",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:b8bf019af5754ac46137e964fbbeb21c",
+          "audit_verdict": "correct",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:0d67973620530a643307e8a7aa03a39d",
+          "audit_verdict": "uncertain",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:3a1c8bfe10431fe3128db01387e24f18",
+          "audit_verdict": "incorrect",
+          "finish_reason": "stop",
+          "non_judge_replay": "structural:repetition_loop"
+        },
+        {
+          "prompt_id": "sha256:6e8d16d8d2ed73e48b57ed2357738d1f",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:83a4c0e5534816385b4cc03151830703",
+          "audit_verdict": "uncertain",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:07ab1502e15a03fa65813db296e70b50",
+          "audit_verdict": "uncertain",
+          "finish_reason": "stop",
+          "non_judge_replay": "passed_non_judge_replay"
+        },
+        {
+          "prompt_id": "sha256:76ad7fef9a345d24622b32c4a3b8b3ff",
+          "audit_verdict": "correct",
+          "finish_reason": "length",
+          "non_judge_replay": "structural:truncated_response"
+        },
+        {
+          "prompt_id": "sha256:45640063155103a83605c2f47be2a8a1",
+          "audit_verdict": "correct",
+          "finish_reason": "stop",
+          "non_judge_replay": "structural:repetition_loop"
+        }
+      ],
+      "audit_correct_replay_counts": {
+        "structural:truncated_response": 4,
+        "passed_non_judge_replay": 14,
+        "structural:repetition_loop": 1
+      },
+      "caveat": "Original per-record judge scores were not saved. Passing this replay suggests judge rejection, but does not exclude nondeterministic code execution. Reviewer correctness judgments are uncalibrated."
+    },
+    "note": "Direct assistant inspection found real content defects and reviewer mistakes; raw verdict counts are not error-rate estimates."
+  },
+  "cleanup": {
+    "sandbox_containers_remaining": 0,
+    "user_jobs_in_final_queue_snapshot": 0
+  },
+  "stage_timing_from_logs": {
+    "stage1_collect": {
+      "first_log_utc": "2026-10-08T13:54:02",
+      "last_log_utc": "2026-10-08T13:54:08",
+      "log_span_seconds": 6.0
+    },
+    "stage2_generate": {
+      "first_log_utc": "2026-10-08T13:54:08",
+      "last_log_utc": "2026-10-08T13:54:24",
+      "log_span_seconds": 16.0
+    },
+    "decontaminate": {
+      "first_log_utc": "2026-10-08T13:54:24",
+      "last_log_utc": "2026-10-08T13:54:27",
+      "log_span_seconds": 3.0
+    },
+    "stage3_cluster": {
+      "first_log_utc": "2026-10-08T13:54:27",
+      "last_log_utc": "2026-10-08T13:58:12",
+      "log_span_seconds": 225.0
+    },
+    "stage4_sample": {
+      "first_log_utc": "2026-10-08T13:58:12",
+      "last_log_utc": "2026-10-08T13:58:12",
+      "log_span_seconds": 0.0
+    },
+    "stage5_inference": {
+      "first_log_utc": "2026-10-08T13:58:12",
+      "last_log_utc": "2026-10-08T14:38:56",
+      "log_span_seconds": 2444.0
+    },
+    "stage6_filter": {
+      "first_log_utc": "2026-10-08T14:38:56",
+      "last_log_utc": "2026-10-08T14:45:11",
+      "log_span_seconds": 375.0
+    },
+    "export": {
+      "first_log_utc": "2026-10-08T14:45:11",
+      "last_log_utc": "2026-10-08T14:45:11",
+      "log_span_seconds": 0.0
+    }
+  },
+  "teacher_generation_tokens_per_second_median_while_at_least_32_running": 3451.0365251728717,
+  "gpu_peak_vram_bytes_by_rocm_smi_card": {
+    "card0": 110345986048,
+    "card1": 2357981184,
+    "card2": 150063431680,
+    "card3": 110027210752
+  },
+  "performance_caveats": [
+    "Resource samples are approximately 10 seconds apart.",
+    "Serving counters include the concurrent Stage 5 recovery probe; rates are operational observations, not an isolated benchmark.",
+    "rocm-smi card numbering is not asserted to match the process ROCR visibility order.",
+    "Summed process-tree RSS can double-count shared pages and excludes separately launched model servers."
+  ],
+  "inference_finish_reasons": {
+    "stop": 3574,
+    "length": 231
+  },
+  "truncated_completions_in_export": 0,
+  "final_domains": {
+    "math": 1724,
+    "code": 564,
+    "science": 435,
+    "reasoning": 73,
+    "knowledge": 302,
+    "instruction": 17,
+    "writing": 14,
+    "language": 2
+  },
+  "final_difficulties": {
+    "easy": 1795,
+    "medium": 1335,
+    "hard": 1
+  },
+  "sources": {
+    "datasets": {
+      "iamtarun/python_code_instructions_18k_alpaca": {
+        "revision": "7cae181e29701a8663a07a3ea43c8e105b663ba1",
+        "config": null
+      },
+      "databricks/databricks-dolly-15k": {
+        "revision": "bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1a",
+        "config": null
+      },
+      "openai/gsm8k": {
+        "revision": "740312add88f781978c0658806c59bc2815b9866",
+        "config": "main"
+      },
+      "allenai/ai2_arc": {
+        "revision": "210d026faf9955653af8916fad021475a3f00453",
+        "config": "ARC-Challenge"
+      }
+    },
+    "files": {
+      "code.jsonl": {
+        "rows": 2000,
+        "sha256": "6d9cbfd05360fa7bcb6063e9424b19e55aeab707767f0d17da6f240c069bda08"
+      },
+      "general.jsonl": {
+        "rows": 1800,
+        "sha256": "080be217d76fe45a6f84327accf9402c27ab44fa7aa8c49457811d606316b1ed"
+      },
+      "corpus.jsonl": {
+        "rows": 500,
+        "sha256": "55a287d86caaeab0b36f542c0cf836bf8c029fc9f36f31f81eb5f44439131c11"
+      },
+      "science.jsonl": {
+        "rows": 1119,
+        "sha256": "ae5f3ba20c4544b096e69f2f9f578cac817d05d9572d7c827a1e4c915b9c0b10"
+      },
+      "references.jsonl": {
+        "rows": 9919,
+        "sha256": "29d82d3db849b806ada0069ea560a237b00d9a36817fc7b5b2ea2c19d2b56976"
+      }
+    }
+  },
+  "source_file_sha256_at_summary": {
+    "sft_pipeline/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sft_pipeline/checkpoint.py": "88e8fcacb50577abcff07d979e305494b5f4824d4365ec0e93087a0bee2f1eb7",
+    "sft_pipeline/cli.py": "07ef4ad8b865a1190d653a14bc5b392674bdce3c1d0fe9af35b457edc92753ba",
+    "sft_pipeline/clustering/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sft_pipeline/clustering/annotator.py": "99f7d433a5d1c909f6b3e12be08839a314f3a9af4b26219cf9f4453b991304a1",
+    "sft_pipeline/clustering/clusterer.py": "c3204fb9abf423f6fbea4a151a718ac23691afdc8b3a0353af8fbfbe10583d86",
+    "sft_pipeline/clustering/embedder.py": "f5759cc24eadcb023aeb9cdd07dc4d0e24bc37c55c7dbffd5d796277d9b33c85",
+    "sft_pipeline/clustering/faiss_index.py": "c5c37cb7771dffb4ccf6a1f17b8066f8f668c48e8ef02301da0ed4f67e352052",
+    "sft_pipeline/config.py": "0a2accec9ccecbd01f43090c1623a305973006d0eda55c35b293ba81a70326c2",
+    "sft_pipeline/cost_estimator.py": "ce0efe648021d30797cc0988a041aa0f408608cd5db8e4b709eb2eef7f895af8",
+    "sft_pipeline/decontam/__init__.py": "5ae9ef74b42e13f00a79daf40445178793b78c3c19a166dac831ae94b1497eda",
+    "sft_pipeline/decontam/eval_index.py": "ba48621eaa12cbaabe19f2ee36b3211157e0795aae738ff710afc422f959235e",
+    "sft_pipeline/decontam/normalize.py": "01a8f8f695758bcc1bc0caf866f8c52a8e13f54a871c54aa5106e840b8da37e2",
+    "sft_pipeline/export/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sft_pipeline/export/jsonl_writer.py": "5a7f1a8bd2f5a1aa9e12e5d0ed34c4bc8c5c5f875e32c99823a3fa58a70d84c3",
+    "sft_pipeline/filters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sft_pipeline/filters/code_verifier.py": "4f23385603984dbc21dfa245e24f14dddc28166e9bf5f89ac679039cb1cbac8b",
+    "sft_pipeline/filters/docker_sandbox.py": "028fd37e6890bc53248da0076605b90985ba0971eae5c657147d5bccc355c3b2",
+    "sft_pipeline/filters/heuristic.py": "c932cf38f65a5d57c85f869f22a4aef1971260ab3b37d99dea7815e99704029b",
+    "sft_pipeline/filters/llm_judge.py": "d0e2d2ba90c9b5cabe7f8d4a4ac2626118e08166e8dc743edc28675c80da3cfe",
+    "sft_pipeline/filters/structural.py": "f404a734b815f43dab9d31dc4f2b3804c04130b478081da1d04dcfe2546643ff",
+    "sft_pipeline/inference/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sft_pipeline/inference/output_parser.py": "d073861a091f236cb07066de65aef8314b860879b399a3bce287c7aa789f0668",
+    "sft_pipeline/inference/prompt_formatter.py": "5c123a3ad2b19c36d3c93432149fedb12b6e847da2a6e8a3beaf8c9b288a7fad",
+    "sft_pipeline/inference/vllm_batch.py": "d384466dd9e2e4d839e46760c8190f172b1cc1a4b8d2d0aa532c81f89e6ac823",
+    "sft_pipeline/ray_utils.py": "4f308a5b06d70bd54603e1591a3ea537043ca70614eecb42d44b96f989aa8fe0",
+    "sft_pipeline/stages/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sft_pipeline/stages/decontaminate.py": "dfe5ba3f09f63e9edec930cdbeed3cf760358350bf2e8376c7756424680b1ca0",
+    "sft_pipeline/stages/stage1_collect.py": "7fd8d480b2ce6afda9818634ca697432f9464377feacec1b318097f38d1f3156",
+    "sft_pipeline/stages/stage2_generate.py": "d9164f2f546ae1d6b3d5edd81ec90d0742de155a798fcb351d95c6b0e687f0e0",
+    "sft_pipeline/stages/stage3_cluster.py": "22f3d0856f19db716ab121dddff9f6f8dc0539b0ca4091c52b3d8aa35fd585ed",
+    "sft_pipeline/stages/stage4_sample.py": "3dec3bc0c19df0986a3f55d9f88fb4e776fd6c46252f5c17273ac18237d3e1f9",
+    "sft_pipeline/stages/stage5_inference.py": "a5e60a0743fe85d6e77f6eca885b09371762fe8f17ad4e038a5beeaa671c8b9f",
+    "sft_pipeline/stages/stage6_filter.py": "057550a2abe422658b8056c720ec25c85ea3aea68156ff2f7e6aef59143e7a80",
+    "sft_pipeline/storage.py": "673742ed1195ef186fe210d4e62043aa4da2756df7d0b0a67dab36a5a5af5f9b"
+  },
+  "limitations": [
+    "The audit is a model review, not verified ground truth or a population-weighted accuracy estimate.",
+    "Use a fresh run ID after changing inputs, model or config; artifact invalidation remains deferred.",
+    "Multi-file publication is recoverable by rerun but is not one atomic transaction.",
+    "No math filter; successful code execution does not prove task correctness.",
+    "Offline/distributed inference, clean-install validation and publication hygiene remain deferred.",
+    "The tested ROCm image can mask failing process exit codes; checkpoint/artifact validation is required."
+  ]
+}

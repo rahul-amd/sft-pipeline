@@ -12,6 +12,7 @@ The DuckDB file lives at config.global_.checkpoint_db (local disk).
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 import time
@@ -155,7 +156,7 @@ class CheckpointManager:
                 ON CONFLICT (stage_name) DO UPDATE
                 SET status = 'failed', metadata = ?
                 """,
-                [stage, f'{{"error": "{error}"}}', f'{{"error": "{error}"}}'],
+                [stage, json.dumps({"error": error}), json.dumps({"error": error})],
             )
 
     def is_stage_complete(self, stage: str) -> bool:

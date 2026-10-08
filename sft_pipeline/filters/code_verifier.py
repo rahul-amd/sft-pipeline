@@ -2,8 +2,9 @@
 Code domain quality filter.
 
 Extracts code blocks from responses and executes them in a sandbox.
-Two sandbox backends:
-  - 'subprocess': restricted subprocess with resource limits (dev/testing)
+Execution backends:
+  - 'docker': restricted disposable container (default; pre-pull the Python image)
+  - 'subprocess': local process with a timeout, NOT a security sandbox (trusted inputs only)
   - 'e2b': E2B cloud sandbox (production — zero ops, strong isolation)
 
 Only Python code blocks are executed. Other languages are syntax-checked
@@ -104,6 +105,8 @@ def check_code(record: dict, cfg: CodeFilterConfig) -> FilterResult:
     code = code_blocks[-1].strip()
     if not code:
         return FilterResult(True)
+    if len(code.encode("utf-8")) > cfg.max_code_bytes:
+        return FilterResult(False, "code_too_large")
 
     # REPL transcripts (">>> ..." lines) are illustration, not programs.
     if ">>>" in code:
@@ -133,7 +136,10 @@ def check_code(record: dict, cfg: CodeFilterConfig) -> FilterResult:
     except (ValueError, MemoryError, RecursionError):
         return FilterResult(True, "code_compile_uncertain")
 
-    if cfg.sandbox == "e2b":
+    if cfg.sandbox == "docker":
+        from sft_pipeline.filters.docker_sandbox import run_docker
+        result = run_docker(code, cfg)
+    elif cfg.sandbox == "e2b":
         result = _run_e2b(code, cfg.timeout_seconds)
     else:
         result = _run_subprocess(code, cfg.timeout_seconds)
@@ -178,8 +184,9 @@ def _last_stderr_line(stderr: str) -> str:
 
 def _run_subprocess(code: str, timeout: int) -> ExecutionResult:
     """
-    Execute Python code in a restricted subprocess.
-    No network, CPU time limited by subprocess timeout.
+    Execute Python code locally with a timeout.
+    Network, filesystem access, and environment are inherited from the caller.
+    This backend is suitable only for trusted inputs; it is not isolation.
 
     Runs inside a throwaway temp directory: dataset code frequently writes
     files (csv/json/zip demos), and with the caller's cwd those would litter
@@ -278,18 +285,17 @@ def _run_e2b(code: str, timeout: int) -> ExecutionResult:
     """
     try:
         from e2b_code_interpreter import Sandbox
-    except ImportError:
-        # Fallback to subprocess if e2b not installed
-        return _run_subprocess(code, timeout)
+    except ImportError as exc:
+        raise RuntimeError("E2B requested but e2b-code-interpreter is not installed") from exc
 
     try:
-        with Sandbox(timeout=timeout) as sb:
+        with Sandbox.create(timeout=timeout, allow_internet_access=False) as sb:
             execution = sb.run_code(code)
-            stderr = "\n".join(str(e) for e in execution.error) if execution.error else ""
+            stderr = str(execution.error) if execution.error else ""
             return ExecutionResult(
-                success=execution.error is None or len(execution.error) == 0,
+                success=execution.error is None,
                 stdout=execution.text or "",
                 stderr=stderr,
             )
     except Exception as exc:
-        return ExecutionResult(success=False, stderr=str(exc))
+        raise RuntimeError("E2B sandbox failed; no execution verdict available") from exc

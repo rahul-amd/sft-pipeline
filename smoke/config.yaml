@@ -1,0 +1,97 @@
+# Run from the repository root. Every implemented pipeline stage is enabled.
+# Required environment: SFT_API_BASE, SFT_API_KEY, SFT_MODEL, SFT_RUN_ID.
+# SFT_API_KEY may be EMPTY for a local server that does not require auth.
+# This is a functional test, not a dataset-quality benchmark.
+global:
+  run_id: "${SFT_RUN_ID}"
+  base_path: "./smoke/runs/{run_id}"
+  device: cpu
+  seed: 42
+
+stage1_collect:
+  datasets:
+    - source: hf_dataset
+      hf_repo_id: openai/gsm8k
+      hf_config: main
+      hf_split: train
+      prompt_field: question
+      domain_hint: math
+      max_examples: 6
+    - source: local_jsonl
+      path: smoke/fixtures/prompts.jsonl
+      prompt_field: prompt
+
+stage2_generate:
+  corpora:
+    - source: local
+      path: smoke/fixtures/corpora
+  chunk_size_tokens: 512
+  chunk_overlap_tokens: 32
+  prompts_per_chunk: 2
+  generator_model: "${SFT_MODEL}"
+  generator_endpoint: "${SFT_API_BASE}"
+  generator_api_key: "${SFT_API_KEY}"
+  generator_max_tokens: 4096
+  generator_temperature: 0.2
+  max_workers: 2
+
+decontaminate:
+  evals:
+    - name: smoke_canary
+      source: local_jsonl
+      path: smoke/fixtures/eval.jsonl
+      match_fields: [question]
+  n_workers: 1
+
+stage3_cluster:
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  embedding_batch_size: 8
+  faiss_nlist: 2
+  faiss_nprobe: 2
+  faiss_training_sample: 100
+  clustering_algorithm: kmeans
+  n_clusters: 2
+  annotation_enabled: true
+  annotation_model: "${SFT_MODEL}"
+  annotation_api_base: "${SFT_API_BASE}"
+  annotation_api_key: "${SFT_API_KEY}"
+  annotation_concurrency: 2
+  annotation_max_tokens: 4096
+  annotation_checkpoint_every: 8
+
+stage4_sample:
+  semantic_dedup_enabled: false
+  # Ceiling, not a guaranteed output count. Small quota cells may be undersupplied.
+  total_prompts: 64
+  domain_quotas: {math: 0.50, code: 0.25, science: 0.25}
+  difficulty_quotas:
+    default: {easy: 0.34, medium: 0.33, hard: 0.33}
+
+stage5_inference:
+  model: "${SFT_MODEL}"
+  inference_mode: openai_api
+  api_base: "${SFT_API_BASE}"
+  api_key: "${SFT_API_KEY}"
+  concurrency: 2
+  request_timeout: 180
+  max_retries: 2
+  checkpoint_every: 4
+  generation: {temperature: 0.2, top_p: 0.95, max_tokens: 6144, n_candidates: 1}
+
+stage6_filter:
+  n_workers: 1
+  parse_responses: true
+  code: {enabled: true, sandbox: docker, timeout_seconds: 3}
+  llm_judge:
+    enabled: true
+    model_endpoint: "${SFT_API_BASE}"
+    model: "${SFT_MODEL}"
+    api_key: "${SFT_API_KEY}"
+    max_tokens: 4096
+    sample_rate: 1.0
+    score_threshold: 6.0
+
+export:
+  enabled: true
+  shard_size_mb: 5
+  push_to_hub: false

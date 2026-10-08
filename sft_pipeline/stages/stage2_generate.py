@@ -22,7 +22,7 @@ import json
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Iterator
 
@@ -33,7 +33,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from sft_pipeline.checkpoint import CheckpointManager, ItemStatus, prompt_id
 from sft_pipeline.config import CorpusSource, PipelineConfig
 from sft_pipeline.stages.stage1_collect import _infer_domain, _normalize
-from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl
+from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl, iter_jsonl_dir
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,7 @@ def _call_generator(
     model: str,
     temperature: float,
     max_tokens: int,
+    api_key: str = "EMPTY",
 ) -> list[str]:
     """Call the generator LLM and return a list of prompt strings."""
     payload = {
@@ -109,7 +110,7 @@ def _call_generator(
         "messages": [
             {"role": "system", "content": _PROMPT_GENERATION_SYSTEM},
             {"role": "user", "content": _PROMPT_GENERATION_USER.format(
-                passage=passage[:3000], n=n
+                passage=passage, n=n
             )},
         ],
         "temperature": temperature,
@@ -119,10 +120,14 @@ def _call_generator(
         f"{endpoint.rstrip('/')}/chat/completions",
         json=payload,
         timeout=60.0,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
     )
     resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"].strip()
+    choice = resp.json()["choices"][0]
+    if choice.get("finish_reason") == "length":
+        raise ValueError("Generator response was truncated; increase generator_max_tokens")
+    content = choice["message"].get("content") or ""
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
     # Try to parse JSON; repair if malformed
     try:
@@ -136,8 +141,11 @@ def _call_generator(
             prompts = re.findall(r'"([^"]{20,})"', content)
 
     if not isinstance(prompts, list):
-        return []
-    return [p.strip() for p in prompts if isinstance(p, str) and len(p.strip()) >= 20]
+        raise ValueError("Generator did not return a JSON array of questions")
+    valid = [p for p in prompts if isinstance(p, str) and len(p.strip()) >= 20]
+    if not valid:
+        raise ValueError("Generator returned no usable questions")
+    return valid[:n]
 
 
 # ---------------------------------------------------------------------------
@@ -147,20 +155,30 @@ def _call_generator(
 def _iter_local_corpus(src: CorpusSource) -> Iterator[tuple[str, str]]:
     """Yield (doc_id, text) pairs from a local directory."""
     base = Path(src.path)
+    if not base.exists():
+        raise FileNotFoundError(f"Corpus not found: {base}")
     extensions = {".txt", ".jsonl", ".json", ".md"}
-    for fp in sorted(base.rglob("*")):
+    paths = [base] if base.is_file() else sorted(base.rglob("*"))
+    for fp in paths:
+        if not fp.is_file():
+            continue
         if fp.suffix.lower() not in extensions:
             continue
         if fp.suffix.lower() in {".jsonl", ".json"}:
-            for rec in iter_jsonl(fp):
-                text = rec.get(src.text_field if hasattr(src, "text_field") else "text", "")
-                if text and len(text) > 100:
-                    doc_id = f"{fp.name}:{hashlib.md5(text[:100].encode()).hexdigest()[:8]}"
+            if fp.suffix.lower() == ".json":
+                data = json.loads(fp.read_text(encoding="utf-8"))
+                rows = data if isinstance(data, list) else [data]
+            else:
+                rows = iter_jsonl(fp, skip_errors=False)
+            for rec in rows:
+                text = rec.get(src.text_field, "")
+                if isinstance(text, str) and len(text) > 100:
+                    doc_id = f"{fp.resolve()}:{hashlib.sha256(text.encode()).hexdigest()[:16]}"
                     yield doc_id, text
         else:
             text = fp.read_text(errors="replace")
             if len(text) > 100:
-                yield fp.name, text
+                yield str(fp.resolve()), text
 
 
 def _iter_hf_corpus(src: CorpusSource) -> Iterator[tuple[str, str]]:
@@ -168,7 +186,7 @@ def _iter_hf_corpus(src: CorpusSource) -> Iterator[tuple[str, str]]:
     from datasets import load_dataset
 
     logger.info("Loading HF corpus %s (split=%s)", src.hf_repo_id, src.hf_split)
-    ds = load_dataset(src.hf_repo_id, split=src.hf_split, trust_remote_code=False)
+    ds = load_dataset(src.hf_repo_id, split=src.hf_split, streaming=True)
     field = src.text_field
     for i, row in enumerate(ds):
         text = row.get(field, "")
@@ -183,8 +201,7 @@ def _iter_hf_corpus(src: CorpusSource) -> Iterator[tuple[str, str]]:
 def run_stage2(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     s2 = cfg.stage2_generate
     if not s2.corpora:
-        logger.warning("stage2_generate: no corpora configured — skipping")
-        return
+        raise ValueError("stage2_generate is enabled but no corpora are configured")
 
     output_dir = Path(s2.output_dir)
     ensure_dir(output_dir)
@@ -193,16 +210,19 @@ def run_stage2(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     cm.preload_processed(STAGE)
 
     total_chunks = 0
-    total_written = 0
+    seen_ids = {r["prompt_id"] for r in iter_jsonl_dir(output_dir)}
+    total_written = len(seen_ids)
+    failures = 0
 
     def _process_chunk(
         doc_id: str, chunk_idx: int, chunk_text: str, domain_hint: str | None
-    ) -> list[dict]:
-        chunk_id = f"{doc_id}:chunk_{chunk_idx:04d}"
+    ) -> tuple[str, list[dict], str | None]:
+        digest = hashlib.sha256(chunk_text.encode()).hexdigest()[:16]
+        chunk_id = f"{doc_id}:chunk_{chunk_idx:04d}:{digest}"
         chunk_hash = "sha256:" + hashlib.sha256(chunk_id.encode()).hexdigest()[:32]
 
         if cm.is_processed(chunk_hash, STAGE):
-            return []
+            return chunk_hash, [], None
 
         try:
             raw_prompts = _call_generator(
@@ -212,16 +232,16 @@ def run_stage2(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                 model=s2.generator_model,
                 temperature=s2.generator_temperature,
                 max_tokens=s2.generator_max_tokens,
+                api_key=s2.generator_api_key,
             )
         except Exception as exc:
             logger.warning("Generator failed for chunk %s: %s", chunk_id, exc)
-            cm.mark_processed(chunk_hash, STAGE, status=ItemStatus.FAILED, error_msg=str(exc))
-            return []
+            return chunk_hash, [], str(exc)
 
         records = []
         for raw in raw_prompts:
             normalized = _normalize(raw)
-            if len(normalized) < 20:
+            if len(normalized.strip()) < 20:
                 continue
             pid = prompt_id(normalized)
             domain = domain_hint or _infer_domain(normalized)
@@ -234,8 +254,7 @@ def run_stage2(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                 "chunk_id": chunk_id,
             })
 
-        cm.mark_processed(chunk_hash, STAGE, status=ItemStatus.SUCCESS)
-        return records
+        return chunk_hash, records, None
 
     with ShardedJSONLWriter(output_dir, shard_size_mb=200) as writer:
         for src in s2.corpora:
@@ -245,40 +264,44 @@ def run_stage2(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             else:
                 doc_iter = _iter_hf_corpus(src)
 
-            # Collect chunks for parallel processing
-            pending: list[tuple[str, int, str, str | None]] = []
-            for doc_id, doc_text in doc_iter:
-                chunks = _chunk_text(doc_text, s2.chunk_size_tokens, s2.chunk_overlap_tokens)
-                for i, chunk in enumerate(chunks):
-                    if len(chunk.strip()) > 50:
-                        pending.append((doc_id, i, chunk, domain_hint))
+            def chunk_args():
+                for doc_id, doc_text in doc_iter:
+                    chunks = _chunk_text(doc_text, s2.chunk_size_tokens, s2.chunk_overlap_tokens)
+                    for i, chunk in enumerate(chunks):
+                        if len(chunk.strip()) > 50:
+                            yield doc_id, i, chunk, domain_hint
 
-            logger.info(
-                "Stage2: processing %d chunks from corpus '%s' with %d workers",
-                len(pending), src.path or src.hf_repo_id, s2.max_workers,
-            )
-
+            args_iter = iter(chunk_args())
             with ThreadPoolExecutor(max_workers=s2.max_workers) as pool:
-                futures = {
-                    pool.submit(_process_chunk, *args): args
-                    for args in pending
-                }
-                for future in as_completed(futures):
-                    total_chunks += 1
-                    try:
-                        records = future.result()
-                    except Exception as exc:
-                        logger.warning("Chunk processing error: %s", exc)
-                        continue
+                pending = set()
 
-                    for rec in records:
-                        writer.write(rec)
-                        total_written += 1
+                def submit_next():
+                    args = next(args_iter, None)
+                    if args is not None:
+                        pending.add(pool.submit(_process_chunk, *args))
 
-                    if total_chunks % 1_000 == 0:
-                        logger.info(
-                            "Stage2: chunks=%d written=%d", total_chunks, total_written
-                        )
+                for _ in range(s2.max_workers * 2):
+                    submit_next()
+                while pending:
+                    done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        chunk_hash, records, error = future.result()
+                        total_chunks += 1
+                        if error is not None:
+                            failures += 1
+                            cm.mark_processed(chunk_hash, STAGE, ItemStatus.FAILED, error_msg=error)
+                        elif records:
+                            for rec in records:
+                                if rec["prompt_id"] not in seen_ids:
+                                    writer.write(rec)
+                                    seen_ids.add(rec["prompt_id"])
+                                    total_written += 1
+                            writer.flush()
+                            cm.mark_processed(chunk_hash, STAGE, ItemStatus.SUCCESS)
+                        submit_next()
+
+    if failures or not total_written:
+        raise RuntimeError(f"Stage 2 incomplete: {failures} failed chunks, {total_written} prompts")
 
     cm.mark_stage_complete(STAGE, output_count=total_written)
     logger.info("Stage2 complete: chunks=%d, prompts_written=%d", total_chunks, total_written)

@@ -4,9 +4,8 @@ Stage 6 — Automated Quality Filtering.
 Applies filters in cost-order (cheapest first, most expensive last):
   1. Structural  — field presence, length bounds, repetition
   2. Heuristic   — info density, contradiction markers
-  3. Math        — SymPy expression verification (math/science domains)
-  4. Code        — sandboxed code execution (code domain)
-  5. LLM Judge   — sampled quality scoring (all domains)
+  3. Code        — sandboxed code execution (code domain)
+  4. LLM Judge   — sampled quality scoring (all domains)
 
 Writes a filtered JSONL and a JSON filter report.
 
@@ -33,7 +32,6 @@ from sft_pipeline.config import PipelineConfig
 from sft_pipeline.filters.code_verifier import check_code
 from sft_pipeline.filters.heuristic import check_heuristic
 from sft_pipeline.filters.llm_judge import check_llm_judge
-from sft_pipeline.filters.math_verifier import check_math
 from sft_pipeline.filters.structural import check_structural
 from sft_pipeline.storage import ensure_dir, iter_jsonl, iter_jsonl_dir
 
@@ -46,7 +44,7 @@ def _parse_record(record: dict, delimiters) -> None:
     """
     Populate ``reasoning`` / ``answer`` from the raw ``response`` in place.
 
-    Stage 5 writes raw responses only; the math/code filters (and the export
+    Stage 5 writes raw responses only; the code filter (and the export
     schema) need the parsed fields. Uses the configured reasoning delimiters —
     set ``stage5_inference.delimiters`` to whatever the teacher actually
     emitted (e.g. ``<|channel>thought`` / ``<channel|>``).
@@ -85,19 +83,13 @@ def _apply_filters(record: dict, s6, rng: random.Random, delimiters=None) -> str
     if not r.passed:
         return f"heuristic:{r.reason}"
 
-    # 3. Math (only for relevant domains)
-    if s6.math.enabled and domain in s6.math.domains:
-        r = check_math(record)
-        if not r.passed:
-            return f"math:{r.reason}"
-
-    # 4. Code (only for code domain)
+    # 3. Code (only for code domain)
     if s6.code.enabled and domain in s6.code.domains:
         r = check_code(record, s6.code)
         if not r.passed:
             return f"code:{r.reason}"
 
-    # 5. LLM Judge (sampled)
+    # 4. LLM Judge (sampled)
     r = check_llm_judge(record, s6.llm_judge, rng=rng)
     if not r.passed:
         return f"llm_judge:{r.reason}"
@@ -215,13 +207,17 @@ def _run_shards_ray(todo, s6, delimiters, seed, out_dir, stats_path, agg, cfg) -
         remote.remote(str(shard), key, out_dir, s6, delimiters, seed): key
         for key, shard in todo
     }
+    failures = 0
     for _done, _total, key, result, err in ray_utils.as_completed(
         future_to_key, desc="Stage6 shard"
     ):
         if err is not None:
             logger.error("Stage6: shard %s failed; will retry on resume.", key)
+            failures += 1
             continue
         _record_stats(result, stats_path, agg)
+    if failures:
+        raise RuntimeError(f"Stage 6 incomplete: {failures} shards failed; rerun to retry")
 
 
 def _run_debug(cfg: PipelineConfig) -> None:
@@ -246,11 +242,11 @@ def _run_debug(cfg: PipelineConfig) -> None:
         stage5_dir, limit, debug_path,
     )
 
-    if not s6.parse_responses and (s6.math.enabled or s6.llm_judge.enabled):
+    if not s6.parse_responses and (s6.code.enabled or s6.llm_judge.enabled):
         logger.warning(
-            "Stage6: parse_responses is off but math/llm_judge filters are enabled. "
+            "Stage6: parse_responses is off but code/llm_judge filters are enabled. "
             "They need 'reasoning'/'answer' fields; on raw Stage 5 'response' "
-            "records those checks silently pass everything."
+            "records those filters do not receive parsed content."
         )
 
     collected: list[dict] = []
@@ -295,18 +291,18 @@ def run_stage6(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     cm.mark_stage_started(STAGE)
 
-    if not s6.parse_responses and (s6.math.enabled or s6.llm_judge.enabled):
+    if not s6.parse_responses and (s6.code.enabled or s6.llm_judge.enabled):
         logger.warning(
-            "Stage6: parse_responses is off but math/llm_judge filters are enabled. "
+            "Stage6: parse_responses is off but code/llm_judge filters are enabled. "
             "They need 'reasoning'/'answer' fields; on raw Stage 5 'response' "
-            "records those checks silently pass everything. "
+            "records those filters do not receive parsed content. "
             "Enable stage6_filter.parse_responses or disable these filters."
         )
 
     n_workers = s6.n_workers if s6.n_workers is not None else (os.cpu_count() or 1)
     n_workers = max(1, n_workers)
 
-    input_shards = sorted(stage5_dir.glob("*.jsonl"))
+    input_shards = sorted(stage5_dir.glob("part-*.jsonl"))
     if not input_shards:
         raise FileNotFoundError(
             f"Stage6: no *.jsonl shards found in {stage5_dir}. Run Stage 5 first."

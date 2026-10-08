@@ -32,6 +32,9 @@ def check_structural(record: dict, cfg: StructuralFilterConfig) -> FilterResult:
     reasoning = record.get("reasoning", "")
     answer = record.get("answer", "")
 
+    if record.get("finish_reason") == "length":
+        return FilterResult(False, "truncated_response")
+
     # 1. Prompt must always be present
     if not prompt or not prompt.strip():
         return FilterResult(False, "missing_prompt")

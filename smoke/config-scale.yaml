@@ -1,0 +1,131 @@
+# Run smoke/prepare_scale.py first. All outputs remain under smoke/.
+global:
+  run_id: ${SFT_RUN_ID}
+  base_path: ./smoke/runs/{run_id}
+  device: rocm
+  seed: 42
+stage1_collect:
+  datasets:
+  - source: hf_dataset
+    hf_repo_id: openai/gsm8k
+    hf_config: main
+    hf_split: train
+    prompt_field: question
+    domain_hint: math
+    max_examples: 5000
+  - source: local_jsonl
+    path: smoke/runs/freeze_validation/sources/code.jsonl
+    prompt_field: prompt
+    domain_hint: code
+  - source: local_jsonl
+    path: smoke/runs/freeze_validation/sources/general.jsonl
+    prompt_field: prompt
+  - source: local_jsonl
+    path: smoke/runs/freeze_validation/sources/science.jsonl
+    prompt_field: prompt
+    domain_hint: science
+  - source: local_jsonl
+    path: smoke/fixtures/prompts.jsonl
+    prompt_field: prompt
+stage2_generate:
+  corpora:
+  - source: local
+    path: smoke/runs/freeze_validation/sources/corpus.jsonl
+  chunk_size_tokens: 1024
+  chunk_overlap_tokens: 32
+  prompts_per_chunk: 2
+  generator_model: ${SFT_JUDGE_MODEL}
+  generator_endpoint: ${SFT_JUDGE_API_BASE}
+  generator_api_key: ${SFT_API_KEY}
+  generator_max_tokens: 1536
+  generator_temperature: 0.4
+  max_workers: 16
+decontaminate:
+  evals:
+  - name: smoke_canary
+    source: local_jsonl
+    path: smoke/fixtures/eval.jsonl
+    match_fields:
+    - question
+  - name: gsm8k_test
+    source: hf_dataset
+    hf_repo_id: openai/gsm8k
+    hf_configs:
+    - main
+    splits:
+    - test
+    match_fields:
+    - question
+  - name: arc_challenge_test
+    source: hf_dataset
+    hf_repo_id: allenai/ai2_arc
+    hf_configs:
+    - ARC-Challenge
+    splits:
+    - test
+    match_fields:
+    - question
+  n_workers: 4
+stage3_cluster:
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  embedding_batch_size: 128
+  faiss_nlist: 64
+  faiss_nprobe: 16
+  faiss_training_sample: 20000
+  clustering_algorithm: torch_kmeans
+  n_clusters: 32
+  annotation_enabled: true
+  annotation_model: ${SFT_JUDGE_MODEL}
+  annotation_api_base: ${SFT_JUDGE_API_BASE}
+  annotation_api_key: ${SFT_API_KEY}
+  annotation_concurrency: 32
+  annotation_max_tokens: 1024
+  annotation_checkpoint_every: 256
+stage4_sample:
+  semantic_dedup_enabled: false
+  total_prompts: 4000
+  domain_quotas:
+    math: 0.5
+    code: 0.25
+    science: 0.125
+    general: 0.125
+  difficulty_quotas:
+    default:
+      easy: 0.5
+      medium: 0.45
+      hard: 0.05
+stage5_inference:
+  model: ${SFT_MODEL}
+  inference_mode: openai_api
+  api_base: ${SFT_API_BASE}
+  api_key: ${SFT_API_KEY}
+  concurrency: 32
+  request_timeout: 240
+  max_retries: 2
+  checkpoint_every: 32
+  generation:
+    temperature: 0.2
+    top_p: 0.95
+    max_tokens: 6144
+    n_candidates: 1
+  shard_size_mb: 5
+stage6_filter:
+  n_workers: 8
+  parse_responses: true
+  code:
+    enabled: true
+    sandbox: docker
+    timeout_seconds: 3
+  llm_judge:
+    enabled: true
+    model_endpoint: ${SFT_JUDGE_API_BASE}
+    model: ${SFT_JUDGE_MODEL}
+    api_key: ${SFT_API_KEY}
+    max_tokens: 1024
+    sample_rate: 1.0
+    score_threshold: 6.0
+    request_timeout: 120
+export:
+  enabled: true
+  shard_size_mb: 5
+  push_to_hub: false

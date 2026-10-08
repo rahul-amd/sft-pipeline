@@ -1,6 +1,8 @@
 # SFT Pipeline
 
-Automated 7-stage pipeline for constructing high-quality post-training datasets for LLM supervised fine-tuning (SFT). Produces **5M prompt–response pairs** with structured reasoning traces from a teacher model.
+Pipeline for constructing post-training datasets for LLM supervised fine-tuning (SFT). Targets **5M prompt–response pairs** with reasoning traces from a teacher model; actual output depends on source coverage, sampling, and filtering.
+
+For a small end-to-end example with no manual transfers, see [the smoke-run instructions](smoke/README.md) and [`smoke/config.yaml`](smoke/config.yaml). See [the release audit](smoke/release-readiness.md) for remaining production limitations and changes made to support the HTTP workflow.
 
 ## Overview
 
@@ -9,10 +11,12 @@ The pipeline chains together:
 1. **Prompt collection** — ingest from 45+ public HuggingFace datasets across math, code, science, and general instruction-following
 2. **Prompt generation** — synthesize additional prompts from knowledge-rich corpora (arXiv, Wikipedia, textbooks) using a lightweight LLM
 3. **Clustering** — embed all prompts, build a FAISS index, cluster by domain and assign difficulty labels (Easy / Medium / Hard)
-4. **Sampling** — enforce domain and difficulty quotas, deduplicate by embedding cosine similarity, sort for KV-cache reuse
+4. **Sampling** — apply domain and difficulty quotas with centroid-ordered sampling across clusters. Semantic deduplication is disabled by default; set `stage4_sample.semantic_dedup_enabled: true` for exact global cosine checks and replacement candidates within each quota cell. KV-cache similarity sorting is not implemented.
 5. **Inference** — batch inference with Qwen3.5-122B-A10B via vLLM; each response carries a reasoning trace and a final answer, split by configurable delimiters (`stage5_inference.delimiters` — the production teacher emits `<|channel>thought … <channel|> …`)
-6. **Quality filtering** — structural checks, heuristics, SymPy math verification, sandboxed code execution, LLM judge (10% sample). Thresholds calibrated against an LLM judge on real Stage 5 data (see `sanity-checks/`)
+6. **Quality filtering** — structural checks, heuristics, Python execution in restricted Docker containers, and an optional sampled LLM judge. Pre-pull `python:3.12-slim` on every filtering worker. There is no dedicated math filter. See `sanity-checks/` for the calibration harness.
 7. **Multilingual expansion** — *(v2, not yet implemented)*
+
+After an enabled Stage 6 completes, `run` exports the final schema automatically. Use `run-stage export` to export an existing filtered run independently.
 
 > **Decontamination** *(inserted between steps 2 and 3)* — before clustering, remove any collected/generated prompt that overlaps a configured downstream eval benchmark (13-word-gram containment), so the teacher never trains on benchmark questions. Opt-in via `decontaminate.evals`; Stage 3 auto-reads the cleaned pool. See [`sft_pipeline/decontam/README.md`](sft_pipeline/decontam/README.md).
 
@@ -95,8 +99,8 @@ sft-pipeline status --config config/prod.yaml
 # Dry-run: estimate GPU-hours, wall clock, API cost (no inference)
 sft-pipeline estimate --config config/prod.yaml
 
-# Override individual config values at the CLI
-sft-pipeline run --config config/prod.yaml --set stage5_inference.n_replicas=32
+# Export an existing filtered run
+sft-pipeline run-stage export --config config/prod.yaml
 ```
 
 ## Running Stages Individually
@@ -234,11 +238,12 @@ Add `--umap` to compute UMAP 2D coords for the sampled prompts (slow; requires `
 
 ## Configuration
 
-All pipeline parameters live in a single YAML file validated by Pydantic v2. Config files are layered:
+Pipeline parameters are validated by Pydantic v2. The loader reads one YAML file and fills omitted fields from the Python model defaults; it does **not** inherit or merge `default.yaml`. The CLI does not implement `--set`. Edit the chosen YAML, or pass a nested override dictionary to Python's `load_config`:
 
 | File | Purpose |
 |------|---------|
-| `config/default.yaml` | Master config — all defaults documented |
+| `config/default.yaml` | Explicit example configuration; not automatically inherited |
+| `smoke/config.yaml` | Small complete pipeline using an OpenAI-compatible server |
 | `config/dev.yaml` | Laptop overrides (CPU/CUDA, small scale) |
 | `config/prod.yaml` | Cluster overrides (ROCm, 7M prompts, 64 replicas) |
 | `config/stage1_research.yaml` | Stage 1 only; 45 public HF research datasets |
@@ -247,7 +252,7 @@ All pipeline parameters live in a single YAML file validated by Pydantic v2. Con
 | `config/decontaminate.yaml` | Eval decontamination (before Stage 3); standalone CPU run |
 | `config/stage6_filter_v2.yaml` | Stage 6 rerun with recalibrated verifiers; writes to `stage6_v2/` |
 
-Placeholders `{run_id}` and `{base_path}` are resolved throughout string fields at load time.
+Placeholders `{run_id}` and `{base_path}` are resolved throughout string fields at load time. `${VARIABLE}` reads a required environment variable, allowing portable endpoints and credentials without storing secrets in YAML. Use a fresh run ID after changing inputs or configuration; automatic cache invalidation is not implemented.
 
 ### Key config fields
 
@@ -301,7 +306,8 @@ stage3_cluster:
 stage4_sample:
   total_prompts: 7000000
   domain_quotas: {math: 0.25, code: 0.20, science: 0.20, general: 0.20, language: 0.15}
-  difficulty_quotas: {easy: 0.20, medium: 0.50, hard: 0.30}
+  difficulty_quotas:
+    default: {easy: 0.20, medium: 0.50, hard: 0.30}
 
 stage5_inference:
   model: "Qwen/Qwen3.5-122B-A10B"

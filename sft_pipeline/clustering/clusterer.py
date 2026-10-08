@@ -98,6 +98,7 @@ def _cluster_with_faiss_kmeans(
     n_clusters: int,
     training_sample: int,
     device: str,
+    seed: int = 42,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Run FAISS built-in k-means on the full embedding matrix.
@@ -116,7 +117,7 @@ def _cluster_with_faiss_kmeans(
 
     # --- Train on a random subsample ---
     train_size = min(training_sample, N)
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(seed)
     train_idx = rng.choice(N, size=train_size, replace=False)
     train_vecs = embeddings[train_idx].astype(np.float32)
 
@@ -128,12 +129,12 @@ def _cluster_with_faiss_kmeans(
     # Try GPU (faiss-gpu / faiss-rocm); fall back to CPU silently.
     use_gpu = device in ("cuda", "rocm")
     try:
-        kmeans = faiss.Kmeans(D, k, niter=20, verbose=True, gpu=use_gpu, seed=42)
+        kmeans = faiss.Kmeans(D, k, niter=20, verbose=True, gpu=use_gpu, seed=seed)
         kmeans.train(train_vecs)
     except Exception as e:
         if use_gpu:
             logger.warning("faiss_kmeans: GPU mode failed (%s), retrying on CPU", e)
-            kmeans = faiss.Kmeans(D, k, niter=20, verbose=True, gpu=False, seed=42)
+            kmeans = faiss.Kmeans(D, k, niter=20, verbose=True, gpu=False, seed=seed)
             kmeans.train(train_vecs)
         else:
             raise
@@ -167,6 +168,7 @@ def _cluster_with_torch_kmeans(
     device: str,
     n_iter: int = 20,
     chunk_size: int = 20_000,
+    seed: int = 42,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     GPU k-means via PyTorch matmuls on L2-normalised embeddings (cosine distance).
@@ -183,7 +185,8 @@ def _cluster_with_torch_kmeans(
     import torch
     import torch.nn.functional as F
 
-    torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch_device = torch.device("cuda" if device in ("cuda", "rocm") and torch.cuda.is_available() else "cpu")
+    generator = torch.Generator(device=torch_device).manual_seed(seed)
     if not torch.cuda.is_available():
         logger.warning("torch_kmeans: no GPU available, falling back to CPU (slow)")
 
@@ -191,7 +194,7 @@ def _cluster_with_torch_kmeans(
     k = min(n_clusters, N)
     train_size = min(max(training_sample, k), N)   # at least k to init centroids
 
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(seed)
     train_idx = rng.choice(N, size=train_size, replace=False)
 
     # Load training set to GPU as float16 (4M × 1024 × 2B = 8 GB)
@@ -201,7 +204,7 @@ def _cluster_with_torch_kmeans(
     X = F.normalize(X.float(), dim=1).half()   # L2-normalise; keep float16
 
     # Init centroids from random training vectors; float32 for stable updates
-    init_idx = torch.randperm(train_size, device=torch_device)[:k]
+    init_idx = torch.randperm(train_size, device=torch_device, generator=generator)[:k]
     C = F.normalize(X[init_idx].float(), dim=1)   # (k, D) float32
 
     logger.info(
@@ -230,7 +233,7 @@ def _cluster_with_torch_kmeans(
         empty_mask = counts == 0
         n_empty = int(empty_mask.sum().item())
         if n_empty:
-            ri = torch.randint(train_size, (n_empty,), device=torch_device)
+            ri = torch.randint(train_size, (n_empty,), device=torch_device, generator=generator)
             new_C[empty_mask] = X[ri].float()
             counts[empty_mask] = 1.0
 
@@ -279,6 +282,7 @@ def _cluster_with_flash_kmeans(
     embeddings: np.ndarray,
     n_clusters: int,
     device: str,
+    seed: int = 42,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Run flash-kmeans (Triton GPU kernels) on the full embedding matrix.
@@ -323,7 +327,11 @@ def _cluster_with_flash_kmeans(
     # load_embeddings() now returns float16 so copy=False avoids a 44 GB copy.
     x = torch.from_numpy(embeddings.astype(np.float16, copy=False)).unsqueeze(0).cuda()
 
-    cluster_ids, centers, _ = batch_kmeans_Euclid(x, n_clusters=k, tol=1e-4, verbose=False)
+    generator = torch.Generator(device=x.device).manual_seed(seed)
+    initial = torch.randperm(N, device=x.device, generator=generator)[:k]
+    cluster_ids, centers, _ = batch_kmeans_Euclid(
+        x, n_clusters=k, tol=1e-4, verbose=False, init_centroids=x[:, initial].clone(),
+    )
 
     # Remove batch dim: (1, N) → (N,);  (1, K, D) → (K, D)
     labels = cluster_ids.squeeze(0).cpu().numpy().astype(np.int64)
@@ -342,6 +350,7 @@ def _cluster_centroids(
     algorithm: str,
     min_cluster_size: int,
     n_clusters: int,
+    seed: int = 42,
 ) -> np.ndarray:
     """Cluster the centroid vectors (small, fast). Returns label array."""
     if algorithm == "hdbscan":
@@ -354,7 +363,7 @@ def _cluster_centroids(
         return clusterer.fit_predict(centroids.astype(np.float64))
     else:
         from sklearn.cluster import MiniBatchKMeans
-        km = MiniBatchKMeans(n_clusters=min(n_clusters, len(centroids)), random_state=42)
+        km = MiniBatchKMeans(n_clusters=min(n_clusters, len(centroids)), random_state=seed)
         return km.fit_predict(centroids)
 
 
@@ -436,6 +445,7 @@ def cluster_prompts(
     n_clusters: int = 50,
     device: str = "cpu",
     training_sample: int = 1_000_000,
+    seed: int = 42,
 ) -> list[dict]:
     """
     Assign each prompt a domain label and difficulty tier.
@@ -459,14 +469,14 @@ def cluster_prompts(
     if algorithm in ("torch_kmeans", "faiss_kmeans", "flash_kmeans"):
         if algorithm == "torch_kmeans":
             labels, centers = _cluster_with_torch_kmeans(
-                embeddings, n_clusters, training_sample, device
+                embeddings, n_clusters, training_sample, device, seed=seed
             )
         elif algorithm == "faiss_kmeans":
             labels, centers = _cluster_with_faiss_kmeans(
-                embeddings, n_clusters, training_sample, device
+                embeddings, n_clusters, training_sample, device, seed=seed
             )
         else:
-            labels, centers = _cluster_with_flash_kmeans(embeddings, n_clusters, device)
+            labels, centers = _cluster_with_flash_kmeans(embeddings, n_clusters, device, seed=seed)
 
         # Build domain map: for each cluster, inspect a sample of its member prompts.
         # Do this in a single O(N) pass to collect up to 50 member indices per cluster,
@@ -511,7 +521,7 @@ def cluster_prompts(
             "Use algorithm='faiss_kmeans' or 'flash_kmeans' to cluster without a FAISS index."
         )
 
-    centroid_labels = _cluster_centroids(centroids, algorithm, min_cluster_size, n_clusters)
+    centroid_labels = _cluster_centroids(centroids, algorithm, min_cluster_size, n_clusters, seed=seed)
     logger.info("Centroid clustering done: %d unique labels", len(set(centroid_labels)))
 
     centroid_assignments = _assign_to_centroids(embeddings, faiss_index)

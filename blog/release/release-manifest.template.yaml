@@ -1,0 +1,69 @@
+# Editorial metadata template, NOT a runnable pipeline config.
+# null means unverified/unprovided; never replace it with smoke-run counts.
+status: draft
+release_date: null
+article_url: null
+datasets:
+  - kind: sft
+    name: null
+    dataset_url: null
+    dataset_revision: null
+    code_url: https://github.com/rahul-amd/sft-pipeline
+    release_code_revision: null
+    generation_code_revision: null  # May differ from the released code revision.
+    recipe_url: null
+    recipe_sha256: null
+    dataset_card_url: null
+    license_and_component_terms: null
+    source_manifest_url: null
+    source_split_and_revision_inventory: null
+    teacher_models_revisions_and_settings: null
+    grounding_annotation_and_judge_models: null
+    judge_sample_rate: null
+    semantic_dedup_enabled_and_threshold: null
+    train_serialization_and_reasoning_policy: null
+    tokenizer_revision_and_template: null
+    records: null
+    unique_source_documents: null
+    serialized_tokens: null
+    loss_bearing_tokens: null
+    length_distribution: null
+    domain_difficulty_language_mixture: null
+    train_dev_split_policy: null
+    benchmark_exclusions_and_overlap_report: null
+    generation_cost_and_yield_report: null
+    human_review_report: null
+    training_comparison_report: null
+    audit_artifacts_and_redistribution_terms: null
+    file_manifest_url_and_checksums: null
+  - kind: long_context
+    name: null
+    dataset_url: null
+    dataset_revision: null
+    code_url: https://github.com/rahul-amd/lc-pipeline
+    release_code_revision: null
+    generation_code_revision: null
+    recipe_url: null
+    recipe_sha256: null
+    dataset_card_url: null
+    license_and_component_terms: null
+    source_manifest_url: null
+    source_split_and_revision_inventory: null
+    teacher_models_revisions_and_settings: null
+    tokenizer_revision_and_template: null
+    formats_and_loss_masks: null
+    families_and_mixture_weights: null
+    task_versions_and_seeds: null
+    records_by_family_and_format: null
+    unique_source_documents: null
+    serialized_tokens: null
+    loss_bearing_tokens: null
+    requested_and_observed_length_distribution: null
+    length_accounting_modes: null
+    train_dev_split_and_near_duplicate_policy: null
+    benchmark_exclusions_and_template_overlap_report: null
+    generation_cost_and_yield_report: null
+    human_review_report: null
+    training_comparison_report: null
+    request_response_audits_and_redistribution_terms: null
+    file_manifest_url_and_checksums: null

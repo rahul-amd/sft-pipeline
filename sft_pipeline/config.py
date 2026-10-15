@@ -122,6 +122,10 @@ class Stage2Config(BaseModel):
     generator_api_key: str = "EMPTY"
     generator_temperature: float = 0.8
     generator_max_tokens: int = 512
+    # Validate standalone questions against the retained source chunk.
+    grounding_enabled: bool = True
+    grounding_model: str | None = None  # defaults to generator_model
+    grounding_max_tokens: int = Field(2048, ge=1)
     max_workers: int = Field(16, ge=1)
     output_dir: str = "{base_path}/stage2"
 
@@ -417,6 +421,8 @@ class LLMJudgeConfig(BaseModel):
     api_key: str = "EMPTY"
     max_tokens: int = Field(512, ge=1)
     request_timeout: float = Field(120.0, gt=0)
+    # Refuse oversized inputs rather than silently scoring clipped content.
+    max_input_chars: int = Field(100_000, ge=1)
     on_error: Literal["raise", "pass"] = "raise"
     score_threshold: float = Field(6.0, ge=1.0, le=10.0)
     sample_rate: float = Field(0.10, ge=0.0, le=1.0)

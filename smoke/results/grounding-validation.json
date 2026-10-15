@@ -1,0 +1,746 @@
+{
+  "status": "live_evaluation_completed_with_documented_quality_failures",
+  "date_utc": "2026-10-08",
+  "branch": "stage2-grounding-judge-calibration",
+  "base_commit": "854656dca7cae488dfd077761c9f1e9738e6125d",
+  "allocation": {
+    "job": 54564,
+    "node": "tus1-p15-g43",
+    "partition": "hissu",
+    "authorization": "User explicitly authorized this run only",
+    "gpu_count": 4,
+    "released": true
+  },
+  "models": {
+    "teacher": "Qwen/Qwen3-4B",
+    "helper": "Qwen/Qwen3-8B",
+    "reviewer": "Qwen/Qwen3-32B",
+    "helper_and_reviewer_thinking": false
+  },
+  "tests": {
+    "full_suite": {
+      "tests": 288,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit": "smoke/runs/grounding_live_20261008/full-tests.xml"
+    },
+    "final_audit_harness": {
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit": "smoke/runs/grounding_live_20261008/audit-harness-tests.xml"
+    }
+  },
+  "pipeline": {
+    "status": "passed",
+    "counts": {
+      "stage1_collect": 17,
+      "stage2_generate": 5,
+      "decontaminate": 21,
+      "stage3_cluster": 21,
+      "stage4_sample": 20,
+      "stage5_inference": 20,
+      "stage6_filter": 18,
+      "export": 18
+    },
+    "filter_decisions": 20,
+    "generated_prompts_in_final": 4,
+    "resume_unchanged": true,
+    "elapsed_seconds": 223.0,
+    "config_sha256": "a05716cc1073be81822eea29b4964ebc8f5cafeb5fab358bdda63f89a09ea3f8",
+    "versions": {
+      "pydantic": "2.12.5",
+      "datasets": "4.8.4",
+      "sentence-transformers": "5.5.1",
+      "faiss-cpu": "1.14.2",
+      "openai": "2.30.0"
+    }
+  },
+  "pipeline_report": "smoke/runs/grounding_e2e_final_20261008/smoke_report.json",
+  "source_candidates": 6,
+  "source_candidates_kept": 5,
+  "final_rejections": {
+    "structural:truncated_response": 2
+  },
+  "http_status_counts": {
+    "teacher": {
+      "200": 38
+    },
+    "helper": {
+      "200": 433
+    },
+    "reviewer": {
+      "200": 304
+    }
+  },
+  "grounding": {
+    "regression_8b": {
+      "status": "completed",
+      "challenge_passed": true,
+      "errors": [],
+      "model": "grounding-helper",
+      "api_base": "http://127.0.0.1:18502/v1",
+      "challenge_questions": 7,
+      "generated": 12,
+      "generated_accepted": 8,
+      "limitations": "Assistant-curated cases. Generated acceptance is the model's judgment, not an independent correctness label.",
+      "confusion": {
+        "true_reject": 3,
+        "true_accept": 4
+      },
+      "report": "smoke/runs/grounding_live_20261008/grounding-probe-final/report.json"
+    },
+    "holdout_8b": {
+      "status": "completed",
+      "challenge_passed": false,
+      "errors": [
+        {
+          "case": "unknown_group_total",
+          "question": "How many replies did District Q supply in the Eira survey?",
+          "expected": true,
+          "accepted": false
+        }
+      ],
+      "model": "grounding-helper",
+      "api_base": "http://127.0.0.1:18502/v1",
+      "challenge_questions": 8,
+      "generated": 12,
+      "generated_accepted": 9,
+      "limitations": "Assistant-curated cases. Generated acceptance is the model's judgment, not an independent correctness label.",
+      "confusion": {
+        "true_reject": 4,
+        "true_accept": 3,
+        "false_reject": 1
+      },
+      "report": "smoke/runs/grounding_live_20261008/grounding-holdout/report.json"
+    },
+    "holdout_32b": {
+      "status": "completed",
+      "challenge_passed": false,
+      "errors": [
+        {
+          "case": "person_and_place",
+          "question": "In what year did Ravi move to Larkport?",
+          "expected": true,
+          "accepted": false
+        },
+        {
+          "case": "device_identity",
+          "question": "At what temperature does the Orion reactor operate?",
+          "expected": true,
+          "accepted": false
+        }
+      ],
+      "model": "grounding-reviewer",
+      "api_base": "http://127.0.0.1:18503/v1",
+      "challenge_questions": 8,
+      "generated": 12,
+      "generated_accepted": 10,
+      "limitations": "Assistant-curated cases. Generated acceptance is the model's judgment, not an independent correctness label.",
+      "confusion": {
+        "true_reject": 4,
+        "false_reject": 2,
+        "true_accept": 2
+      },
+      "report": "smoke/runs/grounding_live_20261008/grounding-holdout-32b/report.json"
+    }
+  },
+  "judge_calibration": {
+    "8b": {
+      "manifest": {
+        "model": "grounding-helper",
+        "api_base": "http://127.0.0.1:18502/v1",
+        "max_tokens": 1024,
+        "baseline_ref": "854656dca7cae488dfd077761c9f1e9738e6125d",
+        "current_prompt_version": "grounded-v2",
+        "cases_sha256": "7cb1d1a0395dcea70351689736c4cfded4e660fc8f80b429eb5215998efde0ee",
+        "current_prompt_sha256": "bcb40a45a998c450135982eb30433c2f5a8c5483789ded4cb55257cdab1d626b"
+      },
+      "variants": {
+        "baseline": {
+          "calibration_sweep": {
+            "1": {
+              "true_accepts": 16,
+              "true_rejects": 0,
+              "false_accepts": 16,
+              "false_rejects": 0,
+              "accept_recall": 1.0,
+              "reject_recall": 0.0,
+              "balanced_accuracy": 0.5
+            },
+            "2": {
+              "true_accepts": 15,
+              "true_rejects": 3,
+              "false_accepts": 13,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.1875,
+              "balanced_accuracy": 0.5625
+            },
+            "3": {
+              "true_accepts": 15,
+              "true_rejects": 5,
+              "false_accepts": 11,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.3125,
+              "balanced_accuracy": 0.625
+            },
+            "4": {
+              "true_accepts": 15,
+              "true_rejects": 6,
+              "false_accepts": 10,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.375,
+              "balanced_accuracy": 0.65625
+            },
+            "5": {
+              "true_accepts": 14,
+              "true_rejects": 6,
+              "false_accepts": 10,
+              "false_rejects": 2,
+              "accept_recall": 0.875,
+              "reject_recall": 0.375,
+              "balanced_accuracy": 0.625
+            },
+            "6": {
+              "true_accepts": 14,
+              "true_rejects": 11,
+              "false_accepts": 5,
+              "false_rejects": 2,
+              "accept_recall": 0.875,
+              "reject_recall": 0.6875,
+              "balanced_accuracy": 0.78125
+            },
+            "7": {
+              "true_accepts": 14,
+              "true_rejects": 12,
+              "false_accepts": 4,
+              "false_rejects": 2,
+              "accept_recall": 0.875,
+              "reject_recall": 0.75,
+              "balanced_accuracy": 0.8125
+            },
+            "8": {
+              "true_accepts": 13,
+              "true_rejects": 13,
+              "false_accepts": 3,
+              "false_rejects": 3,
+              "accept_recall": 0.8125,
+              "reject_recall": 0.8125,
+              "balanced_accuracy": 0.8125
+            },
+            "9": {
+              "true_accepts": 13,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 3,
+              "accept_recall": 0.8125,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.90625
+            },
+            "10": {
+              "true_accepts": 12,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 4,
+              "accept_recall": 0.75,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.875
+            }
+          },
+          "suggested_threshold": 9,
+          "calibration_at_suggested": {
+            "true_accepts": 13,
+            "true_rejects": 16,
+            "false_accepts": 0,
+            "false_rejects": 3,
+            "accept_recall": 0.8125,
+            "reject_recall": 1.0,
+            "balanced_accuracy": 0.90625
+          },
+          "holdout_at_suggested": {
+            "true_accepts": 6,
+            "true_rejects": 7,
+            "false_accepts": 1,
+            "false_rejects": 2,
+            "accept_recall": 0.75,
+            "reject_recall": 0.875,
+            "balanced_accuracy": 0.8125
+          },
+          "calibration_at_default_6": {
+            "true_accepts": 14,
+            "true_rejects": 11,
+            "false_accepts": 5,
+            "false_rejects": 2,
+            "accept_recall": 0.875,
+            "reject_recall": 0.6875,
+            "balanced_accuracy": 0.78125
+          },
+          "holdout_at_default_6": {
+            "true_accepts": 7,
+            "true_rejects": 6,
+            "false_accepts": 2,
+            "false_rejects": 1,
+            "accept_recall": 0.875,
+            "reject_recall": 0.75,
+            "balanced_accuracy": 0.8125
+          }
+        },
+        "current": {
+          "calibration_sweep": {
+            "1": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "2": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "3": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "4": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "5": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "6": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "7": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "8": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "9": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "10": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            }
+          },
+          "suggested_threshold": 6,
+          "calibration_at_suggested": {
+            "true_accepts": 15,
+            "true_rejects": 16,
+            "false_accepts": 0,
+            "false_rejects": 1,
+            "accept_recall": 0.9375,
+            "reject_recall": 1.0,
+            "balanced_accuracy": 0.96875
+          },
+          "holdout_at_suggested": {
+            "true_accepts": 8,
+            "true_rejects": 7,
+            "false_accepts": 1,
+            "false_rejects": 0,
+            "accept_recall": 1.0,
+            "reject_recall": 0.875,
+            "balanced_accuracy": 0.9375
+          },
+          "calibration_at_default_6": {
+            "true_accepts": 15,
+            "true_rejects": 16,
+            "false_accepts": 0,
+            "false_rejects": 1,
+            "accept_recall": 0.9375,
+            "reject_recall": 1.0,
+            "balanced_accuracy": 0.96875
+          },
+          "holdout_at_default_6": {
+            "true_accepts": 8,
+            "true_rejects": 7,
+            "false_accepts": 1,
+            "false_rejects": 0,
+            "accept_recall": 1.0,
+            "reject_recall": 0.875,
+            "balanced_accuracy": 0.9375
+          }
+        }
+      },
+      "report": "smoke/runs/grounding_live_20261008/calibration-8b-v2/report.json"
+    },
+    "32b": {
+      "manifest": {
+        "model": "grounding-reviewer",
+        "api_base": "http://127.0.0.1:18503/v1",
+        "max_tokens": 1024,
+        "baseline_ref": "854656dca7cae488dfd077761c9f1e9738e6125d",
+        "current_prompt_version": "grounded-v2",
+        "cases_sha256": "7cb1d1a0395dcea70351689736c4cfded4e660fc8f80b429eb5215998efde0ee",
+        "current_prompt_sha256": "bcb40a45a998c450135982eb30433c2f5a8c5483789ded4cb55257cdab1d626b"
+      },
+      "variants": {
+        "baseline": {
+          "calibration_sweep": {
+            "1": {
+              "true_accepts": 16,
+              "true_rejects": 0,
+              "false_accepts": 16,
+              "false_rejects": 0,
+              "accept_recall": 1.0,
+              "reject_recall": 0.0,
+              "balanced_accuracy": 0.5
+            },
+            "2": {
+              "true_accepts": 15,
+              "true_rejects": 1,
+              "false_accepts": 15,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.0625,
+              "balanced_accuracy": 0.5
+            },
+            "3": {
+              "true_accepts": 15,
+              "true_rejects": 2,
+              "false_accepts": 14,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.125,
+              "balanced_accuracy": 0.53125
+            },
+            "4": {
+              "true_accepts": 15,
+              "true_rejects": 4,
+              "false_accepts": 12,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.25,
+              "balanced_accuracy": 0.59375
+            },
+            "5": {
+              "true_accepts": 15,
+              "true_rejects": 5,
+              "false_accepts": 11,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.3125,
+              "balanced_accuracy": 0.625
+            },
+            "6": {
+              "true_accepts": 15,
+              "true_rejects": 9,
+              "false_accepts": 7,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.5625,
+              "balanced_accuracy": 0.75
+            },
+            "7": {
+              "true_accepts": 14,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 2,
+              "accept_recall": 0.875,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.90625
+            },
+            "8": {
+              "true_accepts": 12,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 4,
+              "accept_recall": 0.75,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.84375
+            },
+            "9": {
+              "true_accepts": 8,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 8,
+              "accept_recall": 0.5,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.75
+            },
+            "10": {
+              "true_accepts": 5,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 11,
+              "accept_recall": 0.3125,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.65625
+            }
+          },
+          "suggested_threshold": 7,
+          "calibration_at_suggested": {
+            "true_accepts": 14,
+            "true_rejects": 15,
+            "false_accepts": 1,
+            "false_rejects": 2,
+            "accept_recall": 0.875,
+            "reject_recall": 0.9375,
+            "balanced_accuracy": 0.90625
+          },
+          "holdout_at_suggested": {
+            "true_accepts": 5,
+            "true_rejects": 7,
+            "false_accepts": 1,
+            "false_rejects": 3,
+            "accept_recall": 0.625,
+            "reject_recall": 0.875,
+            "balanced_accuracy": 0.75
+          },
+          "calibration_at_default_6": {
+            "true_accepts": 15,
+            "true_rejects": 9,
+            "false_accepts": 7,
+            "false_rejects": 1,
+            "accept_recall": 0.9375,
+            "reject_recall": 0.5625,
+            "balanced_accuracy": 0.75
+          },
+          "holdout_at_default_6": {
+            "true_accepts": 8,
+            "true_rejects": 4,
+            "false_accepts": 4,
+            "false_rejects": 0,
+            "accept_recall": 1.0,
+            "reject_recall": 0.5,
+            "balanced_accuracy": 0.75
+          }
+        },
+        "current": {
+          "calibration_sweep": {
+            "1": {
+              "true_accepts": 16,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 0,
+              "accept_recall": 1.0,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.96875
+            },
+            "2": {
+              "true_accepts": 16,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 0,
+              "accept_recall": 1.0,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.96875
+            },
+            "3": {
+              "true_accepts": 16,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 0,
+              "accept_recall": 1.0,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.96875
+            },
+            "4": {
+              "true_accepts": 16,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 0,
+              "accept_recall": 1.0,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.96875
+            },
+            "5": {
+              "true_accepts": 16,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 0,
+              "accept_recall": 1.0,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.96875
+            },
+            "6": {
+              "true_accepts": 16,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 0,
+              "accept_recall": 1.0,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.96875
+            },
+            "7": {
+              "true_accepts": 15,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.9375
+            },
+            "8": {
+              "true_accepts": 15,
+              "true_rejects": 15,
+              "false_accepts": 1,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 0.9375,
+              "balanced_accuracy": 0.9375
+            },
+            "9": {
+              "true_accepts": 15,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 1,
+              "accept_recall": 0.9375,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.96875
+            },
+            "10": {
+              "true_accepts": 10,
+              "true_rejects": 16,
+              "false_accepts": 0,
+              "false_rejects": 6,
+              "accept_recall": 0.625,
+              "reject_recall": 1.0,
+              "balanced_accuracy": 0.8125
+            }
+          },
+          "suggested_threshold": 9,
+          "calibration_at_suggested": {
+            "true_accepts": 15,
+            "true_rejects": 16,
+            "false_accepts": 0,
+            "false_rejects": 1,
+            "accept_recall": 0.9375,
+            "reject_recall": 1.0,
+            "balanced_accuracy": 0.96875
+          },
+          "holdout_at_suggested": {
+            "true_accepts": 6,
+            "true_rejects": 7,
+            "false_accepts": 1,
+            "false_rejects": 2,
+            "accept_recall": 0.75,
+            "reject_recall": 0.875,
+            "balanced_accuracy": 0.8125
+          },
+          "calibration_at_default_6": {
+            "true_accepts": 16,
+            "true_rejects": 15,
+            "false_accepts": 1,
+            "false_rejects": 0,
+            "accept_recall": 1.0,
+            "reject_recall": 0.9375,
+            "balanced_accuracy": 0.96875
+          },
+          "holdout_at_default_6": {
+            "true_accepts": 8,
+            "true_rejects": 7,
+            "false_accepts": 1,
+            "false_rejects": 0,
+            "accept_recall": 1.0,
+            "reject_recall": 0.875,
+            "balanced_accuracy": 0.9375
+          }
+        }
+      },
+      "report": "smoke/runs/grounding_live_20261008/calibration-32b-v2/report.json"
+    }
+  },
+  "judge_prompt_version": "grounded-v2",
+  "default_threshold": 6,
+  "threshold_changed": false,
+  "separate_review": {
+    "status": "completed",
+    "examples": 20,
+    "manifest": {
+      "model": "grounding-reviewer",
+      "api_base": "http://127.0.0.1:18503/v1",
+      "review_format_version": 2,
+      "input_sha256": "b5721e685bc3ae8cc9f5d9874c616705018fa4bd7babe121376db7e513834655"
+    },
+    "both_accept": 18,
+    "both_reject": 1,
+    "pipeline_accept_reviewer_reject": 0,
+    "pipeline_reject_reviewer_accept": 1,
+    "limitations": "Separate model, shared Qwen family and rubric; model agreement is not correctness ground truth. Structural rejections can disagree with an otherwise correct answer."
+  },
+  "separate_review_report": "smoke/runs/grounding_live_20261008/review-final-e2e-v2/report.json",
+  "assistant_review": "smoke/grounding-quality-findings.md",
+  "docker": {
+    "remaining_sandbox_containers": 0,
+    "inventory": "smoke/runs/grounding_live_20261008/docker-final-containers.txt",
+    "events": "smoke/runs/grounding_live_20261008/docker-events.jsonl"
+  },
+  "source_sha256": {
+    "sft_pipeline/stages/stage2_generate.py": "a195f1c0c8666987645f10c49b7ca5885bab89a6eae6091c76b3380bdc4c0308",
+    "sft_pipeline/filters/llm_judge.py": "d6a34088d1f34912ca35e7337bd4e0caed37d48b6e7adf64cadb37326ab22b00",
+    "sft_pipeline/stages/stage6_filter.py": "1386ccf4da90963c1c07f636490fa1eb7740c9b4bff973600e5a9f0b00cf5cf8",
+    "sft_pipeline/config.py": "e0c29f53fe92d21a9598e502e9a7baf67dc343b7e74d488be7ac12c0fdd483d3"
+  },
+  "functional_release_candidate": true,
+  "quality_certified": false,
+  "limitations": [
+    "Curated labels are not human gold or population-weighted production estimates",
+    "Grounding holdout failed all-cases-correct criterion: 8B had one false rejection; 32B had two",
+    "Both judges falsely accepted one ambiguous prompt among 16 fresh held-out cases",
+    "Separate reviewer shares model family and rubric; it accepted one response with an empty final answer",
+    "Direct assistant inspection found explanatory overstatements in accepted answers"
+  ],
+  "pending_execution_tasks": [],
+  "before_quality_claim": "Obtain human-reviewed labels for the intended production teacher and data distribution"
+}

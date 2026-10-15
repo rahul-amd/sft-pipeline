@@ -202,6 +202,14 @@ never overwritten or skipped. Set `global.run_id` to the run holding your
 `stage6_filter.llm_judge` and point it at a running vLLM server to add
 sampled judging.
 
+The current judge reads complete candidate responses with source context and
+references in separate fields. It records scores and rejection reasons for every
+judged example under `stage6/_decisions/`; incorrect or uncertain verdicts and
+ambiguous prompts fail independently of presentation scores. Stage 2 now retains
+source evidence and validates generated questions for standalone answerability
+by default. See the [grounding and calibration notes](smoke/grounding-validation.md)
+for configuration, audit paths, live comparison results and validation limits.
+
 **How the filters were calibrated** (`sanity-checks/`): 1000 records/domain
 from the Stage 5 dataset were scored by every verifier and by glm-5.2 as
 ground truth. The original chain falsely rejected 32% of good math and 61% of

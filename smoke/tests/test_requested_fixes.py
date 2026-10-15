@@ -44,7 +44,7 @@ def test_both_prompt_stages_preserve_code(tmp_path, monkeypatch):
         "global": {"base_path": str(tmp_path)},
         "stage1_collect": {"output_dir": str(tmp_path / "s1"), "datasets": [
             {"source": "local_jsonl", "path": str(source)}]},
-        "stage2_generate": {"output_dir": str(tmp_path / "s2"), "corpora": [
+        "stage2_generate": {"grounding_enabled": False, "output_dir": str(tmp_path / "s2"), "corpora": [
             {"source": "local", "path": str(corpus)}]},
     })
     monkeypatch.setattr("sft_pipeline.stages.stage2_generate._call_generator",

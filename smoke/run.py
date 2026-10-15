@@ -70,6 +70,21 @@ def main():
     final_ids = {r["id"] for r in records["export"]}
     require(not (removed_ids & final_ids), "Contaminated prompts reached the final dataset")
     generated_ids = {r["prompt_id"] for r in records["stage2_generate"]}
+    if cfg.stage2_generate.grounding_enabled:
+        require(all(r.get("source_context") and r.get("reference_answer")
+                    and r.get("grounding", {}).get("accepted") is True
+                    and r["grounding"].get("evidence_matches_source") is True
+                    for r in records["stage2_generate"]), "Generated prompts lack grounding evidence")
+        require(all(r.get("source_context") and r.get("reference_answer")
+                    for r in records["stage5_inference"] if r["prompt_id"] in generated_ids),
+                "Source metadata was lost before filtering")
+    decisions = list(iter_jsonl_dir(Path(cfg.stage6_filter.output_dir) / "_decisions"))
+    decision_ids = {r["prompt_id"] for r in decisions}
+    require(len(decision_ids) == len(decisions) and decision_ids == {
+        r["prompt_id"] for r in records["stage5_inference"]}, "Filter decisions do not cover every input exactly once")
+    require({r["prompt_id"] for r in decisions if r["passed"]} == {
+        r["prompt_id"] for r in records["stage6_filter"]}, "Filter decisions disagree with survivor shards")
+    require(not any(r["judge"]["status"] == "error" for r in decisions), "Judge errors occurred during smoke validation")
     require(bool(generated_ids & final_ids), "No generated prompt reached the final dataset")
     require(all(r["prompt"].strip() and r["reasoning"].strip() and r["answer"].strip()
                 for r in records["export"]), "Final dataset contains empty training fields")
@@ -98,8 +113,10 @@ def main():
                 "Semantic deduplication ran while disabled")
 
     def hashes():
-        return {str(p.relative_to(run_dir)): hashlib.sha256(p.read_bytes()).hexdigest()
-                for path in dirs.values() for p in Path(path).glob("*.jsonl")}
+        paths = {p for path in dirs.values() for p in Path(path).glob("*.jsonl")}
+        paths.update((Path(cfg.stage2_generate.output_dir) / "_state/grounding").glob("*.json"))
+        paths.update((Path(cfg.stage6_filter.output_dir) / "_decisions").glob("*.jsonl"))
+        return {str(p.relative_to(run_dir)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
     before = hashes()
     print("Validating no-work resume...", flush=True)
@@ -112,6 +129,8 @@ def main():
     report = {
         "status": "passed", "counts": {k: len(v) for k, v in records.items()},
         "generated_prompts_in_final": len(generated_ids & final_ids),
+        "grounding_enabled": cfg.stage2_generate.grounding_enabled,
+        "filter_decisions": len(decisions),
         "decontamination": decontam,
         "filter_report": json.loads(Path(cfg.stage6_filter.report_path).read_text()),
         "resume_unchanged": True, "elapsed_seconds": round(time.monotonic() - start, 2),

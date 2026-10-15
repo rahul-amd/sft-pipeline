@@ -1,6 +1,11 @@
 # Running the complete pipeline on a small dataset
 
-Latest validation: [medium-scale freeze results](freeze-validation.md): 259 tests passed; 3,805 real HTTP inferences produced 3,131 exports, with GPU/Docker execution and interruption recovery checks. The [200-example audit](audit-findings.md) identified source-grounding and judge-calibration work before a production-sized run. Reusable config: [config-scale.yaml](config-scale.yaml). Earlier [GPU, Docker and two-node Ray results](gpu-validation.md) remain an archival record. Do not use the `hissu` partition for future runs.
+The [grounding and judge follow-up](grounding-validation.md) documents the new
+source checks, complete-input judging, decision audits and calibration harness.
+Its live validation passed 288 tests and the full GPU/Docker smoke; the content
+probes also document remaining judge errors and grounding false rejections.
+
+Earlier medium-scale validation: [freeze results](freeze-validation.md): 259 tests passed; 3,805 real HTTP inferences produced 3,131 exports, with GPU/Docker execution and interruption recovery checks. The [200-example audit](audit-findings.md) identified source-grounding and judge-calibration work before a production-sized run. Reusable config: [config-scale.yaml](config-scale.yaml). Earlier [GPU, Docker and two-node Ray results](gpu-validation.md) remain an archival record. Do not use the `hissu` partition for future runs.
 
 [`smoke/config.yaml`](config.yaml) exercises every implemented stage using six public GSM8K training prompts, eleven distinct local prompt strings, and three short custom source documents. It needs an OpenAI-compatible chat server, Docker for code filtering, internet access for the small public dataset and embedding model on the first run, and a Python pipeline environment. The driver checks stage completion, generated prompts reaching the final dataset, contamination removal, unique IDs, nonempty training fields, semantic deduplication, and unchanged output after resume.
 

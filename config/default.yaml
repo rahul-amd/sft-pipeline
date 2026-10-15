@@ -77,6 +77,10 @@ stage2_generate:
   generator_endpoint: "http://localhost:8001/v1"
   generator_temperature: 0.8
   generator_max_tokens: 512
+  # Validate answerability and standalone context; keep source/evidence metadata.
+  grounding_enabled: true
+  grounding_model: null   # defaults to generator_model; same endpoint and API key
+  grounding_max_tokens: 2048
   max_workers: 16
   output_dir: "{base_path}/stage2"
 
@@ -191,6 +195,8 @@ stage6_filter:
     model: "Qwen/Qwen2.5-7B-Instruct"
     score_threshold: 6.0
     sample_rate: 0.10
+    max_tokens: 1024
+    max_input_chars: 100000  # fail on oversized input; never silently truncate
   output_dir: "{base_path}/stage6"
   report_path: "{base_path}/stage6/filter_report.json"
 

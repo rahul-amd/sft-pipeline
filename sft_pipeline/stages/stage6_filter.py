@@ -69,6 +69,7 @@ def _apply_filters(record: dict, s6, rng: random.Random, delimiters=None) -> str
     record was rejected, or ``None`` if it passed all filters.
     """
     domain = record.get("domain", "general")
+    record.pop("judge", None)  # A rerun must not report an inherited prior verdict.
 
     if s6.parse_responses and delimiters is not None:
         _parse_record(record, delimiters)
@@ -125,16 +126,21 @@ def _process_shard(
     """
     rng = random.Random(f"{seed}:{key}")
     out_tmp = Path(out_dir) / f"{key}.jsonl.tmp"
+    decisions_dir = Path(out_dir) / "_decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    decisions_tmp = decisions_dir / f"{key}.jsonl.tmp"
     n_in = n_pass = 0
     rejection_counts: Counter = Counter()
     domain_pass: Counter = Counter()
     domain_fail: Counter = Counter()
 
-    with out_tmp.open("wb") as out_f:
+    with out_tmp.open("wb") as out_f, decisions_tmp.open("wb") as decisions_f:
         for rec in iter_jsonl(shard_path):
             n_in += 1
             domain = rec.get("domain", "general")
             reason = _apply_filters(rec, s6, rng, delimiters=delimiters)
+            decisions_f.write(orjson.dumps({"prompt_id": rec["prompt_id"], "passed": reason is None,
+                "rejection_reason": reason, "judge": rec.get("judge", {"status": "not_reached"})}) + b"\n")
             if reason:
                 rejection_counts[reason.split(":")[0]] += 1
                 domain_fail[domain] += 1
@@ -143,6 +149,7 @@ def _process_shard(
                 n_pass += 1
                 domain_pass[domain] += 1
 
+    decisions_tmp.replace(decisions_dir / f"{key}.jsonl")
     out_tmp.replace(Path(out_dir) / f"{key}.jsonl")
     return {
         "shard": key, "input": n_in, "passed": n_pass,

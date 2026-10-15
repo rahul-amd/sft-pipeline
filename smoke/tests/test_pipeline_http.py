@@ -42,12 +42,24 @@ def api_server():
                     "Calculate the perimeter of a rectangle with sides seven and five.",
                     "How many outcomes are possible when rolling two six-sided dice?",
                 ])
+            elif "Check subject identification" in system:
+                data = json.loads(req["messages"][1]["content"])
+                content = json.dumps([{"index": q["index"], "self_contained": True,
+                    "reason": "Complete fixture question"} for q in data["questions"]])
+            elif "validate generated educational questions" in system:
+                data = json.loads(req["messages"][1]["content"])
+                content = json.dumps([{"index": q["index"], "self_contained": True,
+                    "answerable": True, "reference_answer": "Fixture grounded answer",
+                    "evidence": data["source_passage"][:60], "reason": "Supported by fixture"}
+                    for q in data["questions"]])
             elif "prompt classifier" in system:
                 content = json.dumps({"domain": "math", "difficulty": "easy",
                                       "topics": ["arithmetic"], "language": "en",
                                       "summary": "Solve a short arithmetic problem."})
             elif "expert evaluator" in system:
-                content = '{"overall": 9}'
+                content = json.dumps({"accuracy": 9, "reasoning": 9, "format": 9, "overall": 9,
+                    "verdict": "correct", "prompt_status": "clear", "reference_status": "consistent",
+                    "reason": "Fixture verdict for protocol validation."})
             else:
                 if state["fail_teacher"]:
                     self.send_error(503)
@@ -112,7 +124,8 @@ def make_config(tmp_path, api_base):
         "stage5_inference": {"inference_mode": "openai_api", "api_base": api_base,
                              "api_key": "test-key", "concurrency": 2, "max_retries": 0,
                              "checkpoint_every": 1},
-        "stage6_filter": {"llm_judge": {"enabled": False}},
+        "stage6_filter": {"llm_judge": {"enabled": True, "sample_rate": 1,
+                                       "model_endpoint": api_base, "api_key": "test-key"}},
         "export": {"push_to_hub": False},
     }
     path = tmp_path / "config.yaml"
@@ -147,6 +160,13 @@ def test_all_stages_cli_and_resume(tmp_path, api_server, monkeypatch):
     assert all(r["reasoning"] and r["answer"] for r in final)
     assert len({r["id"] for r in final}) == 4
     assert any("corpus.txt" in r["source"] for r in final)
+    decisions = list(iter_jsonl_dir(Path(cfg.stage6_filter.output_dir) / "_decisions"))
+    assert len(decisions) == 4 and all(r["judge"]["status"] == "judged" for r in decisions)
+    judge_requests = [json.loads(r["messages"][1]["content"]) for r in state["calls"]
+                      if "expert evaluator" in r["messages"][0]["content"]]
+    assert len(judge_requests) == 4
+    assert sum(bool(r["source_context"]) for r in judge_requests) == 2
+    assert all(r["reference_answer"] == "Fixture grounded answer" for r in judge_requests if r["source_context"])
     report = json.loads(Path(cfg.decontaminate.report_path).read_text())
     assert report["total_removed"] == 1
     with CheckpointManager(cfg.global_.checkpoint_db) as cm:

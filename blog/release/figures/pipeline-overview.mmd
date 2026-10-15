@@ -1,0 +1,32 @@
+flowchart TB
+  subgraph SFT["sft-pipeline: prompt curation and teacher responses"]
+    P[Public/local prompts] --> S1[Stage 1: collect and exact dedup]
+    D[Custom documents] --> S2[Stage 2: generate and ground questions]
+    S1 --> DC[Configured benchmark decontamination]
+    S2 --> DC
+    DC --> S3[Stage 3: embed, cluster, annotate]
+    S3 --> S4[Stage 4: quota selection; optional semantic dedup default off]
+    S4 --> S5[Stage 5: teacher inference]
+    S5 --> S6[Stage 6: structural checks, code checks, sampled judge]
+    S6 --> O1[Final SFT JSONL]
+    S2 -. evidence .-> A[Audit artifacts]
+    S6 -. decisions .-> A
+  end
+  subgraph LC["lc-pipeline: separate generators for long-context skills"]
+    T[Synthetic task definitions] --> R[RULER++: deterministic answers]
+    C[Quality-filtered corpus] --> CP[Paragraph and passage construction]
+    C --> CL[Embedding clusters]
+    CL --> U[Untie: clustered source]
+    CP --> U2[Untie: single source]
+    CP --> M[MRCR and IDK]
+    C --> Q[QA: sample chunks; prepare requests]
+    C --> S[Summary: whole-document requests]
+    Q --> I[Built-in API or external inference]
+    S --> I
+    I --> AS[Strict response import and assembly]
+    R --> O2[Per-generator PT or SFT records]
+    U --> O2
+    U2 --> O2
+    M --> O2
+    AS --> O2
+  end

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "person_and_place",
+    "passage": "Ravi moved to Larkport in 2008. His sister Leena moved to Westmere in 2011. The siblings settled in different cities.",
+    "questions": ["When did he move there?", "In what year did Ravi move to Larkport?"],
+    "expected": [false, true]
+  },
+  {
+    "name": "device_identity",
+    "passage": "The Orion reactor operates at 40 degrees Celsius. The backup Vega reactor operates at 70 degrees Celsius.",
+    "questions": ["At what temperature does the reactor operate?", "At what temperature does the Orion reactor operate?"],
+    "expected": [false, true]
+  },
+  {
+    "name": "unknown_group_total",
+    "passage": "In the fictional Eira survey, District P supplied 14 replies and District Q supplied nine. The number of residents in each district was not recorded.",
+    "questions": ["How many replies did District Q supply in the Eira survey?", "What percentage of District Q residents replied to the Eira survey?"],
+    "expected": [true, false]
+  },
+  {
+    "name": "missing_document",
+    "passage": "The fictional Neris library opened in 1984 and moved to a larger building in 2003. Its first location was on Field Street.",
+    "questions": ["According to the passage, when did the library open?", "In what year did the Neris library open?"],
+    "expected": [false, true]
+  }
+]

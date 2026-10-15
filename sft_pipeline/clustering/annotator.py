@@ -17,7 +17,7 @@ before parsing.
 Key properties:
   - Async with configurable concurrency (semaphore-bounded asyncio tasks)
   - Checkpoint to Parquet every N records — safe to restart mid-run
-  - Falls back to validated defaults on any API/parse error (never crashes the pipeline)
+  - Retries invalid labels with schema feedback; persistent errors fail the stage
   - Progress logged every 1 000 completions
   - Prompt truncated to last 512 whitespace tokens to stay within context window
 """
@@ -28,6 +28,8 @@ import json
 import logging
 import re
 import time
+import os
+import tempfile
 from pathlib import Path
 
 import pyarrow as pa
@@ -172,21 +174,41 @@ async def _annotate_one(
 
     async with semaphore:
         try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": _truncate_prompt(prompt)},
-                ],
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-            text = response.choices[0].message.content or ""
-            ann = _validate_annotation(_parse_annotation(text))
+            messages = [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": _truncate_prompt(prompt)},
+            ]
+            for attempt in range(3):
+                response = await client.chat.completions.create(
+                    model=model, messages=messages, max_tokens=max_tokens, temperature=temperature,
+                )
+                text = response.choices[0].message.content or ""
+                raw_ann = _parse_annotation(text)
+                valid = (response.choices[0].finish_reason != "length"
+                         and raw_ann.get("domain") in _VALID_DOMAINS
+                         and raw_ann.get("difficulty") in _VALID_DIFFICULTIES)
+                if valid:
+                    ann = _validate_annotation(raw_ann)
+                    break
+                if attempt == 2:
+                    raise ValueError("Annotation remained truncated or invalid after 3 attempts")
+                logger.warning("Annotation %s: invalid response; retrying with schema feedback (%d/3)",
+                               pid, attempt + 2)
+                messages = [messages[0], messages[1], {
+                    "role": "user",
+                    "content": (
+                        "Classify the preceding prompt; do not answer it. Your previous response "
+                        "was truncated or used an unsupported label. Return one compact JSON object. "
+                        "The domain MUST be one of: " + ", ".join(sorted(_VALID_DOMAINS)) + ". "
+                        "Use other if none fits; never invent a domain. "
+                        "Difficulty MUST be easy, medium, or hard."
+                    ),
+                }]
+                await asyncio.sleep(0.5 * (attempt + 1))
         except Exception as exc:
             logger.debug("Annotation failed for %s: %s", pid, exc)
-            ann = _validate_annotation({})
             counter[1] += 1   # failed
+            raise RuntimeError(f"Annotation failed for {pid}: {type(exc).__name__}: {exc}; rerun to retry") from exc
 
         counter[0] += 1   # done
         done = counter[0]
@@ -283,7 +305,16 @@ def _save_checkpoint(annotation_map: dict[str, dict], path: Path) -> None:
         for pid, ann in annotation_map.items()
     ]
     table = pa.Table.from_pylist(rows, schema=_CHECKPOINT_SCHEMA)
-    pq.write_table(table, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".annotations-", suffix=".parquet", dir=path.parent)
+    os.close(fd)
+    try:
+        pq.write_table(table, temporary)
+        with open(temporary, "rb") as stream:
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

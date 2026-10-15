@@ -1,0 +1,716 @@
+{
+  "date": "2026-10-08",
+  "slurm_job": "54411",
+  "allocation_released": true,
+  "partition_constraint": "Do not use hissu for future jobs",
+  "full_runs": {
+    "gpu_full_v3_20261008": {
+      "status": "passed",
+      "counts": {
+        "stage1_collect": 17,
+        "stage2_generate": 6,
+        "decontaminate": 22,
+        "stage3_cluster": 22,
+        "stage4_sample": 21,
+        "stage5_inference": 21,
+        "stage6_filter": 20,
+        "export": 20
+      },
+      "generated_prompts_in_final": 5,
+      "decontamination": {
+        "total_input": 23,
+        "total_removed": 1,
+        "total_survivors": 22,
+        "removal_rate": 0.043478,
+        "ngram_size": 13,
+        "min_gram_size": 5,
+        "gram_lengths": [
+          12
+        ],
+        "total_eval_ngrams": 1,
+        "eval_items_loaded": {
+          "smoke_canary": 1
+        },
+        "eval_items_dropped_short": {},
+        "removed_per_eval": {
+          "smoke_canary": 1
+        },
+        "removed_per_source": {
+          "prompts.jsonl": 1
+        },
+        "elapsed_seconds": 0.0
+      },
+      "filter_report": {
+        "total_input": 21,
+        "total_passed": 20,
+        "pass_rate": 0.9524,
+        "rejection_counts": {
+          "structural": 1
+        },
+        "domain_pass_counts": {
+          "math": 13,
+          "code": 4,
+          "science": 3
+        },
+        "domain_fail_counts": {
+          "math": 1
+        }
+      },
+      "resume_unchanged": true,
+      "elapsed_seconds": 274.78,
+      "teacher_model": "smoke-teacher",
+      "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "max_sampled_pairwise_cosine": null,
+      "semantic_dedup_enabled": false,
+      "sampling_report": {
+        "input_records": 22,
+        "unique_input_ids": 22,
+        "target": 64,
+        "selected": 21,
+        "semantic_dedup_enabled": false,
+        "dedup_cosine_threshold": 0.92,
+        "dedup_method": null,
+        "dedup_comparison_tolerance": 1e-06,
+        "duplicate_candidates": 0,
+        "cells": [
+          {
+            "domain": "math",
+            "difficulty": "easy",
+            "target": 10,
+            "available": 4,
+            "selected": 4,
+            "duplicate_candidates": 0,
+            "shortfall": 6
+          },
+          {
+            "domain": "math",
+            "difficulty": "medium",
+            "target": 10,
+            "available": 11,
+            "selected": 10,
+            "duplicate_candidates": 0,
+            "shortfall": 0
+          },
+          {
+            "domain": "code",
+            "difficulty": "medium",
+            "target": 5,
+            "available": 4,
+            "selected": 4,
+            "duplicate_candidates": 0,
+            "shortfall": 1
+          },
+          {
+            "domain": "science",
+            "difficulty": "medium",
+            "target": 5,
+            "available": 3,
+            "selected": 3,
+            "duplicate_candidates": 0,
+            "shortfall": 2
+          }
+        ]
+      },
+      "code_sandbox": "docker",
+      "sandbox_image": "python:3.12-slim",
+      "config_sha256": "838d0eb11b5e543abb131738f8a11b14ccc0787ce701f932c148593346f36da3",
+      "versions": {
+        "pydantic": "2.12.5",
+        "datasets": "4.8.4",
+        "sentence-transformers": "5.5.1",
+        "faiss-cpu": "1.14.2",
+        "openai": "2.30.0"
+      },
+      "artifact_sha256": {
+        "stage1/part-000000.jsonl": "2b2e829b08c92b9beb0bb7c95f6880db8a90718a1e753b6459800c3cb05d73ff",
+        "stage2/part-000000.jsonl": "9a95ade34e484a67f00b19362174f6e8c0d3fe1fbbd0d4a3dda426063f899216",
+        "stage_decontam/clean/stage2-part-000000.jsonl": "9a95ade34e484a67f00b19362174f6e8c0d3fe1fbbd0d4a3dda426063f899216",
+        "stage_decontam/clean/stage1-part-000000.jsonl": "949d4698a7ec1516df845aea749b8473f4a95292d52c09652e25667449a87a93",
+        "stage3/part-000000.jsonl": "2a0defa87363af1383b082a562b2e6097c614f3b02400a207ee30698bf4b814e",
+        "stage4/part-000000.jsonl": "588da8e50f7d2e4c5858b340adef6de3970975b8a9abefaa88019cc3cfc38ed7",
+        "stage5/part-000000.jsonl": "6199e2da856f85235c017dd232d6d83a882d7c339aea8f40479c2a6ef766a174",
+        "stage6/part-000000.jsonl": "9463f64feaea9d871516c5248b7438a28a7ad5a3c50001c4cc53d0ade9fb6746",
+        "final/part-000000.jsonl": "578644c4a6560d6888f8827213cd380c5cf6a3418d461bc7dcfed41027d07597"
+      }
+    },
+    "gpu_distributed_v3_20261008": {
+      "status": "passed",
+      "counts": {
+        "stage1_collect": 17,
+        "stage2_generate": 6,
+        "decontaminate": 22,
+        "stage3_cluster": 22,
+        "stage4_sample": 20,
+        "stage5_inference": 20,
+        "stage6_filter": 18,
+        "export": 18
+      },
+      "generated_prompts_in_final": 4,
+      "decontamination": {
+        "total_input": 23,
+        "total_removed": 1,
+        "total_survivors": 22,
+        "removal_rate": 0.043478,
+        "ngram_size": 13,
+        "min_gram_size": 5,
+        "gram_lengths": [
+          12
+        ],
+        "total_eval_ngrams": 1,
+        "eval_items_loaded": {
+          "smoke_canary": 1
+        },
+        "eval_items_dropped_short": {},
+        "removed_per_eval": {
+          "smoke_canary": 1
+        },
+        "removed_per_source": {
+          "prompts.jsonl": 1
+        },
+        "elapsed_seconds": 0.0
+      },
+      "filter_report": {
+        "total_input": 20,
+        "total_passed": 18,
+        "pass_rate": 0.9,
+        "rejection_counts": {
+          "structural": 2
+        },
+        "domain_pass_counts": {
+          "math": 11,
+          "code": 3,
+          "science": 4
+        },
+        "domain_fail_counts": {
+          "math": 2
+        }
+      },
+      "resume_unchanged": true,
+      "elapsed_seconds": 272.99,
+      "teacher_model": "smoke-teacher",
+      "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "max_sampled_pairwise_cosine": 0.6699080052931967,
+      "semantic_dedup_enabled": true,
+      "sampling_report": {
+        "input_records": 22,
+        "unique_input_ids": 22,
+        "target": 64,
+        "selected": 20,
+        "semantic_dedup_enabled": true,
+        "dedup_cosine_threshold": 0.92,
+        "dedup_method": "exact_global_greedy_cosine",
+        "dedup_comparison_tolerance": 1e-06,
+        "duplicate_candidates": 1,
+        "cells": [
+          {
+            "domain": "math",
+            "difficulty": "easy",
+            "target": 10,
+            "available": 4,
+            "selected": 4,
+            "duplicate_candidates": 0,
+            "shortfall": 6
+          },
+          {
+            "domain": "math",
+            "difficulty": "medium",
+            "target": 10,
+            "available": 10,
+            "selected": 9,
+            "duplicate_candidates": 1,
+            "shortfall": 1
+          },
+          {
+            "domain": "code",
+            "difficulty": "medium",
+            "target": 5,
+            "available": 3,
+            "selected": 3,
+            "duplicate_candidates": 0,
+            "shortfall": 2
+          },
+          {
+            "domain": "science",
+            "difficulty": "easy",
+            "target": 5,
+            "available": 1,
+            "selected": 1,
+            "duplicate_candidates": 0,
+            "shortfall": 4
+          },
+          {
+            "domain": "science",
+            "difficulty": "medium",
+            "target": 5,
+            "available": 3,
+            "selected": 3,
+            "duplicate_candidates": 0,
+            "shortfall": 2
+          }
+        ]
+      },
+      "code_sandbox": "docker",
+      "sandbox_image": "python:3.12-slim",
+      "config_sha256": "34f26cf439adeafbe6eead772eceeb4153e53669d3a8dd6341fe5a4aa6bd5bfa",
+      "versions": {
+        "pydantic": "2.12.5",
+        "datasets": "4.8.4",
+        "sentence-transformers": "5.5.1",
+        "faiss-cpu": "1.14.2",
+        "openai": "2.30.0"
+      },
+      "artifact_sha256": {
+        "stage1/part-000000.jsonl": "ee46b530a8f0a300a0fb2df1891304f255f8c35510bca54205c48000280c91fa",
+        "stage2/part-000000.jsonl": "71f13faea2173bbffc5c666312decba5991d40f8b4a6ab0b56947cc9c22ee7ce",
+        "stage_decontam/clean/stage1-part-000000.jsonl": "0383911a244e63e42d2bb6cc6579c9ecfafab3b54b72b21a19d6a1e99b173184",
+        "stage_decontam/clean/stage2-part-000000.jsonl": "71f13faea2173bbffc5c666312decba5991d40f8b4a6ab0b56947cc9c22ee7ce",
+        "stage3/part-000000.jsonl": "db5b96db088c578cfa5db93be1d7a4b34d964b987b09887b5f682394ce3c8c49",
+        "stage4/part-000000.jsonl": "afa6f68141606f91cfb3ebb5f7a298f5fd690ab0d056f7633599754f32a2a3eb",
+        "stage5/part-000000.jsonl": "7f9f0ee6352231995cb6d79c15bc440d967a35c27822f2f47e604174f21fb990",
+        "stage6/part-000000.jsonl": "0f6e177775740fa102c749796b20f0ea222a579dd7004dd4389bad45801aee25",
+        "final/part-000000.jsonl": "e0d52139429b86b1c81ffebc1fa886307bf80fd2138bcee96d0995b84232e8d2"
+      }
+    },
+    "gpu_offline_full_20261008": {
+      "status": "passed",
+      "counts": {
+        "stage1_collect": 17,
+        "stage2_generate": 6,
+        "decontaminate": 22,
+        "stage3_cluster": 22,
+        "stage4_sample": 22,
+        "stage5_inference": 22,
+        "stage6_filter": 22,
+        "export": 22
+      },
+      "generated_prompts_in_final": 6,
+      "decontamination": {
+        "total_input": 23,
+        "total_removed": 1,
+        "total_survivors": 22,
+        "removal_rate": 0.043478,
+        "ngram_size": 13,
+        "min_gram_size": 5,
+        "gram_lengths": [
+          12
+        ],
+        "total_eval_ngrams": 1,
+        "eval_items_loaded": {
+          "smoke_canary": 1
+        },
+        "eval_items_dropped_short": {},
+        "removed_per_eval": {
+          "smoke_canary": 1
+        },
+        "removed_per_source": {
+          "prompts.jsonl": 1
+        },
+        "elapsed_seconds": 0.0
+      },
+      "filter_report": {
+        "total_input": 22,
+        "total_passed": 22,
+        "pass_rate": 1.0,
+        "rejection_counts": {},
+        "domain_pass_counts": {
+          "math": 15,
+          "code": 4,
+          "science": 3
+        },
+        "domain_fail_counts": {}
+      },
+      "resume_unchanged": true,
+      "elapsed_seconds": 167.65,
+      "teacher_model": "Qwen/Qwen3-4B",
+      "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "max_sampled_pairwise_cosine": null,
+      "semantic_dedup_enabled": false,
+      "sampling_report": {
+        "input_records": 22,
+        "unique_input_ids": 22,
+        "target": 64,
+        "selected": 22,
+        "semantic_dedup_enabled": false,
+        "dedup_cosine_threshold": 0.92,
+        "dedup_method": null,
+        "dedup_comparison_tolerance": 1e-06,
+        "duplicate_candidates": 0,
+        "cells": [
+          {
+            "domain": "math",
+            "difficulty": "easy",
+            "target": 10,
+            "available": 7,
+            "selected": 7,
+            "duplicate_candidates": 0,
+            "shortfall": 3
+          },
+          {
+            "domain": "math",
+            "difficulty": "medium",
+            "target": 10,
+            "available": 8,
+            "selected": 8,
+            "duplicate_candidates": 0,
+            "shortfall": 2
+          },
+          {
+            "domain": "code",
+            "difficulty": "medium",
+            "target": 5,
+            "available": 4,
+            "selected": 4,
+            "duplicate_candidates": 0,
+            "shortfall": 1
+          },
+          {
+            "domain": "science",
+            "difficulty": "medium",
+            "target": 5,
+            "available": 3,
+            "selected": 3,
+            "duplicate_candidates": 0,
+            "shortfall": 2
+          }
+        ]
+      },
+      "code_sandbox": "docker",
+      "sandbox_image": "python:3.12-slim",
+      "config_sha256": "4a8283db80ec4d5b7344bc1300d77ba968abd974e58b5897b8d00d4943e65c03",
+      "versions": {
+        "pydantic": "2.12.5",
+        "datasets": "4.8.4",
+        "sentence-transformers": "5.5.1",
+        "faiss-cpu": "1.14.2",
+        "openai": "2.30.0"
+      },
+      "artifact_sha256": {
+        "stage1/part-000000.jsonl": "2b2e829b08c92b9beb0bb7c95f6880db8a90718a1e753b6459800c3cb05d73ff",
+        "stage2/part-000000.jsonl": "3c8dafff4a36eed581a80aee1ac9ed68a1726d8cdef813f8961b0fa20451d556",
+        "stage_decontam/clean/stage1-part-000000.jsonl": "949d4698a7ec1516df845aea749b8473f4a95292d52c09652e25667449a87a93",
+        "stage_decontam/clean/stage2-part-000000.jsonl": "3c8dafff4a36eed581a80aee1ac9ed68a1726d8cdef813f8961b0fa20451d556",
+        "stage3/part-000000.jsonl": "1e68d888e2c536d1aba3600cfcd1ea2aa66b6b8a01c3b975d67b061facf37f1f",
+        "stage4/part-000000.jsonl": "b1a93a07a93135a3d5d164e8766b254c98982b1b4a3ecbac00e8fea46256985f",
+        "stage5/part-000000.jsonl": "6e3e4814ee02dda28d422974b4101a3e998f0660726cc9b7ae0aa93cc8326edc",
+        "stage6/part-000000.jsonl": "0664382b422ca95b3a354886fc0511f3d71ee81a9690e48b24c9e99036a89139",
+        "final/part-000000.jsonl": "83a9349de15073cf82da813d3caaf8ba15ef7e5a4db2dd129b161ff58dc955da"
+      }
+    }
+  },
+  "tests": {
+    "tests-v2": {
+      "tests": "238",
+      "errors": "0",
+      "failures": "1",
+      "skipped": "0",
+      "time": "55.171"
+    },
+    "additional-tests": {
+      "tests": "6",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "time": "2.328"
+    }
+  },
+  "coverage": {
+    "covered_lines": 3161,
+    "num_statements": 3743,
+    "percent_covered": 81.47920508092604,
+    "percent_covered_display": "81",
+    "missing_lines": 582,
+    "excluded_lines": 0,
+    "percent_statements_covered": 84.45097515362009,
+    "percent_statements_covered_display": "84",
+    "num_branches": 1138,
+    "num_partial_branches": 200,
+    "covered_branches": 816,
+    "missing_branches": 322,
+    "percent_branches_covered": 71.70474516695958,
+    "percent_branches_covered_display": "72"
+  },
+  "probes": {
+    "components": {
+      "case": "components",
+      "host": "tus1-p15-g61",
+      "status": "passed",
+      "result": {
+        "gpu_kernel": [
+          1.0
+        ],
+        "faiss_gpu_count": 0,
+        "cases": {
+          "Flat": {
+            "count": 512,
+            "neighbors": [
+              [
+                0,
+                509,
+                443
+              ],
+              [
+                1,
+                339,
+                375
+              ],
+              [
+                2,
+                65,
+                399
+              ]
+            ],
+            "metric_type": 0
+          },
+          "IVFFlat": {
+            "count": 512,
+            "neighbors": [
+              [
+                0,
+                509,
+                443
+              ],
+              [
+                1,
+                339,
+                375
+              ],
+              [
+                2,
+                65,
+                399
+              ]
+            ],
+            "metric_type": 0
+          },
+          "IVFPQ": {
+            "count": 512,
+            "neighbors": [
+              [
+                0,
+                509,
+                443
+              ],
+              [
+                1,
+                339,
+                375
+              ],
+              [
+                2,
+                65,
+                399
+              ]
+            ],
+            "metric_type": 1
+          },
+          "kmeans": {
+            "rows": 512,
+            "clusters": 4
+          },
+          "hdbscan": {
+            "rows": 512,
+            "clusters": 3
+          },
+          "faiss_kmeans": {
+            "rows": 512,
+            "clusters": 4
+          },
+          "torch_kmeans": {
+            "rows": 512,
+            "clusters": 4
+          },
+          "flash_kmeans": {
+            "rows": 512,
+            "clusters": 4
+          }
+        }
+      },
+      "elapsed_seconds": 8.94
+    },
+    "ray_probe": {
+      "case": "ray_probe",
+      "host": "tus1-p15-g56",
+      "status": "passed",
+      "result": {
+        "workers": [
+          {
+            "host": "tus1-p15-g56",
+            "gpu_count": 1,
+            "hip_visible": "0",
+            "rocr_visible": "1",
+            "kernel_result": [
+              2.0,
+              2.0,
+              2.0
+            ]
+          },
+          {
+            "host": "tus1-p15-g61",
+            "gpu_count": 1,
+            "hip_visible": "0",
+            "rocr_visible": "0",
+            "kernel_result": [
+              2.0,
+              2.0,
+              2.0
+            ]
+          }
+        ],
+        "resources": {
+          "object_store_memory": 400000000000.0,
+          "node:10.32.17.220": 1.0,
+          "node:__internal_head__": 1.0,
+          "memory": 5912663683072.0,
+          "CPU": 16.0,
+          "accelerator_type:AMD-Instinct-MI325X-OAM": 2.0,
+          "GPU": 2.0,
+          "node:10.32.17.225": 1.0
+        }
+      },
+      "elapsed_seconds": 6.16
+    },
+    "corpus_hf": {
+      "case": "corpus_hf",
+      "host": "tus1-p15-g56",
+      "status": "passed",
+      "result": {
+        "source": "roneneldan/TinyStories",
+        "document_id": "roneneldan/TinyStories:0",
+        "chunks": 1,
+        "questions": [
+          "Why did Lily ask her mother to share the needle?",
+          "What was the outcome of Lily and her mother working together to sew the button?"
+        ],
+        "scope": "one streamed document; first chunk sent to real API"
+      },
+      "elapsed_seconds": 17.32
+    },
+    "annotations": {
+      "case": "annotations",
+      "host": "tus1-p15-g56",
+      "status": "passed",
+      "result": {
+        "requests": 3,
+        "imported": 3,
+        "centroid_sim_preserved": true,
+        "standalone_annotation_and_resume": true
+      },
+      "elapsed_seconds": 17.47
+    },
+    "cli_paths": {
+      "case": "cli_paths",
+      "host": "tus1-p15-g56",
+      "status": "passed",
+      "result": {
+        "status_estimate_dry_run_disabled_no_resume": true
+      },
+      "elapsed_seconds": 4.9
+    },
+    "offline_single": {
+      "case": "offline_single",
+      "host": "tus1-p15-g61",
+      "status": "passed",
+      "result": {
+        "responses": 2,
+        "config": "/shared_silo/scratch/rahul.aralikatte@amd.com/sft-pipeline/smoke/runs/gpu_matrix_20261008/config-offline_1.yaml",
+        "finish_reason_recorded": false
+      },
+      "elapsed_seconds": 98.16
+    },
+    "offline_ray": {
+      "case": "offline_ray",
+      "host": "tus1-p15-g56",
+      "status": "passed",
+      "result": {
+        "responses": 2,
+        "config": "/shared_silo/scratch/rahul.aralikatte@amd.com/sft-pipeline/smoke/runs/gpu_matrix_20261008/config-offline_2.yaml",
+        "finish_reason_recorded": false
+      },
+      "elapsed_seconds": 92.92
+    },
+    "cached-flat-observations": {
+      "first_count": 4,
+      "rerun_count": 8,
+      "unique_ids": 4,
+      "embedding_files_unchanged": true,
+      "heuristic_flat_fallback": true
+    },
+    "exit-codes": {
+      "python": {
+        "expected": 17,
+        "actual": 17
+      },
+      "torch_gpu": {
+        "expected": 17,
+        "actual": 0
+      },
+      "embedding_gpu": {
+        "expected": 17,
+        "actual": 0
+      }
+    },
+    "exit-codes-uncovered-gpu0": {
+      "python": {
+        "expected": 17,
+        "actual": 17
+      },
+      "torch_gpu": {
+        "expected": 17,
+        "actual": 0
+      },
+      "embedding_gpu": {
+        "expected": 17,
+        "actual": 0
+      }
+    }
+  },
+  "environment": {
+    "host": "tus1-p15-g61",
+    "python": "3.12.13",
+    "packages": {
+      "torch": "2.10.0+git8514f05",
+      "vllm": "0.18.2rc1.dev71+ge92668e83",
+      "transformers": "5.5.0",
+      "sentence_transformers": "5.5.1",
+      "faiss": "1.14.2",
+      "hdbscan": "installed",
+      "polars": "2.0.0",
+      "pyarrow": "23.0.1",
+      "ray": "2.59.0",
+      "duckdb": "1.5.6",
+      "datasets": "4.8.4",
+      "json_repair": "installed",
+      "openai": "2.30.0",
+      "orjson": "3.13.0",
+      "pytest": "9.0.2",
+      "flash_kmeans": "0.3.1",
+      "coverage": "7.16.2",
+      "e2b_code_interpreter": {
+        "error": "No module named 'e2b_code_interpreter'"
+      }
+    },
+    "gpu": {
+      "available": true,
+      "count": 2,
+      "hip": "7.2.53211",
+      "devices": [
+        "AMD Radeon Graphics",
+        "AMD Radeon Graphics"
+      ]
+    },
+    "e2b_key_available": false,
+    "docker": {
+      "exit_code": 0,
+      "version": "29.1.3",
+      "error": ""
+    }
+  },
+  "live_exclusions": [
+    "E2B (no SDK/credential)",
+    "Hugging Face publication (protocol tests only)",
+    "FAISS GPU kernels (CPU wheel; fallback tested)",
+    "NVIDIA/CUDA runtime",
+    "Tensor/pipeline parallel degree greater than one",
+    "Unreachable Stage 3 import fallback block"
+  ]
+}

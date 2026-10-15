@@ -76,6 +76,7 @@ def run(
         return
 
     from sft_pipeline.checkpoint import CheckpointManager
+    from sft_pipeline.export.jsonl_writer import export_final_dataset
     from sft_pipeline.stages.decontaminate import run_decontaminate
     from sft_pipeline.stages.stage1_collect import run_stage1
     from sft_pipeline.stages.stage2_generate import run_stage2
@@ -95,6 +96,8 @@ def run(
             ("stage4_sample", cfg.stage4_sample.enabled, lambda: run_stage4(cfg, cm)),
             ("stage5_inference", cfg.stage5_inference.enabled, lambda: run_stage5(cfg, cm)),
             ("stage6_filter", cfg.stage6_filter.enabled, lambda: run_stage6(cfg, cm)),
+            ("export", cfg.export.enabled and cfg.stage6_filter.enabled,
+             lambda: cm.mark_stage_complete("export", export_final_dataset(cfg))),
         ]
         for stage_name, enabled, fn in stages:
             if not enabled:
@@ -105,7 +108,10 @@ def run(
                 continue
             console.rule(f"[bold blue]{stage_name}")
             try:
+                cm.mark_stage_started(stage_name)
                 fn()
+                if not cm.is_stage_complete(stage_name):
+                    raise RuntimeError(f"{stage_name} returned without completing")
             except Exception as exc:
                 console.print(f"[red]✗ {stage_name} FAILED: {exc}[/red]")
                 cm.mark_stage_failed(stage_name, str(exc))
@@ -126,6 +132,7 @@ STAGE_NAMES = [
     "stage4_sample",
     "stage5_inference",
     "stage6_filter",
+    "export",
 ]
 
 
@@ -169,11 +176,15 @@ def run_stage(
 
     with CheckpointManager(cfg.global_.checkpoint_db) as cm:
         console.rule(f"[bold blue]{stage}")
-        _dispatch_stage(
-            stage, cfg, cm,
-            dump_annotations_path=dump_annotations,
-            import_annotations_path=import_annotations,
-        )
+        try:
+            _dispatch_stage(
+                stage, cfg, cm,
+                dump_annotations_path=dump_annotations,
+                import_annotations_path=import_annotations,
+            )
+        except Exception as exc:
+            cm.mark_stage_failed(stage, str(exc))
+            raise
 
     console.print(f"\n[bold green]{stage} complete.[/bold green]")
 
@@ -208,6 +219,10 @@ def _dispatch_stage(
     elif stage == "stage6_filter":
         from sft_pipeline.stages.stage6_filter import run_stage6
         run_stage6(cfg, cm)
+    elif stage == "export":
+        from sft_pipeline.export.jsonl_writer import export_final_dataset
+        cm.mark_stage_started("export")
+        cm.mark_stage_complete("export", export_final_dataset(cfg))
 
 
 # ---------------------------------------------------------------------------

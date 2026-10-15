@@ -1,0 +1,76 @@
+{
+  "status": "Summary of existing internal reports, not new measurements or release dataset inventory",
+  "review_date": "2026-10-14",
+  "source_reports": [
+    {
+      "repository": "sft-pipeline",
+      "path": "smoke/freeze-validation.md",
+      "sha256": "1cf2c4caadd3f6c5c71f4d63e7bd7e0129f633f9a7f437a7206fc64728067492"
+    },
+    {
+      "repository": "sft-pipeline",
+      "path": "smoke/grounding-validation.md",
+      "sha256": "ef7a30f73a72e7de5170a526c8c72902f86eaeee938c2b560f77a10c8a6e769e"
+    },
+    {
+      "repository": "sft-pipeline",
+      "path": "smoke/grounding-quality-findings.md",
+      "sha256": "606a334d90aa7dd36c08104272d9f0d091135f5b98678e9b2ef8c89bd303fc2e"
+    },
+    {
+      "repository": "lc-pipeline",
+      "path": "smoke/RESULTS.md",
+      "sha256": "b7c713b0244046aab50639636e7ca7cdd035b6f4ed42dc4d4587bbb9438b9450"
+    },
+    {
+      "repository": "lc-pipeline",
+      "path": "smoke/QUALITY_REVIEW.md",
+      "sha256": "70255106be5cecab561da8073cf1a0c0e85395dfb18dd866067c3db13551f891"
+    }
+  ],
+  "measurements": {
+    "sft_latest": {
+      "regression_passes": 288,
+      "api_completions": 20,
+      "exports": 18,
+      "stage2_exports": 4,
+      "wall_seconds": 223
+    },
+    "sft_earlier_medium": {
+      "collected": 9924,
+      "generated": 1002,
+      "merged": 10926,
+      "after_decontamination": 10913,
+      "selected": 3805,
+      "selection_target": 4000,
+      "inferred": 3805,
+      "exported": 3131,
+      "wall_seconds": 3074,
+      "version_note": "Before current grounding/judge changes"
+    },
+    "sft_earlier_semantic_constraint": {
+      "cosine_threshold": 0.92,
+      "above_threshold_pairs_off": 39,
+      "above_threshold_pairs_on": 0,
+      "selected_each": 3805
+    },
+    "lc": {
+      "regression_passes": 108,
+      "matrix_rows": 278,
+      "matrix_files": 123,
+      "matrix_commands": 41,
+      "matrix_wall_seconds": 379.3,
+      "later_shell_rows": 36,
+      "later_shell_api_responses": 14,
+      "synthetic_max_measured_tokens": 131054,
+      "synthetic_128k_task_types": 3,
+      "caveat": "128K synthetic serialization, not 128K LLM inference; matrix includes alternate formats"
+    }
+  },
+  "unmeasured": [
+    "Final release inventories",
+    "Representative human quality estimates",
+    "Controlled student training comparisons",
+    "New release recipe cost and yield"
+  ]
+}

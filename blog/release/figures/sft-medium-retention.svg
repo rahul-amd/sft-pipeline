@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="900pt" height="468pt" viewBox="0 0 900 468" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-14T18:11:58.728295</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.0, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 468
+L 900 468
+L 900 0
+L 0 0
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 198 351
+L 846 351
+L 846 112.32
+L 198 112.32
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1">
+      <path d="M 198 351
+L 198 112.32
+" clip-path="url(#p08cf14e5ba)" style="fill: none; stroke: #e5eaf0; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_2"/>
+     <g id="text_1">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="198" y="363.617188" transform="rotate(-0 198 363.617188)">0</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_3">
+      <path d="M 356.04878 351
+L 356.04878 112.32
+" clip-path="url(#p08cf14e5ba)" style="fill: none; stroke: #e5eaf0; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_4"/>
+     <g id="text_2">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="356.04878" y="363.617188" transform="rotate(-0 356.04878 363.617188)">3,000</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_5">
+      <path d="M 514.097561 351
+L 514.097561 112.32
+" clip-path="url(#p08cf14e5ba)" style="fill: none; stroke: #e5eaf0; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_6"/>
+     <g id="text_3">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="514.097561" y="363.617188" transform="rotate(-0 514.097561 363.617188)">6,000</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_7">
+      <path d="M 672.146341 351
+L 672.146341 112.32
+" clip-path="url(#p08cf14e5ba)" style="fill: none; stroke: #e5eaf0; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_8"/>
+     <g id="text_4">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="672.146341" y="363.617188" transform="rotate(-0 672.146341 363.617188)">9,000</text>
+     </g>
+    </g>
+    <g id="xtick_5">
+     <g id="line2d_9">
+      <path d="M 830.195122 351
+L 830.195122 112.32
+" clip-path="url(#p08cf14e5ba)" style="fill: none; stroke: #e5eaf0; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_10"/>
+     <g id="text_5">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="830.195122" y="363.617188" transform="rotate(-0 830.195122 363.617188)">12,000</text>
+     </g>
+    </g>
+    <g id="text_6">
+     <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="522" y="379.618125" transform="rotate(-0 522 379.618125)">Records in this validation run</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_11"/>
+     <g id="text_7">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: end" x="194.5" y="142.893549" transform="rotate(-0 194.5 142.893549)">Merged inputs</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_12"/>
+     <g id="text_8">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: end" x="194.5" y="189.556306" transform="rotate(-0 194.5 189.556306)">After decontamination</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_13"/>
+     <g id="text_9">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: end" x="194.5" y="236.219063" transform="rotate(-0 194.5 236.219063)">Selected</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_14"/>
+     <g id="text_10">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: end" x="194.5" y="282.881819" transform="rotate(-0 194.5 282.881819)">Inferred</text>
+     </g>
+    </g>
+    <g id="ytick_5">
+     <g id="line2d_15"/>
+     <g id="text_11">
+      <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: end" x="194.5" y="329.544576" transform="rotate(-0 194.5 329.544576)">Exported</text>
+     </g>
+    </g>
+   </g>
+   <g id="patch_3">
+    <path d="M 198 123.169091
+L 773.613659 123.169091
+L 773.613659 153.499883
+L 198 153.499883
+z
+" clip-path="url(#p08cf14e5ba)" style="fill: #c3d7ed"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 198 169.831848
+L 772.92878 169.831848
+L 772.92878 200.162639
+L 198 200.162639
+z
+" clip-path="url(#p08cf14e5ba)" style="fill: #aecce7"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 198 216.494604
+L 398.458537 216.494604
+L 398.458537 246.825396
+L 198 246.825396
+z
+" clip-path="url(#p08cf14e5ba)" style="fill: #76a5ce"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 198 263.157361
+L 398.458537 263.157361
+L 398.458537 293.488152
+L 198 293.488152
+z
+" clip-path="url(#p08cf14e5ba)" style="fill: #76a5ce"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 198 309.820117
+L 362.950244 309.820117
+L 362.950244 340.150909
+L 198 340.150909
+z
+" clip-path="url(#p08cf14e5ba)" style="fill: #439985"/>
+   </g>
+   <g id="text_12">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172b42" x="779.93561" y="141.451674" transform="rotate(-0 779.93561 141.451674)">10,926</text>
+   </g>
+   <g id="text_13">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172b42" x="779.250732" y="188.114431" transform="rotate(-0 779.250732 188.114431)">10,913</text>
+   </g>
+   <g id="text_14">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172b42" x="404.780488" y="234.777188" transform="rotate(-0 404.780488 234.777188)">3,805</text>
+   </g>
+   <g id="text_15">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172b42" x="404.780488" y="281.439944" transform="rotate(-0 404.780488 281.439944)">3,805</text>
+   </g>
+   <g id="text_16">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172b42" x="369.272195" y="328.102701" transform="rotate(-0 369.272195 328.102701)">3,131</text>
+   </g>
+  </g>
+  <g id="text_17">
+   <text style="font-weight: 700; font-size: 22px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #172b42" x="36" y="28.08" transform="rotate(-0 36 28.08)">An earlier SFT run completed unattended</text>
+  </g>
+  <g id="text_18">
+   <text style="font-size: 13px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #52677d" x="36" y="53.82" transform="rotate(-0 36 53.82)">MEASURED · 2026-10-08 medium validation · 51 min 14 s</text>
+  </g>
+  <g id="text_19">
+   <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #52677d" x="36" y="79.56" transform="rotate(-0 36 79.56)">Before the latest grounding and judge changes; not the released dataset inventory.</text>
+  </g>
+  <g id="text_20">
+   <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #52677d" x="36" y="407.16" transform="rotate(-0 36 407.16)">Inputs: 9,924 collected + 1,002 generated. Selection: 3,805 / 4,000 target; scarce hard examples.</text>
+  </g>
+  <g id="text_21">
+   <text style="font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #52677d" x="36" y="425.88" transform="rotate(-0 36 425.88)">Selection is budget allocation, not a quality rejection. Export counts do not measure answer correctness.</text>
+  </g>
+  <g id="text_22">
+   <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #52677d" x="36" y="444.6" transform="rotate(-0 36 444.6)">Source: sft-pipeline/smoke/freeze-validation.md. All 3,805 inference requests completed; filtering removed 674.</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p08cf14e5ba">
+   <rect x="198" y="112.32" width="648" height="238.68"/>
+  </clipPath>
+ </defs>
+</svg>

@@ -1,0 +1,24 @@
+{
+  "date_utc": "2026-10-15",
+  "scope": "Pre-PR static checks; no new GPU, API or Docker run",
+  "checks": {
+    "staged_python_ast": "13 files passed",
+    "staged_json": "2 files passed",
+    "staged_jsonl": "96 records passed",
+    "yaml_configs": "passed",
+    "git_diff_cached_check": "passed",
+    "validated_runtime_hash_matches": {
+      "sft_pipeline/stages/stage2_generate.py": true,
+      "sft_pipeline/filters/llm_judge.py": true,
+      "sft_pipeline/stages/stage6_filter.py": true,
+      "sft_pipeline/config.py": true
+    }
+  },
+  "previous_execution_evidence": {
+    "report": "smoke/grounding-validation.md",
+    "tests_passed": 288,
+    "http_completions": 20,
+    "exports": 18
+  },
+  "limitations": "Historical execution evidence is not a new run or a content-quality certification."
+}

@@ -33,11 +33,11 @@ Output schema per record:
 from __future__ import annotations
 
 import itertools
+import hashlib
 import json
 import logging
 import queue
 import re
-import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -97,10 +97,16 @@ def _infer_domain(text: str) -> str:
 
 
 def _normalize(text: str) -> str:
-    """Unicode normalize, collapse whitespace, strip."""
-    text = unicodedata.normalize("NFKC", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    """Canonicalize line endings without changing code, layout or Unicode literals.
+
+    IDs hash this same text: whitespace-sensitive programs must remain distinct.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _trim_prompt(text: str) -> str:
+    """Trim plain single-line fields; preserve multiline content verbatim."""
+    return text if "\n" in text or "\r" in text else text.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -121,10 +127,10 @@ def _extract_from_openai_messages(messages: list[dict]) -> str | None:
             content = " ".join(
                 p.get("text", "") for p in content if isinstance(p, dict) and "text" in p
             )
-        content = content.strip()
-        if role == "system" and content:
+        content = _trim_prompt(content)
+        if role == "system" and content.strip():
             system_text = content
-        elif role == "user" and content:
+        elif role == "user" and content.strip():
             return f"{system_text}\n\n{content}" if system_text else content
     return None
 
@@ -137,10 +143,10 @@ def _extract_from_sharegpt_messages(messages: list[dict]) -> str | None:
     system_text: str | None = None
     for msg in messages:
         from_ = msg.get("from", "")
-        value = (msg.get("value") or "").strip()
-        if from_ == "system" and value:
+        value = _trim_prompt(msg.get("value") or "")
+        if from_ == "system" and value.strip():
             system_text = value
-        elif from_ in ("human", "user") and value:
+        elif from_ in ("human", "user") and value.strip():
             return f"{system_text}\n\n{value}" if system_text else value
     return None
 
@@ -167,9 +173,9 @@ def _extract_prompt(val: Any) -> str | None:
             try:
                 val = json.loads(stripped)
             except json.JSONDecodeError:
-                return stripped if stripped else None
+                return _trim_prompt(val) if stripped else None
         else:
-            return stripped if stripped else None
+            return _trim_prompt(val) if stripped else None
 
     # At this point val is a Python object (list or dict).
     if isinstance(val, list) and val:
@@ -185,7 +191,7 @@ def _extract_prompt(val: Any) -> str | None:
     if isinstance(val, dict):
         # Single-message dict — treat as one turn based on available keys.
         content = val.get("content") or val.get("value") or val.get("text") or ""
-        return content.strip() if content.strip() else None
+        return _trim_prompt(content) if content.strip() else None
 
     return None
 
@@ -228,7 +234,7 @@ def _load_hf_dataset(src: DatasetSource):
             "Failed to load HF dataset %s — skipping source. Error: %s",
             src.hf_repo_id, exc,
         )
-        return
+        raise
 
     # kwargs passed through so _iter_hf_rows can reload with features=None on schema errors
     yield from _iter_hf_rows(ds, src.hf_repo_id, src.prompt_field, kwargs)
@@ -284,6 +290,7 @@ def _iter_hf_rows(ds, repo_id: str, field: str, load_kwargs: dict):
                 yield from _yield_rows(ds2)
             except Exception as exc2:
                 logger.warning("Retry with features=None also failed for %s: %s", repo_id, exc2)
+                raise
         else:
             raise
 
@@ -291,6 +298,8 @@ def _iter_hf_rows(ds, repo_id: str, field: str, load_kwargs: dict):
 def _load_local_jsonl(src: DatasetSource):
     """Yield raw prompt strings from a local JSONL file."""
     path = Path(src.path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Prompt source not found: {path}")
     logger.info("Loading local JSONL %s", path)
     field = src.prompt_field
     for record in iter_jsonl(path):
@@ -336,7 +345,7 @@ def _source_worker(
         for raw_text in raw_iter:
             seen += 1
             normalized = _normalize(raw_text)
-            if len(normalized) < 10:
+            if len(normalized.strip()) < 10:
                 continue
             pid = prompt_id(normalized)
             # Skip prompts already written in a previous run
@@ -346,6 +355,7 @@ def _source_worker(
             enqueued += 1
     except Exception as exc:
         logger.error("Source %s failed after %d rows: %s", source_name, seen, exc)
+        out_q.put(exc)
     finally:
         logger.info(
             "Source %s worker done: %d rows seen, %d items enqueued.",
@@ -361,8 +371,7 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     s1 = cfg.stage1_collect
     if not s1.datasets:
-        logger.warning("stage1_collect: no datasets configured — skipping")
-        return
+        raise ValueError("stage1_collect is enabled but no datasets are configured")
 
     output_dir = Path(s1.output_dir)
     ensure_dir(output_dir)
@@ -391,6 +400,7 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     total_processed = 0   # items received from workers
     total_written = len(seen_ids)  # count existing as already written
+    failures = []
 
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
         for src in s1.datasets:
@@ -403,6 +413,10 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
                 if item is _SENTINEL:
                     active -= 1
+                    continue
+
+                if isinstance(item, Exception):
+                    failures.append(item)
                     continue
 
                 pid, normalized, source_name, domain_hint = item
@@ -429,6 +443,8 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                         total_processed, total_written, dedup_rate,
                     )
 
+    if failures or not total_written:
+        raise RuntimeError(f"Stage 1 incomplete: {len(failures)} failed sources, {total_written} prompts")
     cm.mark_stage_complete(STAGE, output_count=total_written)
     logger.info("Stage1 complete: written=%d prompts", total_written)
 
@@ -440,7 +456,8 @@ def run_stage1(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 def _source_slug(src: DatasetSource) -> str:
     """Return a short filesystem-safe identifier for a dataset source."""
     name = (src.hf_repo_id or src.path or "unknown").replace("/", "_").replace(":", "_")
-    return f"{name}__{src.hf_split}"[:120]
+    digest = hashlib.sha256(src.model_dump_json().encode()).hexdigest()[:12]
+    return f"{name[:90]}__{src.hf_split}__{digest}"
 
 
 def _collect_source(
@@ -495,7 +512,7 @@ def _collect_source(
             for raw_text in raw_iter:
                 try:
                     normalized = _normalize(raw_text)
-                    if len(normalized) < 10:
+                    if len(normalized.strip()) < 10:
                         continue
                     pid = prompt_id(normalized)
                     if pid in seen_ids:
@@ -619,8 +636,7 @@ def run_stage1_distributed(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 
     s1 = cfg.stage1_collect
     if not s1.datasets:
-        logger.warning("stage1_collect (distributed): no datasets configured — skipping")
-        return
+        raise ValueError("stage1_collect is enabled but no datasets are configured")
 
     output_dir = Path(s1.output_dir)
     phase1_dir = output_dir / "_phase1"
@@ -680,10 +696,7 @@ def run_stage1_distributed(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             logger.error("Phase1 [%d/%d] ✗  %s — %s", done, total, source_name, exc)
 
     if failed:
-        logger.warning(
-            "Phase1: %d/%d sources failed. Proceeding with successful outputs.",
-            failed, len(futures),
-        )
+        raise RuntimeError(f"Stage 1 incomplete: {failed} sources failed; rerun to retry")
 
     # ── Phase 2: merge + cross-source dedup on head node ─────────────────────
     logger.info("Phase2: merging phase1 outputs …")

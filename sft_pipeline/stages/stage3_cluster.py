@@ -37,7 +37,7 @@ from sft_pipeline.clustering.faiss_index import (
 )
 from sft_pipeline.config import PipelineConfig
 from sft_pipeline.storage import (
-    ShardedJSONLWriter,
+    replacing_jsonl_writer,
     ensure_dir,
     iter_jsonl_dir,
 )
@@ -63,7 +63,8 @@ def _resolve_input_dirs(cfg: PipelineConfig) -> list[Path]:
     }
     # Ad-hoc mode: decontaminating explicit input_dirs is not the pre-Stage-3
     # prompt pool, so Stage 3 ignores that output and reads the raw pool.
-    if cfg.decontaminate.input_dirs:
+    if (cfg.decontaminate.input_dirs or not cfg.decontaminate.enabled
+            or not cfg.decontaminate.evals):
         return list(stage_dirs.values())
     decontam_dir = Path(cfg.decontaminate.output_dir)
     if decontam_dir.exists() and any(decontam_dir.glob("*.jsonl")):
@@ -340,6 +341,7 @@ def run_stage3(
                 "domain": rec.get("domain"),
                 "difficulty": rec.get("difficulty"),
                 "cluster_id": rec.get("cluster_id", -1),
+                "centroid_sim": rec.get("centroid_sim", 0.5),
             }
         logger.info("Stage3: loaded %d cluster labels from existing output", len(cluster_map))
 
@@ -382,15 +384,30 @@ def run_stage3(
 
         if n_empty:
             logger.warning(
-                "Stage3: %d empty responses — heuristic cluster labels will be used for those prompts.",
+                "Stage3: %d empty responses; missing annotations will be filled below.",
                 n_empty,
             )
         if n_missing:
             logger.warning(
                 "Stage3: %d prompt_id(s) missing from import file — "
-                "heuristic cluster labels will be used for those prompts.",
+                "missing annotations will be filled below.",
                 n_missing,
             )
+        missing_ids = set(cluster_map) - set(annotation_map)
+        if missing_ids and s3.annotation_enabled:
+            from sft_pipeline.clustering.annotator import annotate_prompts
+            records = [
+                {"prompt_id": rec["prompt_id"], "prompt": rec["prompt"]}
+                for rec in _all_prompts_iter(input_dirs) if rec["prompt_id"] in missing_ids
+            ]
+            if {rec["prompt_id"] for rec in records} != missing_ids:
+                raise ValueError("Annotation import: missing prompt text for existing cluster IDs")
+            annotation_map.update(annotate_prompts(
+                prompt_records=records, model=s3.annotation_model,
+                api_base=s3.annotation_api_base, api_key=s3.annotation_api_key,
+                concurrency=s3.annotation_concurrency, max_tokens=s3.annotation_max_tokens,
+                temperature=s3.annotation_temperature,
+            ))
         logger.info(
             "Stage3: parsed %d annotations, %d empty, %d missing",
             n_parsed, n_empty, n_missing,
@@ -403,14 +420,8 @@ def run_stage3(
         _save_checkpoint(annotation_map, ann_checkpoint)
         logger.info("Stage3: saved %d annotations to %s", len(annotation_map), ann_checkpoint)
 
-        # Remove old shards so ShardedJSONLWriter starts fresh at part-000000
-        # rather than appending after the existing ones.
-        for old_shard in existing_shards:
-            old_shard.unlink()
-        logger.info("Stage3: removed %d old shard(s), writing fresh output ...", len(existing_shards))
-
         total_written = 0
-        with ShardedJSONLWriter(out_dir, shard_size_mb=300) as writer:
+        with replacing_jsonl_writer(out_dir, shard_size_mb=300) as writer:
             for rec in _all_prompts_iter(input_dirs):
                 pid = rec["prompt_id"]
                 cluster_info = cluster_map.get(pid, {})
@@ -459,12 +470,13 @@ def run_stage3(
         yield from _all_prompts_iter(input_dirs)
 
     emb_shards = list(emb_dir.glob("embeddings_*.parquet"))
-    if emb_shards:
-        logger.info("Stage3: %d embedding shards found, skipping re-embed", len(emb_shards))
-    elif s3.distributed:
-        logger.info("Stage3: distributed embedding — dispatching %d Ray workers", s3.n_embedding_workers)
+    if s3.distributed:
         _embed_distributed(input_dirs, emb_dir, cfg)
+    elif emb_shards and (emb_dir / "embeddings.done").exists():
+        logger.info("Stage3: %d embedding shards found, skipping re-embed", len(emb_shards))
     else:
+        for shard in emb_shards:
+            shard.unlink()
         logger.info("Stage3: single-node embedding → %s", emb_dir)
         n_embedded = embed_prompts(
             prompt_iter=_all_prompts(),
@@ -475,6 +487,7 @@ def run_stage3(
             gpu_batch_size=s3.embedding_batch_size, # GPU forward-pass cap
         )
         logger.info("Stage3: embedded %d prompts", n_embedded)
+        (emb_dir / "embeddings.done").write_text(f"n_embedded={n_embedded}\n")
 
     # ------------------------------------------------------------------
     # Step B: Build FAISS index
@@ -492,6 +505,7 @@ def run_stage3(
             nlist=s3.faiss_nlist,
             nprobe=s3.faiss_nprobe,
             training_sample=s3.faiss_training_sample,
+            seed=cfg.global_.seed,
             device=cfg.global_.device,
         )
     else:
@@ -510,7 +524,7 @@ def run_stage3(
     prompts_text = [id_to_prompt.get(pid, "") for pid in ids]
 
     algo = s3.clustering_algorithm
-    if algo in ("faiss_kmeans", "flash_kmeans"):
+    if algo in ("torch_kmeans", "faiss_kmeans", "flash_kmeans"):
         # Direct k-means on all embeddings — no centroid indirection.
         logger.info(
             "Stage3: %s clustering %d embeddings into %d clusters",
@@ -524,6 +538,7 @@ def run_stage3(
             n_clusters=s3.n_clusters,
             device=cfg.global_.device,
             training_sample=s3.faiss_training_sample,
+            seed=cfg.global_.seed,
         )
     else:
         # Centroid-based path (hdbscan / kmeans, CPU).
@@ -538,6 +553,7 @@ def run_stage3(
                 algorithm=algo,
                 min_cluster_size=s3.hdbscan_min_cluster_size,
                 n_clusters=s3.n_clusters,
+                seed=cfg.global_.seed,
             )
         else:
             logger.warning(
@@ -573,100 +589,7 @@ def run_stage3(
     ]
     annotation_map: dict[str, dict] = {}
 
-    if import_annotations_path is not None:
-        # ── Import mode ────────────────────────────────────────────────
-        # Parse pre-computed raw responses from JSONL.  For any prompt_id
-        # absent from the file, fall back to online inference (if enabled)
-        # or use heuristic defaults with a loud warning.
-        from sft_pipeline.clustering.annotator import parse_and_validate_annotation
-
-        import_annotations_path = Path(import_annotations_path)
-        logger.info("Stage3: importing annotation results from %s", import_annotations_path)
-
-        results_map: dict[str, str] = {}
-        n_loaded = 0
-        with open(import_annotations_path, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                obj = json.loads(line)
-                raw = obj["response"]
-                # Normalize: if the response was stored as a parsed JSON object
-                # rather than a raw string, serialize it back so parse_and_validate
-                # can handle it uniformly.
-                results_map[obj["prompt_id"]] = raw if isinstance(raw, str) else json.dumps(raw)
-                n_loaded += 1
-                if n_loaded % 100_000 == 0:
-                    logger.info("Stage3: loaded %d responses from import file ...", n_loaded)
-        logger.info("Stage3: loaded %d responses from import file", n_loaded)
-
-        missing_ids: list[str] = []
-        n_parsed = 0
-        n_empty = 0
-        for rec in annotation_records:
-            pid = rec["prompt_id"]
-            if pid in results_map:
-                raw = results_map[pid]
-                if not raw or not raw.strip():
-                    # Empty response — leave out of annotation_map so Step D
-                    # falls back to the heuristic cluster labels naturally.
-                    n_empty += 1
-                else:
-                    annotation_map[pid] = parse_and_validate_annotation(raw)
-                    n_parsed += 1
-                    if n_parsed % 100_000 == 0:
-                        logger.info("Stage3: parsed %d / %d annotations ...", n_parsed, n_loaded)
-            else:
-                missing_ids.append(pid)
-        if n_empty:
-            logger.warning(
-                "Stage3: %d empty responses in import file — "
-                "heuristic cluster labels will be used for those prompts.",
-                n_empty,
-            )
-        logger.info("Stage3: parsed %d annotations, %d empty, %d missing", n_parsed, n_empty, len(missing_ids))
-
-        if missing_ids:
-            logger.warning(
-                "Stage3: %d prompt_id(s) missing from import file — "
-                "these will be handled separately.",
-                len(missing_ids),
-            )
-            if s3.annotation_enabled:
-                logger.warning(
-                    "Stage3: annotation_enabled=true — running online inference "
-                    "for %d missing prompt(s).",
-                    len(missing_ids),
-                )
-                from sft_pipeline.clustering.annotator import annotate_prompts
-
-                missing_set = set(missing_ids)
-                missing_records = [r for r in annotation_records if r["prompt_id"] in missing_set]
-                ann_checkpoint = Path(s3.output_dir) / "annotations.parquet"
-                online_map = annotate_prompts(
-                    prompt_records=missing_records,
-                    model=s3.annotation_model,
-                    api_base=s3.annotation_api_base,
-                    api_key=s3.annotation_api_key,
-                    concurrency=s3.annotation_concurrency,
-                    max_tokens=s3.annotation_max_tokens,
-                    temperature=s3.annotation_temperature,
-                    checkpoint_path=ann_checkpoint,
-                    checkpoint_every=s3.annotation_checkpoint_every,
-                )
-                annotation_map.update(online_map)
-            else:
-                logger.warning(
-                    "Stage3: annotation_enabled=false — using heuristic defaults "
-                    "(domain='other', difficulty='medium') for %d missing prompt(s). "
-                    "Set annotation_enabled: true in config to enable online fallback.",
-                    len(missing_ids),
-                )
-
-        logger.info("Stage3: import complete — %d records annotated", len(annotation_map))
-
-    elif s3.annotation_enabled:
+    if s3.annotation_enabled:
         # ── Online mode (original behaviour) ──────────────────────────
         from sft_pipeline.clustering.annotator import annotate_prompts
 
@@ -697,7 +620,7 @@ def run_stage3(
     # New fields added when annotation is enabled: topics, language.
     # ------------------------------------------------------------------
     total_written = 0
-    with ShardedJSONLWriter(out_dir, shard_size_mb=300) as writer:
+    with replacing_jsonl_writer(out_dir, shard_size_mb=300) as writer:
         for rec in _all_prompts():
             pid = rec["prompt_id"]
             cluster_info = cluster_map.get(pid, {})

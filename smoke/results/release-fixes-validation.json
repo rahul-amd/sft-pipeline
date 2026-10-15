@@ -1,0 +1,148 @@
+{
+  "status": "passed",
+  "counts": {
+    "stage1_collect": 17,
+    "stage2_generate": 6,
+    "decontaminate": 22,
+    "stage3_cluster": 22,
+    "stage4_sample": 20,
+    "stage5_inference": 20,
+    "stage6_filter": 17,
+    "export": 17
+  },
+  "generated_prompts_in_final": 4,
+  "decontamination": {
+    "total_input": 23,
+    "total_removed": 1,
+    "total_survivors": 22,
+    "removal_rate": 0.043478,
+    "ngram_size": 13,
+    "min_gram_size": 5,
+    "gram_lengths": [
+      12
+    ],
+    "total_eval_ngrams": 1,
+    "eval_items_loaded": {
+      "smoke_canary": 1
+    },
+    "eval_items_dropped_short": {},
+    "removed_per_eval": {
+      "smoke_canary": 1
+    },
+    "removed_per_source": {
+      "prompts.jsonl": 1
+    },
+    "elapsed_seconds": 0
+  },
+  "filter_report": {
+    "total_input": 20,
+    "total_passed": 17,
+    "pass_rate": 0.85,
+    "rejection_counts": {
+      "structural": 1,
+      "llm_judge": 2
+    },
+    "domain_pass_counts": {
+      "math": 12,
+      "code": 2,
+      "science": 3
+    },
+    "domain_fail_counts": {
+      "math": 2,
+      "code": 1
+    }
+  },
+  "resume_unchanged": true,
+  "elapsed_seconds": 343.2,
+  "teacher_model": "smoke-teacher",
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "max_sampled_pairwise_cosine": 0.6826674902612353,
+  "sampling_report": {
+    "input_records": 22,
+    "unique_input_ids": 22,
+    "target": 64,
+    "selected": 20,
+    "dedup_cosine_threshold": 0.92,
+    "dedup_method": "exact_global_greedy_cosine",
+    "dedup_comparison_tolerance": 0.000001,
+    "duplicate_candidates": 1,
+    "cells": [
+      {
+        "domain": "math",
+        "difficulty": "easy",
+        "target": 10,
+        "available": 5,
+        "selected": 5,
+        "duplicate_candidates": 0,
+        "shortfall": 5
+      },
+      {
+        "domain": "math",
+        "difficulty": "medium",
+        "target": 10,
+        "available": 10,
+        "selected": 9,
+        "duplicate_candidates": 1,
+        "shortfall": 1
+      },
+      {
+        "domain": "code",
+        "difficulty": "medium",
+        "target": 5,
+        "available": 3,
+        "selected": 3,
+        "duplicate_candidates": 0,
+        "shortfall": 2
+      },
+      {
+        "domain": "science",
+        "difficulty": "easy",
+        "target": 5,
+        "available": 1,
+        "selected": 1,
+        "duplicate_candidates": 0,
+        "shortfall": 4
+      },
+      {
+        "domain": "science",
+        "difficulty": "medium",
+        "target": 5,
+        "available": 2,
+        "selected": 2,
+        "duplicate_candidates": 0,
+        "shortfall": 3
+      }
+    ]
+  },
+  "code_sandbox": "docker",
+  "sandbox_image": "python:3.12-slim",
+  "config_sha256": "d3e0ed9b55efe234ac8349485c02132855ea0de5664e3015a2a6cab6702ecefa",
+  "versions": {
+    "pydantic": "2.13.4",
+    "datasets": "4.8.5",
+    "sentence-transformers": "5.5.1",
+    "faiss-cpu": "1.14.2",
+    "openai": "2.45.0"
+  },
+  "artifact_sha256": {
+    "stage1/part-000000.jsonl": "2b2e829b08c92b9beb0bb7c95f6880db8a90718a1e753b6459800c3cb05d73ff",
+    "stage2/part-000000.jsonl": "a720c8afb0a70b97e2e371656a1655dda01c537e121d9f516ac39b49796538b3",
+    "stage_decontam/clean/stage1-part-000000.jsonl": "949d4698a7ec1516df845aea749b8473f4a95292d52c09652e25667449a87a93",
+    "stage_decontam/clean/stage2-part-000000.jsonl": "a720c8afb0a70b97e2e371656a1655dda01c537e121d9f516ac39b49796538b3",
+    "stage3/part-000000.jsonl": "52dac5612ac7669e88ceacc151bf94875cc892d1faade18e65ec68f294f0a4dd",
+    "stage4/part-000000.jsonl": "e83fefd37fc303f509e20c9e5370a63be88b961fe4a10f09272f268e2e8ab56d",
+    "stage5/part-000000.jsonl": "660a5fa335718f92feacfc752c56a13f2894122991cb5003289f0870bb7f82c1",
+    "stage6/part-000000.jsonl": "ad8d2b09b0c803690adc8c097f0bb09ddcf4af99f3b1bd980e546579821f2548",
+    "final/part-000000.jsonl": "8ba9b9f309ef1c9e59e05e80cb9ea4ac6f38502f34fa119ace73dadc621ccb91"
+  },
+  "validation_date": "2026-10-08",
+  "resolved_teacher_model": "Qwen/Qwen3-4B",
+  "docker_version": "29.1.3",
+  "docker_image_digest": "python@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f",
+  "tests": {
+    "passed": 225,
+    "skipped": 12,
+    "live_docker_tests": 5
+  },
+  "skipped_scope": "11 GPU/flash-k-means checks; 1 opt-out network test module"
+}

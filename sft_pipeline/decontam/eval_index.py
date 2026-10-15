@@ -67,63 +67,92 @@ def extract_field_text(val: Any) -> str | None:
 # Eval row iteration
 # ---------------------------------------------------------------------------
 
-def _iter_eval_rows(src: EvalDatasetSource) -> Iterator[dict]:
-    """Yield raw rows from an eval source, honoring configs/splits/max_examples."""
+class EvalLoadError(RuntimeError):
+    """A requested eval could not be indexed; retain its loading audit."""
+
+    def __init__(self, message: str, report: list[dict]):
+        super().__init__(message)
+        self.report = report
+
+
+def _iter_eval_rows(src: EvalDatasetSource, audit: list[dict] | None = None) -> Iterator[dict]:
+    """Load every requested subset strictly, recording intentional row caps."""
+    audit = audit if audit is not None else []
     n_yielded = 0
     limit = src.max_examples
-
     if src.source == "local_jsonl":
-        for row in iter_jsonl(src.path):
-            if limit is not None and n_yielded >= limit:
-                return
-            yield row
-            n_yielded += 1
+        entry = {"eval": src.name, "source": src.path, "status": "loading", "rows": 0}
+        audit.append(entry)
+        try:
+            from pathlib import Path
+            if not Path(src.path).is_file():
+                raise FileNotFoundError(src.path)
+            for row in iter_jsonl(src.path, skip_errors=False):
+                if limit is not None and entry["rows"] >= limit:
+                    entry["status"] = "capped"
+                    return
+                entry["rows"] += 1
+                yield row
+            if not entry["rows"]:
+                raise ValueError("source contains no rows")
+            entry["status"] = "loaded"
+        except Exception as exc:
+            entry.update(status="failed", error=str(exc))
+            raise RuntimeError(f"Eval '{src.name}' failed to load {src.path}: {exc}") from exc
         return
 
-    # hf_dataset
     from datasets import get_dataset_config_names, load_dataset
-
     if src.hf_configs == "all":
         try:
-            configs: list[str | None] = list(get_dataset_config_names(src.hf_repo_id))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Eval '%s': could not list configs (%s); using default", src.name, exc)
-            configs = [None]
-    elif isinstance(src.hf_configs, list):
-        configs = list(src.hf_configs)
+            configs = list(get_dataset_config_names(src.hf_repo_id))
+            if not configs:
+                raise ValueError("no dataset configurations found")
+        except Exception as exc:
+            audit.append({"eval": src.name, "source": src.hf_repo_id,
+                          "status": "failed", "operation": "list_configs", "error": str(exc)})
+            raise RuntimeError(f"Eval '{src.name}': cannot enumerate configs: {exc}") from exc
     else:
-        configs = [None]
+        configs = src.hf_configs if isinstance(src.hf_configs, list) else [None]
 
     for config in configs:
         for split in src.splits:
+            entry = {"eval": src.name, "source": src.hf_repo_id, "config": config,
+                     "split": split, "status": "loading", "rows": 0}
+            audit.append(entry)
             if limit is not None and n_yielded >= limit:
-                return
-            try:
-                ds = load_dataset(
-                    src.hf_repo_id, name=config, split=split,
-                    trust_remote_code=False,
-                )
-            except Exception as exc:  # noqa: BLE001
-                # A config often lacks some of the requested splits — skip quietly.
-                logger.debug(
-                    "Eval '%s': skip %s/%s (%s)", src.name, config, split, exc
-                )
+                entry["status"] = "skipped_limit"
                 continue
-            for row in ds:
-                if limit is not None and n_yielded >= limit:
-                    return
-                yield row
-                n_yielded += 1
+            try:
+                ds = load_dataset(src.hf_repo_id, name=config, split=split)
+                entry["dataset_fingerprint"] = getattr(ds, "_fingerprint", None)
+                for row in ds:
+                    if limit is not None and n_yielded >= limit:
+                        entry["status"] = "capped"
+                        break
+                    entry["rows"] += 1
+                    n_yielded += 1
+                    yield row
+                if not entry["rows"]:
+                    raise ValueError("requested subset contains no rows")
+                if entry["status"] == "loading":
+                    entry["status"] = "loaded"
+            except Exception as exc:
+                entry.update(status="failed", error=str(exc))
+                raise RuntimeError(
+                    f"Eval '{src.name}': failed requested subset {config}/{split}: {exc}"
+                ) from exc
 
 
-def iter_eval_texts(src: EvalDatasetSource) -> Iterator[str]:
+def iter_eval_texts(src: EvalDatasetSource, audit: list[dict] | None = None) -> Iterator[str]:
     """Yield every non-empty match-field text for an eval source."""
-    for row in _iter_eval_rows(src):
+    for row in _iter_eval_rows(src, audit):
         if not isinstance(row, dict):
             continue
         for field in src.match_fields:
             text = extract_field_text(_get_field(row, field))
             if text:
+                if audit:
+                    audit[-1]["match_texts"] = audit[-1].get("match_texts", 0) + 1
                 yield text
 
 
@@ -142,6 +171,7 @@ class EvalNGramIndex:
         self.ngram_size = ngram_size
         self.min_gram_size = min_gram_size
         self.eval_names: list[str] = []
+        self.loading_report: list[dict] = []
         self._name_to_id: dict[str, int] = {}
         # gram_length -> {gram_string -> eval_id (first eval that produced it)}
         self._by_len: dict[int, dict[str, int]] = {}
@@ -221,9 +251,20 @@ def build_index(
     per_eval_items: dict[str, int] = {}
     for src in evals:
         count = 0
-        for text in iter_eval_texts(src):
-            index.add_text(text, src.name)
-            count += 1
+        try:
+            for text in iter_eval_texts(src, index.loading_report):
+                index.add_text(text, src.name)
+                count += 1
+            for entry in index.loading_report:
+                if entry["eval"] == src.name and entry["status"] in ("loaded", "capped"):
+                    if not entry.get("match_texts"):
+                        entry["status"] = "failed"
+                        entry["error"] = "requested subset has no usable match-field text"
+                        raise ValueError(f"Eval '{src.name}': {entry['error']}")
+            if not count:
+                raise ValueError(f"Eval '{src.name}' has no usable match-field text")
+        except Exception as exc:
+            raise EvalLoadError(str(exc), index.loading_report) from exc
         per_eval_items[src.name] = count
         logger.info(
             "Eval '%s': %d match texts loaded, %d below min_gram_size=%d dropped "

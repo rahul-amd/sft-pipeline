@@ -1,0 +1,7 @@
+!fixtures/prompts.jsonl
+!fixtures/eval.jsonl
+!fixtures/judge-calibration.jsonl
+!fixtures/judge-calibration-v2.jsonl
+/runs/
+/.venv-rocm/
+/results/pytest-tmp/

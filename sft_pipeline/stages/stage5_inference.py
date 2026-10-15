@@ -52,6 +52,17 @@ def run_stage5(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     cm.mark_stage_started(STAGE)
     cm.preload_processed(STAGE)
 
+    # Recover durable outputs from a crash between writing and checkpointing.
+    recovered = []
+    for shard in sorted(out_dir.glob("part-*.jsonl")):
+        for rec in iter_jsonl(shard):
+            if rec.get("response") and not cm.is_processed(rec["prompt_id"], STAGE):
+                recovered.append((rec["prompt_id"], ItemStatus.SUCCESS, str(shard)))
+                if len(recovered) >= s5.checkpoint_every:
+                    cm.mark_processed_batch(recovered, STAGE)
+                    recovered.clear()
+    cm.mark_processed_batch(recovered, STAGE)
+
     # ------------------------------------------------------------------
     # Load Stage 4 prompts shard-by-shard with progress logs
     # ------------------------------------------------------------------
@@ -71,7 +82,10 @@ def run_stage5(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             time.time() - t0,
         )
 
-    pending = [p for p in all_prompts if not cm.is_processed(p["prompt_id"], STAGE)]
+    pending_by_id = {
+        p["prompt_id"]: p for p in all_prompts if not cm.is_processed(p["prompt_id"], STAGE)
+    }
+    pending = list(pending_by_id.values())
 
     logger.info(
         "Stage5: %d total prompts, %d already processed, %d pending  [%.0fs]",
@@ -125,25 +139,23 @@ async def _infer_one(
     """
     Send one prompt to the OpenAI-compatible endpoint and store the raw response.
 
-    The full model output (including any <think>...</think> tokens the model
-    produces natively) is stored verbatim in 'response'.  No parsing is
-    done here — that is Stage 6's job.
-
-    Note on special tokens: <think> / </think> are regular text tokens for
-    all major thinking models and will always appear in message.content.
-    Actual HF special tokens like <|im_end|> are stripped by the vLLM server
-    by default (pass extra_body={"skip_special_tokens": False} to keep them,
-    but this is rarely needed for downstream use).
+    Store message content in 'response'. If the server returns reasoning
+    separately, also preserve 'reasoning' and 'answer'; otherwise Stage 6
+    parses configured delimiters. Token and reasoning handling depends on
+    the serving model and server configuration.
     """
     from sft_pipeline.inference.prompt_formatter import build_chat_messages
 
     pid = record["prompt_id"]
     messages = build_chat_messages(record["prompt"])
     response = ""
+    error = None
+    parsed_fields = {}
+    finish_reason = None
 
     async with semaphore:
         try:
-            response = await client.chat.completions.create(
+            completion = await client.chat.completions.create(
                 model=model,
                 messages=messages,
                 max_tokens=generation_cfg.max_tokens,
@@ -151,12 +163,35 @@ async def _infer_one(
                 top_p=generation_cfg.top_p,
                 n=generation_cfg.n_candidates,
             )
-            # Pick the longest candidate as the primary response.
-            candidates = [choice.message.content or "" for choice in response.choices]
-            response = max(candidates, key=len) if candidates else ""
+            candidates = [
+                choice for choice in completion.choices
+                if choice.finish_reason in ("stop", None) and (choice.message.content or "").strip()
+            ]
+            if not candidates:
+                # A token limit is a model-quality outcome, not a transport
+                # failure. Persist it for Stage 6 to reject explicitly.
+                candidates = [
+                    c for c in completion.choices if c.finish_reason in ("stop", "length", None)
+                    and (c.message.content or getattr(c.message, "reasoning_content", None)
+                         or getattr(c.message, "reasoning", None))
+                ]
+            if not candidates:
+                raise ValueError("Teacher returned no non-empty candidate")
+            choice = max(candidates, key=lambda c: len(c.message.content or ""))
+            response = choice.message.content or ""
+            finish_reason = choice.finish_reason
+            # Reasoning-aware servers may return the trace separately from content.
+            reasoning = getattr(choice.message, "reasoning_content", None)
+            if not reasoning:
+                reasoning = getattr(choice.message, "reasoning", None)
+            if isinstance(reasoning, str) and reasoning.strip():
+                parsed_fields = {"reasoning": reasoning.strip(), "answer": response}
+                if not response:
+                    response = reasoning
         except Exception as exc:
             logger.warning("Stage5: inference failed for %s: %s", pid, exc)
             counter[1] += 1
+            error = str(exc)
 
     counter[0] += 1
     done = counter[0]
@@ -174,6 +209,9 @@ async def _infer_one(
         **record,
         "response": response,
         "teacher_model": model,
+        **parsed_fields,
+        "finish_reason": finish_reason,
+        **({"_inference_error": error} if error is not None else {}),
     }
 
 
@@ -186,9 +224,9 @@ async def _run_openai_api_async(
     """
     Drive all pending prompts through the OpenAI-compatible API.
 
-    Uses asyncio.as_completed so results are written to disk as soon as they
-    arrive, rather than waiting for the full batch.  Checkpoints to DuckDB
-    every `checkpoint_every` records so restarts are cheap.
+    Keeps at most `concurrency` tasks active and writes completed results
+    immediately. Flushes output before checkpointing to DuckDB every
+    `checkpoint_every` records.
     """
     import httpx
     from openai import AsyncOpenAI
@@ -211,6 +249,7 @@ async def _run_openai_api_async(
         base_url=s5.api_base,
         api_key=s5.api_key or "none",
         http_client=http_client,
+        max_retries=s5.max_retries,
     )
 
     semaphore = asyncio.Semaphore(s5.concurrency)
@@ -222,42 +261,57 @@ async def _run_openai_api_async(
         total, s5.api_base, s5.model, s5.concurrency,
     )
 
-    # ── submit all tasks ──────────────────────────────────────────────────────
-    tasks = [
-        asyncio.create_task(
-            _infer_one(
-                oai_client, s5.model, rec, semaphore,
-                s5.generation, counter, total,
-            )
-        )
-        for rec in pending
-    ]
+    # Keep task creation bounded as well as HTTP concurrency.
+    records = iter(pending)
+    tasks = set()
+
+    def submit_next():
+        rec = next(records, None)
+        if rec is not None:
+            tasks.add(asyncio.create_task(_infer_one(
+                oai_client, s5.model, rec, semaphore, s5.generation, counter, total,
+            )))
+
+    for _ in range(s5.concurrency):
+        submit_next()
 
     # ── collect results as they complete, write + checkpoint ─────────────────
     total_written = 0
     checkpoint_buffer: list[tuple[str, ItemStatus, str | None]] = []
 
     try:
-        with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
-            for coro in asyncio.as_completed(tasks):
-                result = await coro
-                writer.write(result)
-                total_written += 1
-                shard = writer.written_shards[-1] if writer.written_shards else None
-                checkpoint_buffer.append(
-                    (result["prompt_id"], ItemStatus.SUCCESS, shard)
-                )
-                if len(checkpoint_buffer) >= s5.checkpoint_every:
-                    cm.mark_processed_batch(checkpoint_buffer, STAGE)
-                    checkpoint_buffer.clear()
-                    logger.info(
-                        "Stage5 (openai_api): checkpoint flushed at %d written", total_written
-                    )
+        with ShardedJSONLWriter(out_dir, shard_size_mb=s5.shard_size_mb) as writer:
+            while tasks:
+                done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    result = task.result()
+                    if "_inference_error" in result:
+                        cm.mark_processed(result["prompt_id"], STAGE, ItemStatus.FAILED,
+                                          error_msg=result["_inference_error"])
+                    else:
+                        writer.write(result)
+                        total_written += 1
+                        checkpoint_buffer.append((result["prompt_id"], ItemStatus.SUCCESS, None))
+                    if len(checkpoint_buffer) >= s5.checkpoint_every:
+                        writer.flush()
+                        cm.mark_processed_batch(checkpoint_buffer, STAGE)
+                        checkpoint_buffer.clear()
+                    submit_next()
 
             if checkpoint_buffer:
+                writer.flush()
                 cm.mark_processed_batch(checkpoint_buffer, STAGE)
     finally:
-        await http_client.aclose()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await oai_client.close()
+
+    if counter[1]:
+        raise RuntimeError(
+            f"Stage 5 incomplete: {counter[1]} inference requests failed; "
+            "successful outputs are checkpointed. Re-run to retry failed prompts."
+        )
 
     elapsed = time.time() - counter[2]
     logger.info(
@@ -284,7 +338,7 @@ def _run_single_node(
     checkpoint_every = s5.checkpoint_every
     total_written = 0
 
-    with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
+    with ShardedJSONLWriter(out_dir, shard_size_mb=s5.shard_size_mb) as writer:
         checkpoint_buffer: list[tuple[str, ItemStatus, str | None]] = []
 
         for start in range(0, len(pending), batch_size):
@@ -310,11 +364,13 @@ def _run_single_node(
                 )
 
             if len(checkpoint_buffer) >= checkpoint_every:
+                writer.flush()
                 cm.mark_processed_batch(checkpoint_buffer, STAGE)
                 checkpoint_buffer.clear()
                 logger.info("Stage5: checkpoint flushed at %d", total_written)
 
         if checkpoint_buffer:
+            writer.flush()
             cm.mark_processed_batch(checkpoint_buffer, STAGE)
 
     return total_written
@@ -390,7 +446,7 @@ def _run_ray(
 
     checkpoint_buffer: list[tuple[str, ItemStatus, str | None]] = []
 
-    with ShardedJSONLWriter(out_dir, shard_size_mb=500) as writer:
+    with ShardedJSONLWriter(out_dir, shard_size_mb=s5.shard_size_mb) as writer:
         for fn, actor, shard in all_futures:
             results = fn(actor, shard)
             for result in results:
@@ -401,6 +457,7 @@ def _run_ray(
                     (result["prompt_id"], ItemStatus.SUCCESS, shard_path)
                 )
                 if len(checkpoint_buffer) >= checkpoint_every:
+                    writer.flush()
                     cm.mark_processed_batch(checkpoint_buffer, STAGE)
                     checkpoint_buffer.clear()
                     logger.info(
@@ -409,6 +466,7 @@ def _run_ray(
                     )
 
         if checkpoint_buffer:
+            writer.flush()
             cm.mark_processed_batch(checkpoint_buffer, STAGE)
 
     return total_written

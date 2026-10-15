@@ -21,6 +21,13 @@ from pydantic import BaseModel, Field, model_validator
 def _resolve_placeholders(value: Any, ctx: dict[str, str]) -> Any:
     """Recursively resolve {key} placeholders in strings."""
     if isinstance(value, str):
+        def env_value(match: re.Match) -> str:
+            name = match.group(1)
+            if name not in os.environ:
+                raise ValueError(f"Required environment variable {name} is not set")
+            return os.environ[name]
+
+        value = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", env_value, value)
         for k, v in ctx.items():
             value = value.replace(f"{{{k}}}", v)
         return value
@@ -106,16 +113,27 @@ class CorpusSource(BaseModel):
 class Stage2Config(BaseModel):
     enabled: bool = True
     corpora: list[CorpusSource] = Field(default_factory=list)
-    chunk_size_tokens: int = 1024
-    chunk_overlap_tokens: int = 128
-    prompts_per_chunk: int = 4
+    chunk_size_tokens: int = Field(1024, ge=1)
+    chunk_overlap_tokens: int = Field(128, ge=0)
+    prompts_per_chunk: int = Field(4, ge=1)
     # Generator model served via vLLM HTTP (lightweight 7B)
     generator_model: str = "Qwen/Qwen2.5-7B-Instruct"
     generator_endpoint: str = "http://localhost:8001/v1"
+    generator_api_key: str = "EMPTY"
     generator_temperature: float = 0.8
     generator_max_tokens: int = 512
-    max_workers: int = 16
+    # Validate standalone questions against the retained source chunk.
+    grounding_enabled: bool = True
+    grounding_model: str | None = None  # defaults to generator_model
+    grounding_max_tokens: int = Field(2048, ge=1)
+    max_workers: int = Field(16, ge=1)
     output_dir: str = "{base_path}/stage2"
+
+    @model_validator(mode="after")
+    def check_overlap(self) -> Stage2Config:
+        if self.chunk_overlap_tokens >= self.chunk_size_tokens:
+            raise ValueError("chunk_overlap_tokens must be smaller than chunk_size_tokens")
+        return self
 
 
 class EvalDatasetSource(BaseModel):
@@ -148,6 +166,10 @@ class EvalDatasetSource(BaseModel):
             raise ValueError("path required when source='local_jsonl'")
         if not self.match_fields:
             raise ValueError(f"eval '{self.name}': match_fields must be non-empty")
+        if self.source == "hf_dataset" and (not self.splits or self.hf_configs == []):
+            raise ValueError(f"eval '{self.name}': requested configs and splits must be non-empty")
+        if self.max_examples is not None and self.max_examples < 1:
+            raise ValueError(f"eval '{self.name}': max_examples must be positive")
         return self
 
 
@@ -271,6 +293,7 @@ class Stage4Config(BaseModel):
             "default": {"easy": 0.20, "medium": 0.50, "hard": 0.30}
         }
     )
+    semantic_dedup_enabled: bool = False
     dedup_cosine_threshold: float = Field(0.92, ge=0.0, le=1.0)
     output_dir: str = "{base_path}/stage4"
 
@@ -315,6 +338,7 @@ class ReasoningDelimiters(BaseModel):
 
 class Stage5Config(BaseModel):
     enabled: bool = True
+    shard_size_mb: int = Field(500, ge=1)
     model: str = "Qwen/Qwen3.5-122B-A10B"
 
     # Execution mode:
@@ -328,7 +352,7 @@ class Stage5Config(BaseModel):
     api_base: str = "http://localhost:9000/v1"
     api_key: str = "none"
     # Number of concurrent in-flight requests.  Rule of thumb: ~64 per vLLM replica.
-    concurrency: int = 256
+    concurrency: int = Field(256, ge=1)
     # Per-request timeout in seconds.  Thinking models can take 60–120 s each.
     request_timeout: float = 120.0
 
@@ -348,8 +372,8 @@ class Stage5Config(BaseModel):
     # Note: <think>/<answer> tags are regular text tokens — they appear regardless.
     skip_special_tokens: bool = False
     batch_size: int = 256
-    checkpoint_every: int = 5_000
-    max_retries: int = 3
+    checkpoint_every: int = Field(5_000, ge=1)
+    max_retries: int = Field(3, ge=0)
     output_dir: str = "{base_path}/stage5"
 
 
@@ -378,15 +402,15 @@ class HeuristicFilterConfig(BaseModel):
     flag_self_contradiction: bool = False
 
 
-class MathFilterConfig(BaseModel):
-    enabled: bool = True
-    domains: list[str] = Field(default_factory=lambda: ["math", "science"])
-
-
 class CodeFilterConfig(BaseModel):
     enabled: bool = True
-    sandbox: Literal["subprocess", "e2b"] = "subprocess"
-    timeout_seconds: int = 10
+    sandbox: Literal["docker", "subprocess", "e2b"] = "docker"
+    timeout_seconds: int = Field(10, ge=1)
+    docker_image: str = "python:3.12-slim"
+    docker_memory_mb: int = Field(256, ge=64)
+    docker_pids_limit: int = Field(32, ge=4)
+    max_code_bytes: int = Field(65_536, ge=1)
+    max_output_bytes: int = Field(4_096, ge=1)
     domains: list[str] = Field(default_factory=lambda: ["code"])
 
 
@@ -394,6 +418,12 @@ class LLMJudgeConfig(BaseModel):
     enabled: bool = True
     model_endpoint: str = "http://localhost:8001/v1"
     model: str = "Qwen/Qwen2.5-7B-Instruct"
+    api_key: str = "EMPTY"
+    max_tokens: int = Field(512, ge=1)
+    request_timeout: float = Field(120.0, gt=0)
+    # Refuse oversized inputs rather than silently scoring clipped content.
+    max_input_chars: int = Field(100_000, ge=1)
+    on_error: Literal["raise", "pass"] = "raise"
     score_threshold: float = Field(6.0, ge=1.0, le=10.0)
     sample_rate: float = Field(0.10, ge=0.0, le=1.0)
 
@@ -401,12 +431,11 @@ class LLMJudgeConfig(BaseModel):
 class Stage6Config(BaseModel):
     enabled: bool = True
     # Parse raw Stage 5 `response` strings into reasoning/answer before
-    # filtering, using stage5_inference.delimiters. Without this the math and
-    # code filters see empty fields and silently become no-ops.
+    # filtering, using stage5_inference.delimiters. Code and judge filters
+    # require the parsed fields.
     parse_responses: bool = True
     structural: StructuralFilterConfig = Field(default_factory=StructuralFilterConfig)
     heuristic: HeuristicFilterConfig = Field(default_factory=HeuristicFilterConfig)
-    math: MathFilterConfig = Field(default_factory=MathFilterConfig)
     code: CodeFilterConfig = Field(default_factory=CodeFilterConfig)
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
     output_dir: str = "{base_path}/stage6"
@@ -436,6 +465,7 @@ class Stage6Config(BaseModel):
 
 
 class ExportConfig(BaseModel):
+    enabled: bool = True
     final_jsonl_path: str = "{base_path}/final/dataset.jsonl"
     shard_size_mb: int = 500
     hf_repo_id: str | None = None
@@ -476,7 +506,7 @@ def load_config(path: str | Path, overrides: dict[str, Any] | None = None) -> Pi
     """
     Load and validate the pipeline config from a YAML file.
     Resolves {run_id} and {base_path} placeholders throughout.
-    Optionally merges ``overrides`` (dotted-key dict) on top of the file values.
+    Optionally merges ``overrides`` (nested dict) on top of the file values.
     """
     raw = yaml.safe_load(Path(path).read_text())
     if raw is None:
@@ -484,6 +514,10 @@ def load_config(path: str | Path, overrides: dict[str, Any] | None = None) -> Pi
 
     if overrides:
         _deep_merge(raw, overrides)
+
+    # Resolve environment-backed run IDs/base paths before building the path
+    # context; otherwise model defaults reinsert unresolved ${VAR} strings.
+    raw = _resolve_placeholders(raw, {})
 
     # Resolve run_id first, then base_path
     run_id = str(raw.get("global", {}).get("run_id", "run_001"))

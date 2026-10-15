@@ -15,7 +15,6 @@ from pathlib import Path
 from sft_pipeline.config import (
     CodeFilterConfig,
     LLMJudgeConfig,
-    MathFilterConfig,
     ReasoningDelimiters,
     Stage6Config,
 )
@@ -54,7 +53,6 @@ def _mixed_records() -> list[dict]:
 def _cfg() -> Stage6Config:
     return Stage6Config(
         llm_judge=LLMJudgeConfig(enabled=False),
-        math=MathFilterConfig(enabled=True),
         code=CodeFilterConfig(enabled=True, sandbox="subprocess", timeout_seconds=5),
     )
 

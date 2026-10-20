@@ -66,6 +66,7 @@ def build_and_save(
     training_sample: int = 500_000,
     batch_size: int = 100_000,
     device: str = "cpu",
+    seed: int = 42,
 ) -> None:
     """
     Build a FAISS index from vectors and save to disk.
@@ -108,10 +109,11 @@ def build_and_save(
         cpu_index = faiss.IndexIVFFlat(
             quantizer, D, nlist_actual, faiss.METRIC_INNER_PRODUCT
         )
+        cpu_index.cp.seed = seed
         index = faiss.index_cpu_to_gpu(res, gpu_id, cpu_index) if use_gpu else cpu_index
 
         train_size = min(training_sample, N)
-        rng = np.random.default_rng(42)
+        rng = np.random.default_rng(seed)
         train_idx = rng.choice(N, size=train_size, replace=False)
         train_vecs = vectors[train_idx].astype(np.float32)
         logger.info(
@@ -124,10 +126,12 @@ def build_and_save(
         m = 64  # sub-quantizers; D must be divisible by m
         nlist_actual = min(nlist, max(1, N // 10))
         cpu_index = faiss.IndexIVFPQ(quantizer, D, nlist_actual, m, 8)
+        cpu_index.cp.seed = seed
+        cpu_index.pq.cp.seed = seed
         index = faiss.index_cpu_to_gpu(res, gpu_id, cpu_index) if use_gpu else cpu_index
 
         train_size = min(training_sample, N)
-        rng = np.random.default_rng(42)
+        rng = np.random.default_rng(seed)
         train_idx = rng.choice(N, size=train_size, replace=False)
         logger.info(
             "Training IVFPQ quantizer on %d vectors (GPU=%s)...", train_size, use_gpu

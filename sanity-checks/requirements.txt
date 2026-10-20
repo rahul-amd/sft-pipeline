@@ -11,6 +11,3 @@ openai>=1.40
 gradio>=4.0
 plotly>=5.20
 pandas>=2.0
-
-# math verifier needs this (also in core requirements.txt) — pinned for clarity
-antlr4-python3-runtime>=4.11,<4.12

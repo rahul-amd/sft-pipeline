@@ -41,7 +41,7 @@ import orjson
 
 from sft_pipeline.checkpoint import CheckpointManager
 from sft_pipeline.config import PipelineConfig
-from sft_pipeline.decontam.eval_index import EvalNGramIndex, build_index
+from sft_pipeline.decontam.eval_index import EvalLoadError, EvalNGramIndex, build_index
 from sft_pipeline.decontam.normalize import tokenize
 from sft_pipeline.storage import ensure_dir, iter_jsonl
 
@@ -248,13 +248,17 @@ def _run_shards_ray(
         remote.remote(str(shard), key, out_dir, removed_dir, index_ref): key
         for key, shard in todo
     }
+    failures = 0
     for _done, _total, key, result, err in ray_utils.as_completed(
         future_to_key, desc="Decontaminate shard"
     ):
         if err is not None:
             logger.error("Decontaminate: shard %s failed; will retry on resume.", key)
+            failures += 1
             continue
         _record_stats(result, stats_path, agg)
+    if failures:
+        raise RuntimeError(f"Decontamination incomplete: {failures} shards failed; rerun to retry")
 
 
 # ---------------------------------------------------------------------------
@@ -279,13 +283,21 @@ def run_decontaminate(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         "from %d eval source(s)...",
         s.ngram_size, s.min_gram_size, len(s.evals),
     )
-    index, per_eval_items = build_index(s.evals, s.ngram_size, s.min_gram_size)
+    try:
+        index, per_eval_items = build_index(s.evals, s.ngram_size, s.min_gram_size)
+    except EvalLoadError as exc:
+        failure_path = Path(s.report_path)
+        failure_path.parent.mkdir(parents=True, exist_ok=True)
+        failure_path.write_text(json.dumps({
+            "status": "failed", "error": str(exc), "eval_loading": exc.report,
+        }, indent=2))
+        raise
     if index.total_grams == 0:
         logger.warning(
             "Decontaminate: eval index is empty (no eval text loaded) — skipping. "
             "Stage 3 will read the raw pool. Check match_fields / splits."
         )
-        return
+        raise ValueError("Decontamination eval index is empty; check benchmark sources and fields")
     logger.info(
         "Decontaminate: index ready — %d grams, gram lengths=%s, evals=%s",
         index.total_grams, list(index.gram_lens), index.eval_names,
@@ -371,6 +383,7 @@ def run_decontaminate(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         "gram_lengths": list(index.gram_lens),
         "total_eval_ngrams": index.total_grams,
         "eval_items_loaded": per_eval_items,
+        "eval_loading": index.loading_report,
         # Eval items too short to index (below min_gram_size) — a large count
         # here means a match_field is mostly noise (e.g. single-word answers).
         "eval_items_dropped_short": dict(index.dropped_short),

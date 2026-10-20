@@ -1,0 +1,6 @@
+stage,records,source,scope
+Merged inputs,10926,smoke/freeze-validation.md,earlier_medium_validation_before_grounding_judge_changes
+After decontamination,10913,smoke/freeze-validation.md,earlier_medium_validation_before_grounding_judge_changes
+Selected,3805,smoke/freeze-validation.md,earlier_medium_validation_before_grounding_judge_changes
+Inferred,3805,smoke/freeze-validation.md,earlier_medium_validation_before_grounding_judge_changes
+Exported,3131,smoke/freeze-validation.md,earlier_medium_validation_before_grounding_judge_changes

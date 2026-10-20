@@ -11,8 +11,9 @@ Sampling strategy per (domain, difficulty) cell:
     then most peripheral prompts (lowest centroid_sim) if more are needed.
   - Round-robin across all clusters until cell quota is met.
 
-This naturally avoids sampling near-duplicates (which cluster near the
-centroid) while ensuring broad coverage across all clusters.
+Optional exact cosine checks enforce global semantic deduplication across
+clusters and quota cells. This is disabled by default. When enabled, rejected
+candidates are replaced from the same cell where possible.
 
 If centroid_sim is absent from Stage 3 data (old runs), Stage 4 computes
 it from the embeddings, patches the Stage 3 shards in-place, and continues.
@@ -32,7 +33,7 @@ import polars as pl
 from sft_pipeline.checkpoint import CheckpointManager
 from sft_pipeline.clustering.embedder import load_embeddings
 from sft_pipeline.config import PipelineConfig
-from sft_pipeline.storage import ShardedJSONLWriter, ensure_dir, iter_jsonl
+from sft_pipeline.storage import replacing_jsonl_writer, ensure_dir, iter_jsonl
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
         )
 
     df = pl.DataFrame(records)
+    df = df.unique(subset=["prompt_id"], keep="first", maintain_order=True)
     logger.info("Stage4: all shards loaded — %d candidate prompts in %.1f s", len(df), time.time() - t0)
 
     # Ensure required columns exist
@@ -84,10 +86,14 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     # ------------------------------------------------------------------
     # Step B: Load embeddings
     # ------------------------------------------------------------------
+    needs_patch = (
+        "centroid_sim" not in df.columns
+        or df["centroid_sim"].is_null().any()
+    )
     emb_vectors: np.ndarray | None = None
     id_to_emb_idx: dict[str, int] = {}
     emb_shards = list(emb_dir.glob("embeddings_*.parquet")) if emb_dir.is_dir() else []
-    if emb_shards:
+    if emb_shards and (s4.semantic_dedup_enabled or needs_patch):
         logger.info("Stage4: loading embeddings from %s (%d shards) ...", emb_dir, len(emb_shards))
         t0 = time.time()
         emb_ids, emb_vectors = load_embeddings(emb_dir)
@@ -96,19 +102,19 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
             "Stage4: embeddings loaded — %d vectors, shape %s, dtype %s (%.1f s)",
             len(emb_ids), emb_vectors.shape, emb_vectors.dtype, time.time() - t0,
         )
-    else:
-        logger.warning(
-            "Stage4: no embedding shards found in %s — centroid_sim will use defaults",
-            emb_dir,
-        )
+    elif s4.semantic_dedup_enabled:
+        raise FileNotFoundError(f"Stage4 semantic deduplication requires embeddings in {emb_dir}")
+
+    deduper = None
+    if s4.semantic_dedup_enabled:
+        deduper = _SemanticDeduper(emb_vectors, id_to_emb_idx, s4.dedup_cosine_threshold)
+        missing = set(df["prompt_id"].to_list()) - id_to_emb_idx.keys()
+        if missing:
+            raise ValueError(f"Stage4: {len(missing)} prompts have no embedding")
 
     # ------------------------------------------------------------------
     # Step B.5: Patch centroid_sim into Stage 3 shards if missing
     # ------------------------------------------------------------------
-    needs_patch = (
-        "centroid_sim" not in df.columns
-        or df["centroid_sim"].is_null().any()
-    )
     if needs_patch and emb_vectors is not None:
         logger.info(
             "Stage4: centroid_sim missing from Stage 3 data — computing and patching shards ..."
@@ -141,13 +147,13 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
     )
 
     sampled_ids: list[str] = []
+    cell_reports = []
 
     for domain, d_frac in domain_quotas.items():
         domain_target = int(total_target * d_frac)
         domain_df = df.filter(pl.col("domain_resolved") == domain)
         if len(domain_df) == 0:
-            logger.warning("Stage4: no prompts for domain '%s' — skipping", domain)
-            continue
+            logger.warning("Stage4: no prompts for domain '%s'", domain)
 
         for diff, diff_frac in _diff_quotas_for(domain).items():
             cell_target = int(domain_target * diff_frac)
@@ -160,6 +166,11 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     " — cell skipped entirely. Adjust quotas in config.",
                     domain, diff, cell_target,
                 )
+                cell_reports.append({
+                    "domain": domain, "difficulty": diff, "target": cell_target,
+                    "available": 0, "selected": 0, "duplicate_candidates": 0,
+                    "shortfall": cell_target,
+                })
                 continue
 
             if n_available < cell_target:
@@ -172,8 +183,19 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                     100.0 * (cell_target - n_available) / cell_target,
                 )
 
-            cell_sampled = _sample_cell_with_centroid_ordering(cell_df, cell_target, rng)
+            before = deduper.rejected if deduper else 0
+            if deduper:
+                ordered = _sample_cell_with_centroid_ordering(cell_df, n_available, rng)
+                cell_sampled = deduper.select(ordered, cell_target)
+            else:
+                cell_sampled = _sample_cell_with_centroid_ordering(cell_df, cell_target, rng)
             sampled_ids.extend(cell_sampled)
+            cell_reports.append({
+                "domain": domain, "difficulty": diff, "target": cell_target,
+                "available": n_available, "selected": len(cell_sampled),
+                "duplicate_candidates": deduper.rejected - before if deduper else 0,
+                "shortfall": max(0, cell_target - len(cell_sampled)),
+            })
 
             logger.debug(
                 "Stage4: (%s, %s): target=%d available=%d sampled=%d",
@@ -208,13 +230,24 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
                         i, len(shards), len(id_to_record), time.time() - t0)
 
     total_written = 0
-    with ShardedJSONLWriter(out_dir, shard_size_mb=300) as writer:
+    with replacing_jsonl_writer(out_dir, shard_size_mb=300) as writer:
         for pid in sampled_ids:
             rec = id_to_record.get(pid)
             if rec:
                 writer.write(rec)
                 total_written += 1
 
+    (out_dir / "sampling_report.json").write_text(json.dumps({
+        "input_records": len(records), "unique_input_ids": len(df),
+        "target": total_target, "selected": total_written,
+        "shortfall": max(0, total_target - total_written),
+        "quota_rounding_shortfall": max(0, total_target - sum(c["target"] for c in cell_reports)),
+        "semantic_dedup_enabled": s4.semantic_dedup_enabled,
+        "dedup_cosine_threshold": s4.dedup_cosine_threshold,
+        "dedup_method": "exact_global_greedy_cosine" if deduper else None,
+        "dedup_comparison_tolerance": 1e-6,
+        "duplicate_candidates": deduper.rejected if deduper else 0, "cells": cell_reports,
+    }, indent=2) + "\n")
     cm.mark_stage_complete(STAGE, output_count=total_written)
     logger.info(
         "Stage4 complete: %d prompts written (target was %d)", total_written, total_target
@@ -224,6 +257,57 @@ def run_stage4(cfg: PipelineConfig, cm: CheckpointManager) -> None:
 # ---------------------------------------------------------------------------
 # Sampling helper
 # ---------------------------------------------------------------------------
+
+class _SemanticDeduper:
+    """Exact global greedy dedup with bounded query/similarity batches.
+
+    The index contains only accepted prompts. FAISS IndexFlatIP has no ANN
+    recall loss; normalized float32 cosine at the threshold rejects a candidate.
+    A conservative 1e-6 tolerance also rejects numerical boundary cases.
+    Exact search can be expensive at millions of retained prompts.
+    """
+
+    def __init__(self, vectors, id_to_idx, threshold, batch_size=512):
+        import faiss
+
+        self.vectors = vectors
+        self.id_to_idx = id_to_idx
+        self.threshold = threshold - 1e-6
+        self.batch_size = batch_size
+        self.index = faiss.IndexFlatIP(vectors.shape[1])
+        self.seen = set()
+        self.rejected = 0
+
+    def select(self, ordered_ids: list[str], target: int) -> list[str]:
+        chosen = []
+        for start in range(0, len(ordered_ids), self.batch_size):
+            if len(chosen) >= target:
+                break
+            ids = ordered_ids[start:start + self.batch_size]
+            batch = np.array(self.vectors[[self.id_to_idx[p] for p in ids]],
+                             dtype=np.float32, order="C", copy=True)
+            norms = np.linalg.norm(batch, axis=1, keepdims=True)
+            if not np.isfinite(batch).all() or not np.isfinite(norms).all() or (norms == 0).any():
+                raise ValueError("Stage4: embeddings must be finite, nonzero vectors")
+            batch /= norms
+            nearest = (self.index.search(batch, 1)[0][:, 0] if self.index.ntotal
+                       else np.full(len(ids), -np.inf))
+            local_sim = batch @ batch.T
+            accepted = []
+            for i, pid in enumerate(ids):
+                if len(chosen) >= target:
+                    break
+                if (pid in self.seen or nearest[i] >= self.threshold
+                        or (accepted and np.any(local_sim[i, accepted] >= self.threshold))):
+                    self.rejected += 1
+                    continue
+                accepted.append(i)
+                self.seen.add(pid)
+                chosen.append(pid)
+            if accepted:
+                self.index.add(batch[accepted])
+        return chosen
+
 
 def _sample_cell_with_centroid_ordering(
     cell_df: pl.DataFrame,
@@ -270,10 +354,6 @@ def _sample_cell_with_centroid_ordering(
 
     # Shuffle cluster order for stochastic diversity
     rng.shuffle(cluster_queues)
-
-    n_available = sum(len(q) for q in cluster_queues)
-    if n_available <= cell_target:
-        return [pid for q in cluster_queues for pid in q]
 
     # Round-robin: take one from each cluster per round
     sampled: list[str] = []

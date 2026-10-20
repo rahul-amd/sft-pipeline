@@ -1,0 +1,29 @@
+{
+  "review_date": "2026-10-14",
+  "scope": "Blog assets only; no pipeline runs or experiments",
+  "repositories": {
+    "sft-pipeline": {
+      "tracked_files_checked": 168,
+      "changed_files": [],
+      "head_unchanged": true,
+      "head": "854656dca7cae488dfd077761c9f1e9738e6125d"
+    },
+    "lc-pipeline": {
+      "tracked_files_checked": 71,
+      "changed_files": [],
+      "head_unchanged": true,
+      "head": "8565143ec832e8763db930432a713a43d42642da"
+    }
+  },
+  "assets": {
+    "svg_count": 5,
+    "png_count": 5,
+    "svg_parse": "pass",
+    "python_figure_source_syntax": "pass",
+    "yaml_manifest": "pass",
+    "retention_csv_counts": "pass",
+    "visual_review": "All five PNG previews inspected by orchestrator; diagrams also reviewed by author",
+    "broken_local_markdown_links": [],
+    "draft_word_count": 5533
+  }
+}

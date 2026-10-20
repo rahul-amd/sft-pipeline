@@ -99,7 +99,7 @@ stage6_filter:
     score_threshold: 6.0
     sample_rate: 0.10
   code:
-    sandbox: "subprocess"  # change to "e2b" if preferred
+    sandbox: "docker"      # pre-pull python:3.12-slim on each worker
     timeout_seconds: 10
 
 export:

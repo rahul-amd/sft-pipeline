@@ -57,12 +57,9 @@ stage6_filter:
   heuristic:
     min_info_density: 0.20
     flag_self_contradiction: false   # measured ~4% precision — noise
-  math:
-    enabled: true
-    domains: ["math", "science"]
   code:
     enabled: true
-    sandbox: "subprocess"   # change to "e2b" for stronger isolation
+    sandbox: "docker"       # pre-pull python:3.12-slim on each worker
     # A hanging/looping snippet blocks its worker for the full timeout. 3s is
     # plenty for a self-contained verification snippet; raise only if legitimate
     # code is being rejected with code_timeout in the filter report.

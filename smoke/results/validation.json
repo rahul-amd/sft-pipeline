@@ -1,0 +1,78 @@
+{
+  "status": "passed",
+  "counts": {
+    "stage1_collect": 16,
+    "stage2_generate": 6,
+    "decontaminate": 21,
+    "stage3_cluster": 21,
+    "stage4_sample": 21,
+    "stage5_inference": 21,
+    "stage6_filter": 18,
+    "export": 18
+  },
+  "generated_prompts_in_final": 5,
+  "decontamination": {
+    "total_input": 22,
+    "total_removed": 1,
+    "total_survivors": 21,
+    "removal_rate": 0.045455,
+    "ngram_size": 13,
+    "min_gram_size": 5,
+    "gram_lengths": [
+      12
+    ],
+    "total_eval_ngrams": 1,
+    "eval_items_loaded": {
+      "smoke_canary": 1
+    },
+    "eval_items_dropped_short": {},
+    "removed_per_eval": {
+      "smoke_canary": 1
+    },
+    "removed_per_source": {
+      "prompts.jsonl": 1
+    },
+    "elapsed_seconds": 0
+  },
+  "filter_report": {
+    "total_input": 21,
+    "total_passed": 18,
+    "pass_rate": 0.8571,
+    "rejection_counts": {
+      "structural": 2,
+      "llm_judge": 1
+    },
+    "domain_pass_counts": {
+      "math": 12,
+      "code": 3,
+      "science": 3
+    },
+    "domain_fail_counts": {
+      "math": 1,
+      "code": 2
+    }
+  },
+  "resume_unchanged": true,
+  "elapsed_seconds": 284.11,
+  "teacher_model": "smoke-teacher",
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "config_sha256": "70a747decce1a35735e9b89517a867b69ea8e86ec20c6e0543e8bca5a03939d2",
+  "versions": {
+    "pydantic": "2.13.4",
+    "datasets": "4.8.5",
+    "sentence-transformers": "5.5.1",
+    "faiss-cpu": "1.14.2",
+    "openai": "2.45.0"
+  },
+  "artifact_sha256": {
+    "stage1/part-000000.jsonl": "88e7dcb3ddcbb4c62d7012c46afda30d12264b339684a80dc9fc0fdab6923bb1",
+    "stage2/part-000000.jsonl": "62cd87e9e5d9416a5bf242f960e736aa0fd078f63aed05a5dc696216a3e56d55",
+    "stage_decontam/clean/stage1-part-000000.jsonl": "8399891f4254895aa40df76c6dd354458a7fdcca68173919758dd36ff66dd78e",
+    "stage_decontam/clean/stage2-part-000000.jsonl": "62cd87e9e5d9416a5bf242f960e736aa0fd078f63aed05a5dc696216a3e56d55",
+    "stage3/part-000000.jsonl": "02f49a669d833c58dda0bc81dfc88e0bfa7bb61acf49c86c549f651df76aa5fb",
+    "stage4/part-000000.jsonl": "f38fd9f627ea74e9d0a8dbe2ee9b0214bdd44b07c01114aaae98e742bccf0057",
+    "stage5/part-000000.jsonl": "3aad813592e7ea749460a908df7ed8a4bd84577f8769d97c56ed07125ef67f71",
+    "stage6/part-000000.jsonl": "d98a14b4d90a0bd6e50e5d87717338b41a2598202667d6c621280ae3fbe6be6c",
+    "final/part-000000.jsonl": "2f4671b390b626bf006ef0fde54d49bd4895a651a46daf2997f297c330b393ef"
+  }
+}

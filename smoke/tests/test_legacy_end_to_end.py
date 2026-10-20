@@ -4,7 +4,7 @@ End-to-end smoke test: Stages 1, 4, 6 (with mocked vLLM).
 Runs the full pipeline on 20 synthetic prompts using:
   - Real Stage 1 (in-memory HF datasets via datasets.Dataset.from_dict)
   - Skipped Stage 2 (no corpora)
-  - Skipped Stage 3 (pre-populated prompt JSONL, no GPU embedding)
+  - Skipped Stage 3 (pre-populated prompt JSONL and synthetic embeddings)
   - Real Stage 4 (quota sampling from pre-populated data)
   - Mocked Stage 5 (no vLLM — returns pre-canned responses)
   - Real Stage 6 (CPU filters, LLM judge disabled)
@@ -128,8 +128,6 @@ stage6_filter:
     enabled: false
   code:
     enabled: false
-  math:
-    enabled: false
 
 export:
   final_jsonl_path: "{tp}/final/dataset.jsonl"
@@ -159,6 +157,19 @@ export:
     with shard.open("wb") as f:
         for rec in records:
             f.write(orjson.dumps(rec) + b"\n")
+
+    # Stage 4 now requires embeddings to enforce semantic deduplication.
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    embeddings_dir = Path(cfg.stage3_cluster.embeddings_dir)
+    embeddings_dir.mkdir(parents=True)
+    vectors = np.eye(len(records), dtype=np.float16)
+    pq.write_table(pa.table({
+        "prompt_id": [r["prompt_id"] for r in records],
+        "embedding": pa.FixedSizeListArray.from_arrays(
+            pa.array(vectors.ravel(), type=pa.float16()), len(records)),
+    }), embeddings_dir / "embeddings_0000.parquet")
 
     # Run pipeline with mocked Stage 5
     with CheckpointManager(cfg.global_.checkpoint_db) as cm:
@@ -218,8 +229,6 @@ stage6_filter:
   llm_judge:
     enabled: false
   code:
-    enabled: false
-  math:
     enabled: false
 stage5_inference:
   enabled: false

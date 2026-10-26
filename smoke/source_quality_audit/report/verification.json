@@ -1,0 +1,10 @@
+{
+  "desktop_load_all_records": true,
+  "source_outcome_dimension_filters": true,
+  "search_full_record_and_keyboard_close": true,
+  "pagination": true,
+  "source_sort_and_csv_download": true,
+  "mobile_layout_and_dialog": true,
+  "javascript_errors": [],
+  "external_network_requests": []
+}

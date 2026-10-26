@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Detailed source-stratified quality audit of 3,400 retained SFT records, with weighted estimates and an interactive evidence explorer.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>SFT dataset quality audit — 34 sources, 3,400 reviews</title>
+<style>@@CSS@@</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to report</a>
+<aside class="rail">
+ <a class="brand" href="#overview"><span class="brand-mark">Q</span><span>DATA QUALITY<br><b>Research notes</b></span></a>
+ <div class="rail-label">SFT AUDIT / 01</div>
+ <nav aria-label="Report sections">
+  <a href="#overview" class="active"><span>01</span> The finding</a>
+  <a href="#priorities"><span>02</span> Where to focus</a>
+  <a href="#dimensions"><span>03</span> Failure patterns</a>
+  <a href="#sources"><span>04</span> All 34 sources</a>
+  <a href="#examples"><span>05</span> Read the evidence</a>
+  <a href="#explorer"><span>06</span> Explore 3,400 reviews</a>
+  <a href="#next"><span>07</span> Recommended actions</a>
+  <a href="#method"><span>08</span> Method and limits</a>
+ </nav>
+ <div class="rail-foot"><span class="status-dot"></span> Review complete<br><small>26 October 2026<br>One model · no human adjudication</small></div>
+</aside>
+<main id="main">
+ <div class="topline"><span>RETAINED SFT DATASET</span><button class="quiet" id="printButton">Print / save PDF</button></div>
+ <section id="overview" class="hero">
+  <div class="eyebrow">Source-stratified quality review</div>
+  <h1>Where the SFT dataset<br>needs attention</h1>
+  <p class="dek">Material quality risks survive the final filtering stage. The next step is targeted repair and validation, before making a blanket high-quality release claim.</p>
+  <div class="scope"><span><strong>5,831,367</strong> retained records</span><span><strong>34</strong> prompt sources</span><span><strong>100</strong> samples per source</span><span><strong>GPT-6.1 Sol</strong> reviewer</span></div>
+  <div class="metrics">
+   <div class="metric emphasis"><span>Dataset-weighted major flags</span><strong>@@WEIGHTED_MAJOR@@<em>%</em></strong><small>24.2–30.2% sampling interval</small></div>
+   <div class="metric"><span>Major flags in the audit</span><strong>888<em>/3,400</em></strong><small>26.1% of the equal-source sample</small></div>
+   <div class="metric"><span>Estimated major-flag burden</span><strong>@@TOP_TWO@@<em>%</em></strong><small>From WildChat + OpenCodeInstruct</small></div>
+   <div class="metric"><span>No defect found, weighted</span><strong>39.1<em>%</em></strong><small>A model assessment, not certification</small></div>
+  </div>
+  <div class="callout"><strong>Read these as flags on our generated records.</strong> Source names identify where prompts came from. These are not quality rankings of the original published datasets, and the percentages are not human-verified error rates.</div>
+  <div class="two-col overview-grid">
+   <div><h2>One audit, two useful views</h2><p>The 100-per-source design gives small sources a meaningful inspection budget. It also overrepresents them relative to training. The raw sample rate is <b>26.1%</b>; weighting each source by its actual population gives a <b>27.2% major-flag estimate</b>.</p><p>Minor flags describe nonmaterial weaknesses. Uncertain records remain unresolved. Neither category should be silently merged into “correct” or “incorrect.” The overall label gives priority to major defects, then uncertainty, then minor defects.</p></div>
+   <div class="panel"><div class="table-scroll"><table class="compact"><caption>Overall review outcomes</caption><thead><tr><th>Outcome</th><th>Records</th><th>Sample</th><th>Weighted</th><th>95% interval</th></tr></thead><tbody>@@MIX_ROWS@@</tbody></table></div><p class="caption">Weighted intervals reflect record sampling uncertainty conditional on the reviewer’s labels. They exclude reviewer mistakes.</p></div>
+  </div>
+ </section>
+
+ <section id="priorities">
+  <div class="section-heading"><span class="section-number">02</span><div><div class="eyebrow">Prioritise by exposure</div><h2>The largest rate is not the largest problem</h2></div></div>
+  <p class="section-intro">WildChat and OpenCodeInstruct together represent <b>39.3% of the retained data</b> and contribute <b>14.22 percentage points</b> to the 27.2% major-flag estimate. They account for <b>@@TOP_TWO@@% of estimated major flags</b>, making them the first places to investigate.</p>
+  <figure class="chart">@@IMPACT_SVG@@<figcaption>Source contribution = source population share × sampled major-flag rate. Top eight sources by contribution; values are percentage points, not percentages of that source. <a href="figures/source-impact.svg" download>Download SVG</a></figcaption></figure>
+  <div class="three-col">
+   <article class="finding"><span class="tag">High impact</span><h3>WildChat</h3><p><b>31/100 major flags</b> across a source that supplies 24.9% of the retained data. Answer correctness has 23 major flags; prompt quality has four. A prompt-only repair will not address the whole issue.</p></article>
+   <article class="finding"><span class="tag">High impact</span><h3>OpenCodeInstruct</h3><p><b>45/100 major flags</b> and 14.5% of the dataset. Prompt quality has 32 major flags, answer correctness 29. Examples show contradictory specifications and responses fitted to bad sample outputs.</p></article>
+   <article class="finding"><span class="tag neutral">High rate, tiny share</span><h3>Nemotron SWE v1</h3><p><b>100/100 major flags</b>, but only 141 retained records—0.0024% of the dataset. Tool actions and incomplete agent workflows are a poor fit for this standalone-answer audit. Separate that format before treating the source as universally defective.</p></article>
+  </div>
+  <p class="caption">Contribution is a prioritisation estimate, not an attribution of cause. The same original prompt can acquire defects through extraction, response generation, import, or parsing.</p>
+ </section>
+
+ <section id="dimensions">
+  <div class="section-heading"><span class="section-number">03</span><div><div class="eyebrow">What the reviewer sees</div><h2>Answer problems dominate; input problems also matter</h2></div></div>
+  <div class="two-col">
+   <div><p>Answer correctness has <b>613 major flags</b>, covering 69.0% of all major-flagged records. Prompt quality has 331. The sets overlap: 149 records have both, while <b>464 have an answer major flag without a prompt major flag</b>.</p><p>Conversely, 182 records have a prompt major flag without an answer major flag. Some candidates correctly identify an ill-posed question. In total, <b>275 of the 888 major-flagged records have no major answer-correctness flag</b>: whole-record suitability and final-answer correctness are different measurements.</p></div>
+   <div class="panel"><table class="compact"><caption>Major flags by dimension</caption><thead><tr><th>Dimension</th><th>Count</th><th>Sample</th><th>Weighted</th></tr></thead><tbody>@@DIMENSION_ROWS@@</tbody></table><p class="caption">Dimensions overlap. Their rates must not be added. “Parsing / generation” includes repetition and visibly unfinished text as well as boundary errors.</p></div>
+  </div>
+  <figure class="chart">@@DIMENSION_SVG@@<figcaption>All 3,400 records, equally allocated across sources. A record can have different states across dimensions. Answer correctness is uncertain on 149 records, even though only 76 records have the overall “uncertain” label; another dimension can take precedence with a major flag. <a href="figures/dimension-profile.svg" download>Download SVG</a></figcaption></figure>
+  <h3>Structural patterns measured directly in the sample</h3>
+  <div class="three-col">
+   <article class="signal"><strong>535</strong><h4>Fenced prompts without line breaks</h4><p>All 3,400 sampled prompts are single-line strings; 535 contain triple-backtick fences. This warrants checking extraction against originals, especially for indentation-sensitive code. It does not establish that every one of these prompts is unusable.</p></article>
+   <article class="signal"><strong>35</strong><h4>Reasoning markers inside final answers</h4><p>35 answers contain the literal <code>&lt;|channel&gt;thought</code> marker. All belong to Nemotron SWE v1. Inspect their multi-channel boundaries rather than blindly deleting tokens.</p></article>
+   <article class="signal"><strong>81</strong><h4>Answers containing a tool-call marker</h4><p>81 contain <code>&lt;|tool_call&gt;</code>; 70 receive overall major flags. The remaining 11 show why a marker alone is not a reliable quality-rejection rule. Preserve task-format distinctions.</p></article>
+  </div>
+  <div class="two-col length-block">
+   <div><h3>Longer traces deserve attention, not automatic removal</h3><p>Major flags occur on 50.7% of sampled records with reasoning of at least 10,000 characters, versus 14.2% below 2,000. The intermediate bins are not monotonic.</p><p>This is a descriptive association in the equal-source sample. Source, task difficulty, and format can explain part of it. The audit does not establish that long reasoning causes bad answers or justify a blanket length cutoff.</p></div>
+   <div class="panel"><table class="compact"><caption>Reasoning length in characters, not tokens</caption><thead><tr><th>Characters</th><th>Records</th><th>Major</th><th>Rate</th></tr></thead><tbody>@@LENGTH_ROWS@@</tbody></table></div>
+  </div>
+ </section>
+
+ <section id="sources">
+  <div class="section-heading"><span class="section-number">04</span><div><div class="eyebrow">Complete source breakdown</div><h2>Inspect all 34 prompt sources</h2></div></div>
+  <p>Every row is based on 100 reviewed records. Sources are initially ordered by estimated contribution to dataset-wide major flags. Click a source name to inspect its sampled records. “Clear” below is shorthand for <i>no defect found by this reviewer</i>.</p>
+  <div class="controls"><label>Find a source<input id="sourceSearch" type="search" placeholder="Dataset name…"></label><label>Order by<select id="sourceSort"><option value="impact">Dataset impact</option><option value="major">Major-flag rate</option><option value="pop">Population size</option><option value="name">Source name</option></select></label><button class="button secondary" id="downloadSources">Download source CSV</button></div>
+  <div class="legend"><span><i class="dot major_defect"></i>Major</span><span><i class="dot minor_defect"></i>Minor</span><span><i class="dot uncertain"></i>Uncertain</span><span><i class="dot no_defect_found"></i>No defect found</span></div>
+  <div class="table-scroll source-table"><table id="sourceTable"><caption class="visually-hidden">All sources, population weights, outcomes and approximate confidence intervals</caption><thead><tr><th>Prompt source</th><th>Retained records</th><th>100-review profile</th><th>Major rate</th><th>Dataset impact</th></tr></thead><tbody>@@SOURCE_ROWS@@</tbody></table></div>
+  <p class="caption">Per-source intervals are 95% Wilson binomial approximations without finite-population correction or multiplicity adjustment. Close rates do not establish a reliable ranking. The 100/141 sample for SWE v1 has much higher sampling coverage than large sources. <a href="figures/source-major-intervals.svg">View all source intervals as a figure</a>.</p>
+  <div class="callout quiet-callout"><strong>Lower flag rates are useful controls, not certified-clean sources.</strong> Bespoke-Stratos has 6 major flags, MetaMathQA seven, SYNTHETIC-2 eight, AceReason-Math eight, and SmolTalk ten. Task mix and difficulty differ. Keep these samples as comparison points when testing a proposed repair.</div>
+ </section>
+
+ <section id="examples">
+  <div class="section-heading"><span class="section-number">05</span><div><div class="eyebrow">Beyond the percentages</div><h2>What the flags look like in practice</h2></div></div>
+  <p>These deliberately selected cases illustrate distinct mechanisms, including a no-defect example and an uncertain example. They are not an additional random sample. The inspector shows the original text and the reviewer’s exact evidence; no source rows or judgments have been edited.</p>
+  <div class="case-grid">@@CASES@@</div>
+ </section>
+
+ <section id="explorer">
+  <div class="section-heading"><span class="section-number">06</span><div><div class="eyebrow">All judgments and original text</div><h2>Explore the 3,400 reviews</h2></div></div>
+  <p>Search prompts and reviewer explanations, filter a source or dimension, and open the full record. Full reasoning and raw responses remain available in the inspector. Dataset content is displayed as inert text.</p>
+  <div id="loading" role="status">Loading the embedded review data…</div>
+  <div class="controls explorer-controls"><label>Source<select id="reviewSource"><option value="">All sources</option></select></label><label>Overall outcome<select id="reviewOutcome"><option value="">All outcomes</option><option value="major_defect">Major defect</option><option value="minor_defect">Minor defect</option><option value="uncertain">Uncertain</option><option value="no_defect_found">No defect found</option></select></label><label>Flagged dimension<select id="reviewDimension"><option value="">Any dimension</option><option value="prompt_quality">Prompt quality</option><option value="answer_correctness">Answer correctness</option><option value="reasoning_quality">Reasoning quality</option><option value="instruction_following">Instruction following</option><option value="parsing_integrity">Parsing / generation</option><option value="training_suitability">Training suitability</option></select></label><label class="search-wide">Search<input id="reviewSearch" type="search" placeholder="Source, prompt, summary or issue…"></label></div>
+  <div class="results-toolbar"><span id="resultCount" aria-live="polite"></span><button class="quiet" id="resetFilters">Reset filters</button></div>
+  <div id="reviewCards"></div><div class="pagination"><button class="button secondary" id="previousPage">← Previous</button><span id="pageNumber"></span><button class="button secondary" id="nextPage">Next →</button></div>
+  <noscript><p>The static analysis and source table work without JavaScript. Enable JavaScript in a modern browser to use the embedded review explorer.</p></noscript>
+ </section>
+
+ <section id="next">
+  <div class="section-heading"><span class="section-number">07</span><div><div class="eyebrow">A practical response</div><h2>Repair mechanisms before removing whole sources</h2></div></div>
+  <div class="action-list">
+   <article><span>1</span><div><h3>Separate agent trajectories from standalone answers</h3><p>Inspect the SWE records and route tool-dependent examples into a representation that retains the required environment, tools, and subsequent turns. Quarantine incomplete standalone exports; do not describe the entire original source as wrong. This is a narrow, low-volume issue with a strong sample signal.</p></div></article>
+   <article><span>2</span><div><h3>Recover prompt structure from originals</h3><p>Prioritise OpenCodeInstruct and OpenMathInstruct-2. Compare original questions, choices, equations, images, code indentation, and sample outputs with our extracted prompts. Restore context where possible; avoid guessing missing content or regenerating responses to a broken specification.</p></div></article>
+   <article><span>3</span><div><h3>Target answer checks where the population impact is largest</h3><p>Focus the first deeper validation on WildChat and OpenCodeInstruct. Use task-specific tests, numerical checks, or a human-reviewed subset to validate the model’s flags before deciding on rejection thresholds. Do not equate model agreement, nonempty outputs, or successful code execution with correctness.</p></div></article>
+   <article><span>4</span><div><h3>Audit boundary handling and repetitive traces</h3><p>Investigate the 35 final-answer channel-marker cases and concrete repetitive traces. Compare raw and parsed responses before changing parser behavior. A long trace or tool marker on its own is not sufficient evidence for deletion.</p></div></article>
+   <article><span>5</span><div><h3>Measure the effect on a fresh sample</h3><p>After a repair, resample retained outputs per source and compare quality flags, useful-data loss, source mixture, and cost. Keep uncertainty separate and use untouched controls. Downstream student training is needed for a learning-value claim.</p></div></article>
+  </div>
+  <p class="caption">These are proposed follow-ups. This analysis changed neither pipeline code nor dataset records and ran no new model reviews, code-execution tests, or downstream training.</p>
+ </section>
+
+ <section id="method">
+  <div class="section-heading"><span class="section-number">08</span><div><div class="eyebrow">How to read this audit</div><h2>Reproducible sampling, bounded conclusions</h2></div></div>
+  <div class="method-grid">
+   <article><h3>Population and sampling</h3><p>The input is <code>stage6_v2_decontam/clean</code>: 196 JSONL shards, 5,831,367 records, and 34 source labels. A streaming reservoir selects 100 physical records per source without replacement, using seed <code>20261026</code> and independent source RNGs. The sample, row locations, raw-line hashes, and file hashes are frozen.</p><p>Different splits with the same stored source name are pooled. Duplicate prompt IDs are not silently removed from the population. These are prompt-origin labels, not guaranteed original row/revision identifiers or teacher identities.</p></article>
+   <article><h3>Review protocol</h3><p>GPT-6.1 Sol, high reasoning effort, received full prompts, reasoning, final answers, and raw responses, with source names hidden. It assessed six dimensions without tools, external lookups, or execution. One accepted model assessment is retained per record; no second reviewer or human adjudication was performed.</p><p>All 629 batches are complete. Technical failures triggered retries. 56 batches covering 336 records needed recovery: valid whole reviews were preserved, and missing/invalid evidence was repaired using the same model. This is not an ensemble vote. Exact-quote validation proves that text is present, not that the reviewer’s interpretation is correct.</p></article>
+   <article><h3>Weights and intervals</h3><p>Let <code>Nₛ</code> be the population in source <code>s</code> and <code>p̂ₛ</code> its observed label rate. The dataset estimate is <code>Σ (Nₛ / N) p̂ₛ</code>. Its variance estimate is <code>Σ (Nₛ/N)² (1 − nₛ/Nₛ) p̂ₛ(1−p̂ₛ)/(nₛ−1)</code>; displayed intervals use ±1.96 standard errors.</p><p>This treats source strata as sampled independently. Intervals capture sampling uncertainty conditional on fixed model labels; they do not include systematic reviewer error, uncertainty in causal attribution, or the effects of comparing many sources. Per-source table intervals use the simpler Wilson approximation.</p></article>
+   <article><h3>What is still unknown</h3><p>All sampled records lack a teacher-model field and finish reason. They also lack the newer per-record judge and grounding audit metadata. Existing fields cannot establish why a row passed filtering or whether a missing input originated upstream. The v2 filter report says zero records despite populated shards; the full scan does reconcile with the decontamination survivor count.</p><p>This audit covers retained data only. It cannot estimate useful examples wrongly rejected by filtering, certify a true correctness rate, establish the original sources’ quality, or demonstrate student-training gains. It evaluates the existing dataset, not a fresh run of the latest code.</p></article>
+  </div>
+  <details class="reproduce"><summary>Files and reproduction</summary><p>All inputs and outputs are under <code>smoke/source_quality_audit/</code>. The HTML embeds all 3,400 reviews and original sampled texts, compressed for portability. It needs no server or network connection. Use a modern browser for the compressed-data explorer.</p><ul><li><code>samples.jsonl</code>, <code>sources.json</code>, <code>sample-manifest.json</code>: frozen sample and provenance.</li><li><code>verdicts.jsonl</code>, <code>completion.json</code>: accepted assessments and coverage confirmation.</li><li><code>report/analysis.json</code>: reproducible aggregate calculations and input hashes.</li><li><code>report/source_summary.csv</code>: complete source breakdown.</li><li><code>report/figures/</code>: SVG and PNG charts, including all source intervals.</li></ul><pre>PYTHONDONTWRITEBYTECODE=1 python smoke/source_quality_audit/report/build_report.py</pre><p>Building requires Python and Matplotlib; viewing the standalone HTML requires neither. Rebuilding uses existing reviews and makes no model calls.</p></details>
+ </section>
+ <footer><b>SFT dataset quality audit</b><span>Review completed 26 October 2026 · 3,400 / 3,400 records · Single-model evidence</span></footer>
+</main>
+<dialog id="recordDialog" aria-labelledby="dialogTitle"><div class="dialog-top"><h2 id="dialogTitle">Review evidence</h2><button id="closeDialog" class="button secondary" aria-label="Close record inspector">Close ×</button></div><div id="dialogBody"></div></dialog>
+<script id="packedData" type="application/octet-stream">@@DATA@@</script>
+<script>@@JS@@</script>
+</body></html>

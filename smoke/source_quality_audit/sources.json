@@ -1,0 +1,172 @@
+[
+  {
+    "source": "AI-MO/NuminaMath-CoT",
+    "population": 282367,
+    "sampled": 100
+  },
+  {
+    "source": "HuggingFaceTB/smoltalk",
+    "population": 490622,
+    "sampled": 100
+  },
+  {
+    "source": "OpenCoder-LLM/opc-sft-stage2",
+    "population": 73289,
+    "sampled": 100
+  },
+  {
+    "source": "PrimeIntellect/SYNTHETIC-1-SFT-Data",
+    "population": 118190,
+    "sampled": 100
+  },
+  {
+    "source": "PrimeIntellect/SYNTHETIC-2-SFT-verified",
+    "population": 22776,
+    "sampled": 100
+  },
+  {
+    "source": "Salesforce/APIGen-MT-5k",
+    "population": 1247,
+    "sampled": 100
+  },
+  {
+    "source": "alibaba-pai/OmniThought-0528",
+    "population": 42924,
+    "sampled": 100
+  },
+  {
+    "source": "allenai/WildChat-4.8M",
+    "population": 1450401,
+    "sampled": 100
+  },
+  {
+    "source": "allenai/coconot",
+    "population": 8084,
+    "sampled": 100
+  },
+  {
+    "source": "allenai/tulu-3-sft-mixture",
+    "population": 368852,
+    "sampled": 100
+  },
+  {
+    "source": "argilla/magpie-ultra-v1.0",
+    "population": 322441,
+    "sampled": 100
+  },
+  {
+    "source": "bespokelabs/Bespoke-Stratos-17k",
+    "population": 5840,
+    "sampled": 100
+  },
+  {
+    "source": "lmsys/lmsys-chat-1m",
+    "population": 380950,
+    "sampled": 100
+  },
+  {
+    "source": "m-a-p/CodeFeedback-Filtered-Instruction",
+    "population": 25696,
+    "sampled": 100
+  },
+  {
+    "source": "meta-math/MetaMathQA",
+    "population": 32993,
+    "sampled": 100
+  },
+  {
+    "source": "microsoft/orca-math-word-problems-200k",
+    "population": 17770,
+    "sampled": 100
+  },
+  {
+    "source": "microsoft/rStar-Coder",
+    "population": 11840,
+    "sampled": 100
+  },
+  {
+    "source": "mlabonne/open-perfectblend",
+    "population": 262456,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/AceReason-1.1-SFT",
+    "population": 135772,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/AceReason-Math",
+    "population": 9990,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-Agentic-v1",
+    "population": 430,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-Competitive-Programming-v1",
+    "population": 3306,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-Instruction-Following-Chat-v1",
+    "population": 250110,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-Math-Proofs-v1",
+    "population": 218034,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-Math-v2",
+    "population": 6013,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-SFT-SWE-v2",
+    "population": 16053,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-SFT-Safety-v1",
+    "population": 31470,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-SWE-v1",
+    "population": 141,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/Nemotron-Science-v1",
+    "population": 157581,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/OpenCodeInstruct",
+    "population": 843342,
+    "sampled": 100
+  },
+  {
+    "source": "nvidia/OpenMathInstruct-2",
+    "population": 175436,
+    "sampled": 100
+  },
+  {
+    "source": "open-r1/OpenR1-Math-220k",
+    "population": 22969,
+    "sampled": 100
+  },
+  {
+    "source": "open-thoughts/OpenThoughts-114k",
+    "population": 35399,
+    "sampled": 100
+  },
+  {
+    "source": "open-thoughts/OpenThoughts3-1.2M",
+    "population": 6583,
+    "sampled": 100
+  }
+]

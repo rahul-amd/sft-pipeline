@@ -1,0 +1,11 @@
+{
+  "model": "gpt-6.1-sol",
+  "reasoning_effort": "high",
+  "samples_sha256": "54f650a0d9c9610a150d678b5d070d7ad0db0216c57fdda120511bd00ba21dc8",
+  "prompt_sha256": "e89739e77e4d3498d695844f98b282adcc2a15c813f6129922467d9f7b8d1c4a",
+  "schema_sha256": "ce5a54b4f083c07da8c5a834d240dd120a1c27fb96ef943abac21f1bd8fc8d9f",
+  "runner_sha256": "18f1bdb5a3d883278320aaea514f91701f89f6e3e39a3aec7090890764d4930a",
+  "batch_count": 629,
+  "sample_count": 3400,
+  "policy": "one model review per record; only operational/schema failures retried; no second reviewer, external checks, or adjudication"
+}

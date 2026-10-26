@@ -1,0 +1,2099 @@
+{
+  "population": 5831367,
+  "sample_size": 3400,
+  "sources_count": 34,
+  "counts": {
+    "major_defect": 888,
+    "no_defect_found": 1547,
+    "minor_defect": 889,
+    "uncertain": 76
+  },
+  "weighted": {
+    "major_defect": {
+      "estimate": 0.27201841866581195,
+      "interval": [
+        0.24236240889263178,
+        0.3016744284389921
+      ]
+    },
+    "minor_defect": {
+      "estimate": 0.299324607763497,
+      "interval": [
+        0.26892203892641686,
+        0.32972717660057715
+      ]
+    },
+    "uncertain": {
+      "estimate": 0.037681046313840304,
+      "interval": [
+        0.023359237495506453,
+        0.052002855132174154
+      ]
+    },
+    "no_defect_found": {
+      "estimate": 0.39097592725685076,
+      "interval": [
+        0.36070352569110076,
+        0.42124832882260077
+      ]
+    }
+  },
+  "sources": [
+    {
+      "source": "allenai/WildChat-4.8M",
+      "population": 1450401,
+      "weight": 0.24872401274006592,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 31,
+        "minor_defect": 32,
+        "uncertain": 7,
+        "no_defect_found": 30
+      },
+      "major_rate": 0.31,
+      "major_interval": [
+        0.22779697212376038,
+        0.40626055719489407
+      ],
+      "major_contribution_pp": 7.710444394942043,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 84,
+          "minor_issue": 12,
+          "major_issue": 4
+        },
+        "answer_correctness": {
+          "minor_issue": 18,
+          "pass": 49,
+          "major_issue": 23,
+          "uncertain": 10
+        },
+        "reasoning_quality": {
+          "pass": 80,
+          "not_applicable": 2,
+          "uncertain": 2,
+          "major_issue": 11,
+          "minor_issue": 5
+        },
+        "instruction_following": {
+          "minor_issue": 23,
+          "pass": 70,
+          "major_issue": 7
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 93,
+          "minor_issue": 4,
+          "major_issue": 3
+        }
+      }
+    },
+    {
+      "source": "nvidia/OpenCodeInstruct",
+      "population": 843342,
+      "weight": 0.1446216641826865,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 45,
+        "minor_defect": 30,
+        "uncertain": 2,
+        "no_defect_found": 23
+      },
+      "major_rate": 0.45,
+      "major_interval": [
+        0.3561453797951198,
+        0.5475539700255787
+      ],
+      "major_contribution_pp": 6.507974888220892,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 47,
+          "major_issue": 32,
+          "minor_issue": 21
+        },
+        "answer_correctness": {
+          "minor_issue": 18,
+          "pass": 48,
+          "major_issue": 29,
+          "uncertain": 5
+        },
+        "reasoning_quality": {
+          "pass": 72,
+          "minor_issue": 15,
+          "major_issue": 13
+        },
+        "instruction_following": {
+          "pass": 94,
+          "major_issue": 5,
+          "minor_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 93,
+          "major_issue": 7
+        },
+        "training_suitability": {
+          "pass": 81,
+          "minor_issue": 14,
+          "major_issue": 5
+        }
+      }
+    },
+    {
+      "source": "lmsys/lmsys-chat-1m",
+      "population": 380950,
+      "weight": 0.06532773533204135,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 24,
+        "minor_defect": 34,
+        "uncertain": 6,
+        "no_defect_found": 36
+      },
+      "major_rate": 0.24,
+      "major_interval": [
+        0.16691325556948772,
+        0.33232336349814473
+      ],
+      "major_contribution_pp": 1.5678656479689925,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 84,
+          "major_issue": 7,
+          "minor_issue": 9
+        },
+        "answer_correctness": {
+          "major_issue": 12,
+          "pass": 51,
+          "uncertain": 8,
+          "minor_issue": 27,
+          "not_applicable": 2
+        },
+        "reasoning_quality": {
+          "pass": 78,
+          "major_issue": 9,
+          "minor_issue": 9,
+          "not_applicable": 4
+        },
+        "instruction_following": {
+          "pass": 92,
+          "minor_issue": 5,
+          "major_issue": 3
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "pass": 89,
+          "minor_issue": 7,
+          "major_issue": 4
+        }
+      }
+    },
+    {
+      "source": "nvidia/OpenMathInstruct-2",
+      "population": 175436,
+      "weight": 0.030084884041769278,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 51,
+        "minor_defect": 10,
+        "uncertain": 1,
+        "no_defect_found": 38
+      },
+      "major_rate": 0.51,
+      "major_interval": [
+        0.4134801193402717,
+        0.6057800106955886
+      ],
+      "major_contribution_pp": 1.5343290861302332,
+      "dimensions": {
+        "prompt_quality": {
+          "major_issue": 36,
+          "pass": 57,
+          "minor_issue": 7
+        },
+        "answer_correctness": {
+          "pass": 60,
+          "major_issue": 34,
+          "minor_issue": 5,
+          "uncertain": 1
+        },
+        "reasoning_quality": {
+          "minor_issue": 12,
+          "pass": 55,
+          "major_issue": 33
+        },
+        "instruction_following": {
+          "pass": 96,
+          "major_issue": 3,
+          "minor_issue": 1
+        },
+        "parsing_integrity": {
+          "major_issue": 15,
+          "pass": 81,
+          "minor_issue": 4
+        },
+        "training_suitability": {
+          "major_issue": 13,
+          "pass": 60,
+          "minor_issue": 27
+        }
+      }
+    },
+    {
+      "source": "allenai/tulu-3-sft-mixture",
+      "population": 368852,
+      "weight": 0.0632530931426542,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 18,
+        "minor_defect": 32,
+        "uncertain": 2,
+        "no_defect_found": 48
+      },
+      "major_rate": 0.18,
+      "major_interval": [
+        0.1170022549894635,
+        0.2666735838630073
+      ],
+      "major_contribution_pp": 1.1385556765677756,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 88,
+          "minor_issue": 5,
+          "major_issue": 5,
+          "uncertain": 2
+        },
+        "answer_correctness": {
+          "pass": 64,
+          "minor_issue": 19,
+          "major_issue": 14,
+          "uncertain": 3
+        },
+        "reasoning_quality": {
+          "pass": 81,
+          "major_issue": 7,
+          "minor_issue": 11,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 94,
+          "minor_issue": 2,
+          "major_issue": 4
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 92,
+          "major_issue": 4,
+          "minor_issue": 4
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-Instruction-Following-Chat-v1",
+      "population": 250110,
+      "weight": 0.04289045776059027,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 26,
+        "minor_defect": 36,
+        "uncertain": 7,
+        "no_defect_found": 31
+      },
+      "major_rate": 0.26,
+      "major_interval": [
+        0.18404698464748132,
+        0.3537098944918718
+      ],
+      "major_contribution_pp": 1.1151519017753468,
+      "dimensions": {
+        "prompt_quality": {
+          "minor_issue": 6,
+          "pass": 92,
+          "major_issue": 2
+        },
+        "answer_correctness": {
+          "pass": 40,
+          "uncertain": 8,
+          "minor_issue": 31,
+          "major_issue": 21
+        },
+        "reasoning_quality": {
+          "pass": 78,
+          "minor_issue": 11,
+          "major_issue": 11
+        },
+        "instruction_following": {
+          "minor_issue": 6,
+          "pass": 93,
+          "major_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 98,
+          "major_issue": 2
+        },
+        "training_suitability": {
+          "pass": 87,
+          "major_issue": 4,
+          "minor_issue": 9
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-Math-Proofs-v1",
+      "population": 218034,
+      "weight": 0.037389860730768616,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 27,
+        "minor_defect": 19,
+        "uncertain": 2,
+        "no_defect_found": 52
+      },
+      "major_rate": 0.27,
+      "major_interval": [
+        0.1926958414957634,
+        0.36432116767944994
+      ],
+      "major_contribution_pp": 1.0095262397307527,
+      "dimensions": {
+        "prompt_quality": {
+          "major_issue": 20,
+          "pass": 76,
+          "minor_issue": 4
+        },
+        "answer_correctness": {
+          "pass": 72,
+          "major_issue": 14,
+          "minor_issue": 10,
+          "uncertain": 4
+        },
+        "reasoning_quality": {
+          "pass": 77,
+          "major_issue": 10,
+          "minor_issue": 12,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 99,
+          "major_issue": 1
+        }
+      }
+    },
+    {
+      "source": "AI-MO/NuminaMath-CoT",
+      "population": 282367,
+      "weight": 0.048422093824655524,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 19,
+        "minor_defect": 13,
+        "uncertain": 2,
+        "no_defect_found": 66
+      },
+      "major_rate": 0.19,
+      "major_interval": [
+        0.12514751509768735,
+        0.27778845379064376
+      ],
+      "major_contribution_pp": 0.9200197826684549,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 84,
+          "minor_issue": 4,
+          "major_issue": 10,
+          "uncertain": 2
+        },
+        "answer_correctness": {
+          "pass": 81,
+          "minor_issue": 4,
+          "major_issue": 11,
+          "uncertain": 4
+        },
+        "reasoning_quality": {
+          "pass": 76,
+          "major_issue": 16,
+          "minor_issue": 7,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 93,
+          "minor_issue": 4,
+          "major_issue": 3
+        },
+        "training_suitability": {
+          "pass": 94,
+          "minor_issue": 4,
+          "major_issue": 2
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-Science-v1",
+      "population": 157581,
+      "weight": 0.027022994779783198,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 34,
+        "minor_defect": 35,
+        "uncertain": 2,
+        "no_defect_found": 29
+      },
+      "major_rate": 0.34,
+      "major_interval": [
+        0.25461520797348164,
+        0.43722271145275377
+      ],
+      "major_contribution_pp": 0.9187818225126287,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 55,
+          "major_issue": 29,
+          "minor_issue": 16
+        },
+        "answer_correctness": {
+          "pass": 57,
+          "uncertain": 10,
+          "major_issue": 15,
+          "minor_issue": 18
+        },
+        "reasoning_quality": {
+          "pass": 57,
+          "major_issue": 19,
+          "minor_issue": 23,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 97,
+          "major_issue": 1,
+          "minor_issue": 2
+        },
+        "parsing_integrity": {
+          "pass": 94,
+          "major_issue": 5,
+          "minor_issue": 1
+        },
+        "training_suitability": {
+          "pass": 70,
+          "major_issue": 10,
+          "minor_issue": 19,
+          "uncertain": 1
+        }
+      }
+    },
+    {
+      "source": "HuggingFaceTB/smoltalk",
+      "population": 490622,
+      "weight": 0.08413498927438455,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 10,
+        "minor_defect": 33,
+        "uncertain": 2,
+        "no_defect_found": 55
+      },
+      "major_rate": 0.1,
+      "major_interval": [
+        0.0552291370606751,
+        0.17436566150491345
+      ],
+      "major_contribution_pp": 0.8413498927438455,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 95,
+          "major_issue": 2,
+          "minor_issue": 3
+        },
+        "answer_correctness": {
+          "minor_issue": 28,
+          "pass": 63,
+          "major_issue": 6,
+          "uncertain": 3
+        },
+        "reasoning_quality": {
+          "pass": 94,
+          "minor_issue": 3,
+          "major_issue": 1,
+          "not_applicable": 2
+        },
+        "instruction_following": {
+          "pass": 98,
+          "uncertain": 1,
+          "major_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 98,
+          "minor_issue": 1,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "pass": 99,
+          "minor_issue": 1
+        }
+      }
+    },
+    {
+      "source": "mlabonne/open-perfectblend",
+      "population": 262456,
+      "weight": 0.045007628571482466,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 18,
+        "minor_defect": 30,
+        "uncertain": 5,
+        "no_defect_found": 47
+      },
+      "major_rate": 0.18,
+      "major_interval": [
+        0.1170022549894635,
+        0.2666735838630073
+      ],
+      "major_contribution_pp": 0.8101373142866843,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 95,
+          "minor_issue": 2,
+          "major_issue": 3
+        },
+        "answer_correctness": {
+          "pass": 54,
+          "uncertain": 9,
+          "major_issue": 14,
+          "minor_issue": 23
+        },
+        "reasoning_quality": {
+          "pass": 87,
+          "major_issue": 6,
+          "minor_issue": 7
+        },
+        "instruction_following": {
+          "pass": 90,
+          "minor_issue": 7,
+          "uncertain": 1,
+          "major_issue": 2
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 99,
+          "major_issue": 1
+        }
+      }
+    },
+    {
+      "source": "argilla/magpie-ultra-v1.0",
+      "population": 322441,
+      "weight": 0.055294238898014825,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 13,
+        "minor_defect": 45,
+        "uncertain": 2,
+        "no_defect_found": 40
+      },
+      "major_rate": 0.13,
+      "major_interval": [
+        0.07757167427240512,
+        0.20980351440076428
+      ],
+      "major_contribution_pp": 0.7188251056741926,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 95,
+          "minor_issue": 4,
+          "major_issue": 1
+        },
+        "answer_correctness": {
+          "uncertain": 2,
+          "pass": 48,
+          "minor_issue": 38,
+          "major_issue": 12
+        },
+        "reasoning_quality": {
+          "pass": 73,
+          "major_issue": 7,
+          "minor_issue": 19,
+          "not_applicable": 1
+        },
+        "instruction_following": {
+          "pass": 99,
+          "minor_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 96,
+          "minor_issue": 3,
+          "major_issue": 1
+        }
+      }
+    },
+    {
+      "source": "nvidia/AceReason-1.1-SFT",
+      "population": 135772,
+      "weight": 0.02328304838299493,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 30,
+        "minor_defect": 23,
+        "uncertain": 0,
+        "no_defect_found": 47
+      },
+      "major_rate": 0.3,
+      "major_interval": [
+        0.2189488529493276,
+        0.3958485463334666
+      ],
+      "major_contribution_pp": 0.6984914514898479,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 81,
+          "minor_issue": 5,
+          "major_issue": 14
+        },
+        "answer_correctness": {
+          "pass": 67,
+          "major_issue": 22,
+          "minor_issue": 10,
+          "uncertain": 1
+        },
+        "reasoning_quality": {
+          "pass": 65,
+          "minor_issue": 17,
+          "major_issue": 18
+        },
+        "instruction_following": {
+          "pass": 97,
+          "major_issue": 3
+        },
+        "parsing_integrity": {
+          "pass": 95,
+          "major_issue": 4,
+          "minor_issue": 1
+        },
+        "training_suitability": {
+          "pass": 83,
+          "major_issue": 5,
+          "minor_issue": 12
+        }
+      }
+    },
+    {
+      "source": "OpenCoder-LLM/opc-sft-stage2",
+      "population": 73289,
+      "weight": 0.012568065086625486,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 31,
+        "minor_defect": 29,
+        "uncertain": 3,
+        "no_defect_found": 37
+      },
+      "major_rate": 0.31,
+      "major_interval": [
+        0.22779697212376038,
+        0.40626055719489407
+      ],
+      "major_contribution_pp": 0.38961001768539005,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 79,
+          "minor_issue": 10,
+          "major_issue": 11
+        },
+        "answer_correctness": {
+          "pass": 48,
+          "minor_issue": 27,
+          "major_issue": 21,
+          "uncertain": 4
+        },
+        "reasoning_quality": {
+          "pass": 82,
+          "major_issue": 6,
+          "minor_issue": 10,
+          "uncertain": 1,
+          "not_applicable": 1
+        },
+        "instruction_following": {
+          "pass": 99,
+          "minor_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 99,
+          "minor_issue": 1
+        }
+      }
+    },
+    {
+      "source": "PrimeIntellect/SYNTHETIC-1-SFT-Data",
+      "population": 118190,
+      "weight": 0.0202679749019398,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 13,
+        "minor_defect": 24,
+        "uncertain": 3,
+        "no_defect_found": 60
+      },
+      "major_rate": 0.13,
+      "major_interval": [
+        0.07757167427240512,
+        0.20980351440076428
+      ],
+      "major_contribution_pp": 0.2634836737252174,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 84,
+          "minor_issue": 8,
+          "uncertain": 1,
+          "major_issue": 7
+        },
+        "answer_correctness": {
+          "pass": 80,
+          "uncertain": 10,
+          "major_issue": 4,
+          "minor_issue": 6
+        },
+        "reasoning_quality": {
+          "pass": 85,
+          "minor_issue": 10,
+          "major_issue": 5
+        },
+        "instruction_following": {
+          "pass": 94,
+          "minor_issue": 6
+        },
+        "parsing_integrity": {
+          "pass": 98,
+          "major_issue": 1,
+          "minor_issue": 1
+        },
+        "training_suitability": {
+          "pass": 88,
+          "minor_issue": 8,
+          "major_issue": 4
+        }
+      }
+    },
+    {
+      "source": "m-a-p/CodeFeedback-Filtered-Instruction",
+      "population": 25696,
+      "weight": 0.0044065139443290055,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 36,
+        "minor_defect": 34,
+        "uncertain": 1,
+        "no_defect_found": 29
+      },
+      "major_rate": 0.36,
+      "major_interval": [
+        0.2727122040140433,
+        0.4576459754839126
+      ],
+      "major_contribution_pp": 0.1586345019958442,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 72,
+          "minor_issue": 15,
+          "major_issue": 13
+        },
+        "answer_correctness": {
+          "minor_issue": 32,
+          "major_issue": 25,
+          "pass": 37,
+          "uncertain": 6
+        },
+        "reasoning_quality": {
+          "minor_issue": 6,
+          "pass": 85,
+          "major_issue": 9
+        },
+        "instruction_following": {
+          "pass": 95,
+          "minor_issue": 2,
+          "major_issue": 3
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "pass": 93,
+          "major_issue": 5,
+          "minor_issue": 2
+        }
+      }
+    },
+    {
+      "source": "alibaba-pai/OmniThought-0528",
+      "population": 42924,
+      "weight": 0.007360881247913225,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 21,
+        "minor_defect": 27,
+        "uncertain": 2,
+        "no_defect_found": 50
+      },
+      "major_rate": 0.21,
+      "major_interval": [
+        0.141656540619153,
+        0.29979968834089865
+      ],
+      "major_contribution_pp": 0.15457850620617772,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 84,
+          "minor_issue": 10,
+          "major_issue": 6
+        },
+        "answer_correctness": {
+          "pass": 70,
+          "major_issue": 17,
+          "uncertain": 2,
+          "minor_issue": 11
+        },
+        "reasoning_quality": {
+          "pass": 76,
+          "minor_issue": 11,
+          "major_issue": 12,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 93,
+          "minor_issue": 3,
+          "uncertain": 2,
+          "major_issue": 2
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "pass": 94,
+          "minor_issue": 6
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-SFT-Safety-v1",
+      "population": 31470,
+      "weight": 0.005396676285337554,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 23,
+        "minor_defect": 29,
+        "uncertain": 3,
+        "no_defect_found": 45
+      },
+      "major_rate": 0.23,
+      "major_interval": [
+        0.15843265880303448,
+        0.3215438302287378
+      ],
+      "major_contribution_pp": 0.12412355456276376,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 87,
+          "major_issue": 12,
+          "minor_issue": 1
+        },
+        "answer_correctness": {
+          "pass": 63,
+          "minor_issue": 20,
+          "uncertain": 6,
+          "major_issue": 11
+        },
+        "reasoning_quality": {
+          "pass": 75,
+          "minor_issue": 17,
+          "major_issue": 8
+        },
+        "instruction_following": {
+          "pass": 96,
+          "minor_issue": 2,
+          "major_issue": 2
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 93,
+          "major_issue": 5,
+          "minor_issue": 2
+        }
+      }
+    },
+    {
+      "source": "open-thoughts/OpenThoughts-114k",
+      "population": 35399,
+      "weight": 0.006070446260713826,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 17,
+        "minor_defect": 27,
+        "uncertain": 0,
+        "no_defect_found": 56
+      },
+      "major_rate": 0.17,
+      "major_interval": [
+        0.10893566114059931,
+        0.25548004767601123
+      ],
+      "major_contribution_pp": 0.10319758643213504,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 89,
+          "minor_issue": 5,
+          "major_issue": 6
+        },
+        "answer_correctness": {
+          "pass": 81,
+          "major_issue": 10,
+          "minor_issue": 6,
+          "uncertain": 3
+        },
+        "reasoning_quality": {
+          "pass": 80,
+          "major_issue": 13,
+          "minor_issue": 7
+        },
+        "instruction_following": {
+          "pass": 94,
+          "minor_issue": 6
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "minor_issue": 1
+        },
+        "training_suitability": {
+          "pass": 84,
+          "minor_issue": 14,
+          "major_issue": 2
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-SFT-SWE-v2",
+      "population": 16053,
+      "weight": 0.0027528708105663733,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 34,
+        "minor_defect": 21,
+        "uncertain": 0,
+        "no_defect_found": 45
+      },
+      "major_rate": 0.34,
+      "major_interval": [
+        0.25461520797348164,
+        0.43722271145275377
+      ],
+      "major_contribution_pp": 0.09359760755925668,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 97,
+          "major_issue": 2,
+          "minor_issue": 1
+        },
+        "answer_correctness": {
+          "pass": 53,
+          "minor_issue": 13,
+          "major_issue": 33,
+          "uncertain": 1
+        },
+        "reasoning_quality": {
+          "pass": 64,
+          "major_issue": 16,
+          "minor_issue": 19,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "minor_issue": 3,
+          "pass": 97
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "minor_issue": 1
+        },
+        "training_suitability": {
+          "pass": 91,
+          "minor_issue": 2,
+          "major_issue": 7
+        }
+      }
+    },
+    {
+      "source": "microsoft/orca-math-word-problems-200k",
+      "population": 17770,
+      "weight": 0.003047312919937984,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 25,
+        "minor_defect": 7,
+        "uncertain": 1,
+        "no_defect_found": 67
+      },
+      "major_rate": 0.25,
+      "major_interval": [
+        0.17545211362287672,
+        0.34304463548061603
+      ],
+      "major_contribution_pp": 0.0761828229984496,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 72,
+          "major_issue": 24,
+          "minor_issue": 4
+        },
+        "answer_correctness": {
+          "pass": 77,
+          "minor_issue": 4,
+          "major_issue": 15,
+          "uncertain": 4
+        },
+        "reasoning_quality": {
+          "pass": 85,
+          "major_issue": 13,
+          "minor_issue": 2
+        },
+        "instruction_following": {
+          "pass": 100
+        },
+        "parsing_integrity": {
+          "pass": 94,
+          "major_issue": 5,
+          "minor_issue": 1
+        },
+        "training_suitability": {
+          "pass": 92,
+          "major_issue": 2,
+          "minor_issue": 6
+        }
+      }
+    },
+    {
+      "source": "open-thoughts/OpenThoughts3-1.2M",
+      "population": 6583,
+      "weight": 0.0011288948200310492,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 55,
+        "minor_defect": 24,
+        "uncertain": 3,
+        "no_defect_found": 18
+      },
+      "major_rate": 0.55,
+      "major_interval": [
+        0.45244602997442135,
+        0.6438546202048803
+      ],
+      "major_contribution_pp": 0.062089215101707715,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 82,
+          "major_issue": 7,
+          "minor_issue": 9,
+          "uncertain": 2
+        },
+        "answer_correctness": {
+          "major_issue": 49,
+          "pass": 31,
+          "minor_issue": 16,
+          "uncertain": 4
+        },
+        "reasoning_quality": {
+          "major_issue": 36,
+          "pass": 37,
+          "minor_issue": 26,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 84,
+          "major_issue": 8,
+          "minor_issue": 8
+        },
+        "parsing_integrity": {
+          "pass": 98,
+          "major_issue": 2
+        },
+        "training_suitability": {
+          "pass": 83,
+          "major_issue": 9,
+          "minor_issue": 8
+        }
+      }
+    },
+    {
+      "source": "open-r1/OpenR1-Math-220k",
+      "population": 22969,
+      "weight": 0.003938870594150565,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 12,
+        "minor_defect": 17,
+        "uncertain": 0,
+        "no_defect_found": 71
+      },
+      "major_rate": 0.12,
+      "major_interval": [
+        0.06999406437019488,
+        0.19812099426711421
+      ],
+      "major_contribution_pp": 0.047266447129806786,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 89,
+          "minor_issue": 5,
+          "major_issue": 6
+        },
+        "answer_correctness": {
+          "pass": 88,
+          "major_issue": 5,
+          "minor_issue": 4,
+          "uncertain": 3
+        },
+        "reasoning_quality": {
+          "major_issue": 11,
+          "pass": 79,
+          "minor_issue": 8,
+          "not_applicable": 2
+        },
+        "instruction_following": {
+          "pass": 99,
+          "minor_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "pass": 96,
+          "minor_issue": 2,
+          "major_issue": 2
+        }
+      }
+    },
+    {
+      "source": "allenai/coconot",
+      "population": 8084,
+      "weight": 0.0013862958719627833,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 32,
+        "minor_defect": 39,
+        "uncertain": 4,
+        "no_defect_found": 25
+      },
+      "major_rate": 0.32,
+      "major_interval": [
+        0.23669147324999093,
+        0.41662618610452384
+      ],
+      "major_contribution_pp": 0.044361467902809065,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 72,
+          "major_issue": 19,
+          "minor_issue": 9
+        },
+        "answer_correctness": {
+          "major_issue": 11,
+          "pass": 55,
+          "minor_issue": 30,
+          "uncertain": 4
+        },
+        "reasoning_quality": {
+          "pass": 80,
+          "major_issue": 7,
+          "minor_issue": 11,
+          "uncertain": 2
+        },
+        "instruction_following": {
+          "pass": 94,
+          "minor_issue": 2,
+          "major_issue": 3,
+          "uncertain": 1
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "pass": 89,
+          "minor_issue": 7,
+          "major_issue": 4
+        }
+      }
+    },
+    {
+      "source": "microsoft/rStar-Coder",
+      "population": 11840,
+      "weight": 0.002030398704111746,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 21,
+        "minor_defect": 35,
+        "uncertain": 2,
+        "no_defect_found": 42
+      },
+      "major_rate": 0.21,
+      "major_interval": [
+        0.141656540619153,
+        0.29979968834089865
+      ],
+      "major_contribution_pp": 0.04263837278634667,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 69,
+          "major_issue": 8,
+          "minor_issue": 23
+        },
+        "answer_correctness": {
+          "pass": 71,
+          "uncertain": 5,
+          "minor_issue": 12,
+          "major_issue": 12
+        },
+        "reasoning_quality": {
+          "pass": 64,
+          "major_issue": 16,
+          "minor_issue": 19,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 98,
+          "major_issue": 2
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "pass": 96,
+          "minor_issue": 2,
+          "major_issue": 2
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-Math-v2",
+      "population": 6013,
+      "weight": 0.0010311475851202644,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 39,
+        "minor_defect": 26,
+        "uncertain": 2,
+        "no_defect_found": 33
+      },
+      "major_rate": 0.39,
+      "major_interval": [
+        0.3001687400639441,
+        0.4879698295415926
+      ],
+      "major_contribution_pp": 0.04021475581969031,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 77,
+          "minor_issue": 5,
+          "major_issue": 17,
+          "uncertain": 1
+        },
+        "answer_correctness": {
+          "pass": 59,
+          "major_issue": 23,
+          "uncertain": 5,
+          "minor_issue": 13
+        },
+        "reasoning_quality": {
+          "pass": 50,
+          "minor_issue": 23,
+          "major_issue": 27
+        },
+        "instruction_following": {
+          "pass": 99,
+          "minor_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 97,
+          "minor_issue": 2,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "pass": 83,
+          "major_issue": 5,
+          "minor_issue": 12
+        }
+      }
+    },
+    {
+      "source": "meta-math/MetaMathQA",
+      "population": 32993,
+      "weight": 0.005657850037564091,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 7,
+        "minor_defect": 5,
+        "uncertain": 0,
+        "no_defect_found": 88
+      },
+      "major_rate": 0.07,
+      "major_interval": [
+        0.03431926106727268,
+        0.137495147390735
+      ],
+      "major_contribution_pp": 0.039604950262948635,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 90,
+          "minor_issue": 3,
+          "major_issue": 7
+        },
+        "answer_correctness": {
+          "pass": 94,
+          "major_issue": 4,
+          "uncertain": 2
+        },
+        "reasoning_quality": {
+          "pass": 93,
+          "minor_issue": 2,
+          "major_issue": 5
+        },
+        "instruction_following": {
+          "pass": 100
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "minor_issue": 1
+        },
+        "training_suitability": {
+          "pass": 98,
+          "major_issue": 1,
+          "minor_issue": 1
+        }
+      }
+    },
+    {
+      "source": "PrimeIntellect/SYNTHETIC-2-SFT-verified",
+      "population": 22776,
+      "weight": 0.0039057737233825275,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 8,
+        "minor_defect": 34,
+        "uncertain": 0,
+        "no_defect_found": 58
+      },
+      "major_rate": 0.08,
+      "major_interval": [
+        0.041093461484380624,
+        0.14998107700948735
+      ],
+      "major_contribution_pp": 0.03124618978706022,
+      "dimensions": {
+        "prompt_quality": {
+          "minor_issue": 9,
+          "pass": 90,
+          "major_issue": 1
+        },
+        "answer_correctness": {
+          "pass": 83,
+          "major_issue": 5,
+          "minor_issue": 12
+        },
+        "reasoning_quality": {
+          "pass": 82,
+          "major_issue": 4,
+          "minor_issue": 13,
+          "not_applicable": 1
+        },
+        "instruction_following": {
+          "pass": 100
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "major_issue": 1
+        },
+        "training_suitability": {
+          "minor_issue": 12,
+          "pass": 88
+        }
+      }
+    },
+    {
+      "source": "nvidia/AceReason-Math",
+      "population": 9990,
+      "weight": 0.0017131489065942856,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 8,
+        "minor_defect": 33,
+        "uncertain": 2,
+        "no_defect_found": 57
+      },
+      "major_rate": 0.08,
+      "major_interval": [
+        0.041093461484380624,
+        0.14998107700948735
+      ],
+      "major_contribution_pp": 0.013705191252754285,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 91,
+          "major_issue": 6,
+          "minor_issue": 2,
+          "uncertain": 1
+        },
+        "answer_correctness": {
+          "pass": 87,
+          "major_issue": 3,
+          "minor_issue": 9,
+          "uncertain": 1
+        },
+        "reasoning_quality": {
+          "pass": 83,
+          "major_issue": 5,
+          "minor_issue": 11,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "minor_issue": 7,
+          "pass": 92,
+          "major_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 98,
+          "minor_issue": 2
+        },
+        "training_suitability": {
+          "pass": 92,
+          "minor_issue": 8
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-Competitive-Programming-v1",
+      "population": 3306,
+      "weight": 0.0005669339624825534,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 23,
+        "minor_defect": 39,
+        "uncertain": 0,
+        "no_defect_found": 38
+      },
+      "major_rate": 0.23,
+      "major_interval": [
+        0.15843265880303448,
+        0.3215438302287378
+      ],
+      "major_contribution_pp": 0.013039481137098727,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 78,
+          "minor_issue": 17,
+          "major_issue": 5
+        },
+        "answer_correctness": {
+          "pass": 77,
+          "major_issue": 16,
+          "uncertain": 3,
+          "minor_issue": 4
+        },
+        "reasoning_quality": {
+          "pass": 57,
+          "minor_issue": 26,
+          "major_issue": 17
+        },
+        "instruction_following": {
+          "pass": 90,
+          "minor_issue": 9,
+          "major_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 99,
+          "minor_issue": 1
+        },
+        "training_suitability": {
+          "pass": 97,
+          "minor_issue": 3
+        }
+      }
+    },
+    {
+      "source": "bespokelabs/Bespoke-Stratos-17k",
+      "population": 5840,
+      "weight": 0.0010014804418929557,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 6,
+        "minor_defect": 15,
+        "uncertain": 3,
+        "no_defect_found": 76
+      },
+      "major_rate": 0.06,
+      "major_interval": [
+        0.027786123963188192,
+        0.1247681544589592
+      ],
+      "major_contribution_pp": 0.006008882651357735,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 91,
+          "major_issue": 3,
+          "minor_issue": 6
+        },
+        "answer_correctness": {
+          "pass": 87,
+          "uncertain": 5,
+          "minor_issue": 5,
+          "major_issue": 3
+        },
+        "reasoning_quality": {
+          "pass": 90,
+          "minor_issue": 6,
+          "major_issue": 3,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 98,
+          "minor_issue": 2
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 99,
+          "minor_issue": 1
+        }
+      }
+    },
+    {
+      "source": "Salesforce/APIGen-MT-5k",
+      "population": 1247,
+      "weight": 0.0002138435121644719,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 15,
+        "minor_defect": 34,
+        "uncertain": 4,
+        "no_defect_found": 47
+      },
+      "major_rate": 0.15,
+      "major_interval": [
+        0.0930598528365663,
+        0.23283559590832364
+      ],
+      "major_contribution_pp": 0.003207652682467078,
+      "dimensions": {
+        "prompt_quality": {
+          "major_issue": 1,
+          "pass": 98,
+          "minor_issue": 1
+        },
+        "answer_correctness": {
+          "uncertain": 4,
+          "major_issue": 10,
+          "pass": 57,
+          "minor_issue": 29
+        },
+        "reasoning_quality": {
+          "major_issue": 7,
+          "pass": 84,
+          "uncertain": 2,
+          "minor_issue": 7
+        },
+        "instruction_following": {
+          "pass": 96,
+          "major_issue": 3,
+          "minor_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 100
+        },
+        "training_suitability": {
+          "pass": 87,
+          "minor_issue": 8,
+          "major_issue": 5
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-SWE-v1",
+      "population": 141,
+      "weight": 2.417957916214157e-05,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 100,
+        "minor_defect": 0,
+        "uncertain": 0,
+        "no_defect_found": 0
+      },
+      "major_rate": 1.0,
+      "major_interval": [
+        0.9630065017930143,
+        1
+      ],
+      "major_contribution_pp": 0.002417957916214157,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 92,
+          "major_issue": 3,
+          "minor_issue": 5
+        },
+        "answer_correctness": {
+          "major_issue": 100
+        },
+        "reasoning_quality": {
+          "pass": 91,
+          "minor_issue": 5,
+          "major_issue": 4
+        },
+        "instruction_following": {
+          "major_issue": 100
+        },
+        "parsing_integrity": {
+          "major_issue": 56,
+          "pass": 19,
+          "minor_issue": 25
+        },
+        "training_suitability": {
+          "major_issue": 86,
+          "pass": 14
+        }
+      }
+    },
+    {
+      "source": "nvidia/Nemotron-Agentic-v1",
+      "population": 430,
+      "weight": 7.373914212567997e-05,
+      "sampled": 100,
+      "counts": {
+        "major_defect": 16,
+        "minor_defect": 18,
+        "uncertain": 3,
+        "no_defect_found": 63
+      },
+      "major_rate": 0.16,
+      "major_interval": [
+        0.10095288488804782,
+        0.24420269389270244
+      ],
+      "major_contribution_pp": 0.0011798262740108794,
+      "dimensions": {
+        "prompt_quality": {
+          "pass": 95,
+          "major_issue": 2,
+          "minor_issue": 2,
+          "uncertain": 1
+        },
+        "answer_correctness": {
+          "uncertain": 9,
+          "pass": 76,
+          "minor_issue": 6,
+          "major_issue": 9
+        },
+        "reasoning_quality": {
+          "major_issue": 14,
+          "pass": 72,
+          "minor_issue": 13,
+          "uncertain": 1
+        },
+        "instruction_following": {
+          "pass": 96,
+          "major_issue": 3,
+          "minor_issue": 1
+        },
+        "parsing_integrity": {
+          "pass": 98,
+          "major_issue": 2
+        },
+        "training_suitability": {
+          "pass": 98,
+          "minor_issue": 2
+        }
+      }
+    }
+  ],
+  "dimensions": {
+    "prompt_quality": {
+      "counts": {
+        "pass": 2811,
+        "minor_issue": 248,
+        "major_issue": 331,
+        "uncertain": 10
+      },
+      "weighted_major": {
+        "estimate": 0.10978529391135904,
+        "interval": [
+          0.09154469195652579,
+          0.12802589586619229
+        ]
+      }
+    },
+    "answer_correctness": {
+      "counts": {
+        "major_issue": 613,
+        "pass": 2128,
+        "uncertain": 149,
+        "minor_issue": 508,
+        "not_applicable": 2
+      },
+      "weighted_major": {
+        "estimate": 0.18319720230265052,
+        "interval": [
+          0.15653733501997713,
+          0.2098570695853239
+        ]
+      }
+    },
+    "reasoning_quality": {
+      "counts": {
+        "pass": 2567,
+        "major_issue": 399,
+        "minor_issue": 403,
+        "not_applicable": 13,
+        "uncertain": 18
+      },
+      "weighted_major": {
+        "estimate": 0.10666020848970748,
+        "interval": [
+          0.08649801311925508,
+          0.1268224038601599
+        ]
+      }
+    },
+    "instruction_following": {
+      "counts": {
+        "pass": 3132,
+        "minor_issue": 103,
+        "major_issue": 160,
+        "uncertain": 5
+      },
+      "weighted_major": {
+        "estimate": 0.03464697728680085,
+        "interval": [
+          0.02001846343853026,
+          0.04927549113507144
+        ]
+      }
+    },
+    "parsing_integrity": {
+      "counts": {
+        "pass": 3243,
+        "major_issue": 111,
+        "minor_issue": 46
+      },
+      "weighted_major": {
+        "estimate": 0.021357057444678067,
+        "interval": [
+          0.013106254098289928,
+          0.029607860791066205
+        ]
+      }
+    },
+    "training_suitability": {
+      "counts": {
+        "pass": 2996,
+        "major_issue": 192,
+        "minor_issue": 211,
+        "uncertain": 1
+      },
+      "weighted_major": {
+        "estimate": 0.03376649591768105,
+        "interval": [
+          0.022103304785061693,
+          0.045429687050300406
+        ]
+      }
+    }
+  },
+  "overlaps": {
+    "prompt_and_answer": 149,
+    "prompt_without_answer": 182,
+    "answer_without_prompt": 464,
+    "parsing_and_answer": 76
+  },
+  "features": {
+    "no_prompt_newlines": {
+      "n": 3400,
+      "major": 888,
+      "by_source": {
+        "allenai/coconot": 100,
+        "open-r1/OpenR1-Math-220k": 100,
+        "OpenCoder-LLM/opc-sft-stage2": 100,
+        "bespokelabs/Bespoke-Stratos-17k": 100,
+        "microsoft/orca-math-word-problems-200k": 100,
+        "open-thoughts/OpenThoughts3-1.2M": 100,
+        "nvidia/Nemotron-Instruction-Following-Chat-v1": 100,
+        "nvidia/Nemotron-SWE-v1": 100,
+        "nvidia/Nemotron-Agentic-v1": 100,
+        "lmsys/lmsys-chat-1m": 100,
+        "nvidia/Nemotron-SFT-Safety-v1": 100,
+        "microsoft/rStar-Coder": 100,
+        "allenai/tulu-3-sft-mixture": 100,
+        "argilla/magpie-ultra-v1.0": 100,
+        "allenai/WildChat-4.8M": 100,
+        "nvidia/Nemotron-Math-v2": 100,
+        "nvidia/OpenMathInstruct-2": 100,
+        "m-a-p/CodeFeedback-Filtered-Instruction": 100,
+        "nvidia/Nemotron-SFT-SWE-v2": 100,
+        "HuggingFaceTB/smoltalk": 100,
+        "nvidia/AceReason-Math": 100,
+        "meta-math/MetaMathQA": 100,
+        "nvidia/Nemotron-Math-Proofs-v1": 100,
+        "open-thoughts/OpenThoughts-114k": 100,
+        "mlabonne/open-perfectblend": 100,
+        "nvidia/AceReason-1.1-SFT": 100,
+        "AI-MO/NuminaMath-CoT": 100,
+        "Salesforce/APIGen-MT-5k": 100,
+        "nvidia/OpenCodeInstruct": 100,
+        "nvidia/Nemotron-Science-v1": 100,
+        "PrimeIntellect/SYNTHETIC-2-SFT-verified": 100,
+        "PrimeIntellect/SYNTHETIC-1-SFT-Data": 100,
+        "alibaba-pai/OmniThought-0528": 100,
+        "nvidia/Nemotron-Competitive-Programming-v1": 100
+      }
+    },
+    "fenced_prompt_without_newlines": {
+      "n": 535,
+      "major": 231,
+      "by_source": {
+        "nvidia/Nemotron-SWE-v1": 91,
+        "nvidia/Nemotron-SFT-SWE-v2": 100,
+        "nvidia/OpenCodeInstruct": 89,
+        "PrimeIntellect/SYNTHETIC-2-SFT-verified": 23,
+        "OpenCoder-LLM/opc-sft-stage2": 26,
+        "nvidia/Nemotron-Competitive-Programming-v1": 100,
+        "m-a-p/CodeFeedback-Filtered-Instruction": 21,
+        "microsoft/rStar-Coder": 11,
+        "nvidia/AceReason-1.1-SFT": 36,
+        "PrimeIntellect/SYNTHETIC-1-SFT-Data": 7,
+        "open-thoughts/OpenThoughts-114k": 3,
+        "alibaba-pai/OmniThought-0528": 16,
+        "allenai/WildChat-4.8M": 3,
+        "allenai/tulu-3-sft-mixture": 3,
+        "mlabonne/open-perfectblend": 1,
+        "HuggingFaceTB/smoltalk": 4,
+        "lmsys/lmsys-chat-1m": 1
+      }
+    },
+    "thought_marker_in_answer": {
+      "n": 35,
+      "major": 35,
+      "by_source": {
+        "nvidia/Nemotron-SWE-v1": 35
+      }
+    },
+    "tool_marker_in_answer": {
+      "n": 81,
+      "major": 70,
+      "by_source": {
+        "nvidia/Nemotron-SWE-v1": 67,
+        "Salesforce/APIGen-MT-5k": 1,
+        "nvidia/Nemotron-Agentic-v1": 13
+      }
+    },
+    "empty_answer": {
+      "n": 0,
+      "major": 0,
+      "by_source": {}
+    },
+    "missing_teacher_model": {
+      "n": 3400,
+      "major": 888,
+      "by_source": {
+        "allenai/coconot": 100,
+        "open-r1/OpenR1-Math-220k": 100,
+        "OpenCoder-LLM/opc-sft-stage2": 100,
+        "bespokelabs/Bespoke-Stratos-17k": 100,
+        "microsoft/orca-math-word-problems-200k": 100,
+        "open-thoughts/OpenThoughts3-1.2M": 100,
+        "nvidia/Nemotron-Instruction-Following-Chat-v1": 100,
+        "nvidia/Nemotron-SWE-v1": 100,
+        "nvidia/Nemotron-Agentic-v1": 100,
+        "lmsys/lmsys-chat-1m": 100,
+        "nvidia/Nemotron-SFT-Safety-v1": 100,
+        "microsoft/rStar-Coder": 100,
+        "allenai/tulu-3-sft-mixture": 100,
+        "argilla/magpie-ultra-v1.0": 100,
+        "allenai/WildChat-4.8M": 100,
+        "nvidia/Nemotron-Math-v2": 100,
+        "nvidia/OpenMathInstruct-2": 100,
+        "m-a-p/CodeFeedback-Filtered-Instruction": 100,
+        "nvidia/Nemotron-SFT-SWE-v2": 100,
+        "HuggingFaceTB/smoltalk": 100,
+        "nvidia/AceReason-Math": 100,
+        "meta-math/MetaMathQA": 100,
+        "nvidia/Nemotron-Math-Proofs-v1": 100,
+        "open-thoughts/OpenThoughts-114k": 100,
+        "mlabonne/open-perfectblend": 100,
+        "nvidia/AceReason-1.1-SFT": 100,
+        "AI-MO/NuminaMath-CoT": 100,
+        "Salesforce/APIGen-MT-5k": 100,
+        "nvidia/OpenCodeInstruct": 100,
+        "nvidia/Nemotron-Science-v1": 100,
+        "PrimeIntellect/SYNTHETIC-2-SFT-verified": 100,
+        "PrimeIntellect/SYNTHETIC-1-SFT-Data": 100,
+        "alibaba-pai/OmniThought-0528": 100,
+        "nvidia/Nemotron-Competitive-Programming-v1": 100
+      }
+    },
+    "missing_finish_reason": {
+      "n": 3400,
+      "major": 888,
+      "by_source": {
+        "allenai/coconot": 100,
+        "open-r1/OpenR1-Math-220k": 100,
+        "OpenCoder-LLM/opc-sft-stage2": 100,
+        "bespokelabs/Bespoke-Stratos-17k": 100,
+        "microsoft/orca-math-word-problems-200k": 100,
+        "open-thoughts/OpenThoughts3-1.2M": 100,
+        "nvidia/Nemotron-Instruction-Following-Chat-v1": 100,
+        "nvidia/Nemotron-SWE-v1": 100,
+        "nvidia/Nemotron-Agentic-v1": 100,
+        "lmsys/lmsys-chat-1m": 100,
+        "nvidia/Nemotron-SFT-Safety-v1": 100,
+        "microsoft/rStar-Coder": 100,
+        "allenai/tulu-3-sft-mixture": 100,
+        "argilla/magpie-ultra-v1.0": 100,
+        "allenai/WildChat-4.8M": 100,
+        "nvidia/Nemotron-Math-v2": 100,
+        "nvidia/OpenMathInstruct-2": 100,
+        "m-a-p/CodeFeedback-Filtered-Instruction": 100,
+        "nvidia/Nemotron-SFT-SWE-v2": 100,
+        "HuggingFaceTB/smoltalk": 100,
+        "nvidia/AceReason-Math": 100,
+        "meta-math/MetaMathQA": 100,
+        "nvidia/Nemotron-Math-Proofs-v1": 100,
+        "open-thoughts/OpenThoughts-114k": 100,
+        "mlabonne/open-perfectblend": 100,
+        "nvidia/AceReason-1.1-SFT": 100,
+        "AI-MO/NuminaMath-CoT": 100,
+        "Salesforce/APIGen-MT-5k": 100,
+        "nvidia/OpenCodeInstruct": 100,
+        "nvidia/Nemotron-Science-v1": 100,
+        "PrimeIntellect/SYNTHETIC-2-SFT-verified": 100,
+        "PrimeIntellect/SYNTHETIC-1-SFT-Data": 100,
+        "alibaba-pai/OmniThought-0528": 100,
+        "nvidia/Nemotron-Competitive-Programming-v1": 100
+      }
+    }
+  },
+  "lengths": [
+    {
+      "label": "Under 2,000",
+      "n": 1094,
+      "major": 155,
+      "rate": 0.1416819012797075
+    },
+    {
+      "label": "2,000–4,999",
+      "n": 1372,
+      "major": 344,
+      "rate": 0.25072886297376096
+    },
+    {
+      "label": "5,000–9,999",
+      "n": 315,
+      "major": 75,
+      "rate": 0.23809523809523808
+    },
+    {
+      "label": "10,000 or more",
+      "n": 619,
+      "major": 314,
+      "rate": 0.5072697899838449
+    }
+  ],
+  "top_two_major_burden_share": 0.5227006080287147,
+  "recovered_batches": 56,
+  "recovered_records": 336,
+  "examples": [
+    {
+      "audit_id": "2989839b6172fc5e223d25cb",
+      "title": "Following a bad sample over the stated task",
+      "commentary": "The candidate identifies the valid result, then hardcodes the contradictory sample output. This is a concrete example of prompt defects propagating into the answer.",
+      "category": "Answer and prompt"
+    },
+    {
+      "audit_id": "0d5de41fce7e2b494e8f2b68",
+      "title": "A missing physical parameter becomes invented code",
+      "commentary": "The prompt omits drag strength. The reviewer flags a response that substitutes constant velocities fitted to the example instead of the requested trajectory model.",
+      "category": "Underspecified prompt"
+    },
+    {
+      "audit_id": "00d76a5f2673079540dabd16",
+      "title": "A tool action is exported as the final answer",
+      "commentary": "A repository listing can be a valid next action in an agent trajectory. In this flattened standalone record, it does not deliver the requested code fix.",
+      "category": "Training format mismatch"
+    },
+    {
+      "audit_id": "01ea937d23130fbd1911e5f3",
+      "title": "A correct conclusion can still sit in a flagged record",
+      "commentary": "The candidate notices that two planes intersect in a line, not a solid. The reviewer nevertheless flags the contradictory premise and repetitive trace. Major flags are not synonymous with wrong final answers.",
+      "category": "Interpret the labels"
+    },
+    {
+      "audit_id": "1127ed7a2d5a5bcc143742d3",
+      "title": "A concrete counterexample to generated code",
+      "commentary": "The reviewer identifies a minus sign applied to only one regex alternative, and supplies a negative-range counterexample. This is static reviewer reasoning, not an executed test.",
+      "category": "Code semantics"
+    },
+    {
+      "audit_id": "1338c3cd371b6a1b8c7a119f",
+      "title": "An outline replaces the requested deliverable",
+      "commentary": "The Chinese prompt asks for a 3,000-character literature review. The reviewer flags the response for supplying an outline and expansion advice instead.",
+      "category": "Task completion"
+    },
+    {
+      "audit_id": "02c64d27af7ed4e46b84cef9",
+      "title": "A straightforward usable example",
+      "commentary": "The chair-count question gives all necessary inputs. The response computes 2 × 6 + 2 × 7 = 26 and the reviewer finds no defect. This example is illustrative, not evidence of broader learning gains.",
+      "category": "No defect found"
+    },
+    {
+      "audit_id": "0154be2b45c6bc6722679ce9",
+      "title": "Unverifiable bibliography remains uncertain",
+      "commentary": "The reviewer cannot establish the asserted historical publications. It records uncertainty rather than treating plausible specificity as evidence.",
+      "category": "Uncertainty"
+    }
+  ],
+  "method": {
+    "reviewer": "gpt-6.1-sol",
+    "reasoning_effort": "high",
+    "sample_seed": 20261026,
+    "weighted_interval": "95% normal interval using stratified SRS without replacement variance; finite population correction in each source",
+    "source_interval": "95% Wilson binomial approximation; no finite-population correction",
+    "caveat": "Intervals quantify record sampling uncertainty conditional on model labels; they exclude reviewer error and are not familywise-adjusted comparisons."
+  },
+  "input_sha256": {
+    "samples.jsonl": "54f650a0d9c9610a150d678b5d070d7ad0db0216c57fdda120511bd00ba21dc8",
+    "verdicts.jsonl": "809ffd63da417379ce92c15a11eeb59be5fa1dcb42e254ef4b523454d0f77ebe",
+    "sources.json": "124fe4650d2bdeeba0a65c55ba34ca5d2d9e4789a8a44bcf9c4f7903171f1c46",
+    "review_prompt.txt": "e89739e77e4d3498d695844f98b282adcc2a15c813f6129922467d9f7b8d1c4a"
+  }
+}

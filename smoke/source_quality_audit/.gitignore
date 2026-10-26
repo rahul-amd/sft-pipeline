@@ -1,0 +1,14 @@
+# Keep the frozen results; exclude duplicate inputs and operational artifacts.
+/requests/
+/attempts/
+/repair_attempts/
+/completed/
+*.log
+*.lock
+*.tmp
+/model-check.*
+/progress.json
+/audit-progress.json
+/samples.jsonl
+!/verdicts.jsonl
+/report/browser-source-summary.csv

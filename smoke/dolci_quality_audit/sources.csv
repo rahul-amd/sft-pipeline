@@ -1,0 +1,17 @@
+source,population,percentage
+saumyamalik/OpenThoughts3-full-filtered-math-decontam-v2,752997,33.19832041400631
+saumyamalik/correct-python-sft-187k-x16-thoughts-filtered-decontam-v2,466677,20.57497251097577
+allenai/persona-precise-if-r1-final-content-filtered-chinese-filtered,223123,9.837102731796183
+saumyamalik/if_qwq_reasoning_verified_filtered_decontam_v2,135792,5.986831721319931
+allenai/nemotron-post-training-dataset-subset-ngram-filtered-no-tool-calls,113777,5.016228885034596
+allenai/SYNTHETIC-2-SFT-cn-fltrd-final-ngram-filtered-chinese-filtered,104569,4.610264273791563
+saumyamalik/OpenThoughts3-full-filtered-science-decontam-v2,99269,4.376596545773745
+allenai/aya-100k-r1-format-filtered-keyword-filtered-filter-datecutoff-ngram-filtered,98597,4.346969241391108
+saumyamalik/OpenThoughts3-full-filtered-code-subsampled-decontam-v2,88900,3.9194454756196384
+allenai/tulu_v3.9_wildchat_100k_english-r1-final-content-filtered,46312,2.0418150603700416
+allenai/wildjailbreak-r1-v2-format-filtered-keyword-filtered-filter-datecutoff-final-content-filtered,41100,1.81202709840233
+allenai/wildguardmix-r1-v2-all-filtered-ngram-filtered-chinese-filtered,38315,1.6892413205665517
+allenai/wildchat-r1-p2-repetition-filter,36742,1.6198905024208858
+allenai/coconot-r1-format-domain-filtered-keyword-filtered-filter-datecutoff-chinese-filtered,10227,0.4508905385732513
+allenai/oasst1-r1-format-filtered-keyword-filtered-filter-datecutoff-chinese-filtered,6800,0.29980010387191836
+allenai/tablegpt_r1-format-filtered-keyword-filtered-filter-datecutoff,4981,0.2196035760861802

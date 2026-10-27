@@ -1,0 +1,27 @@
+{
+  "dataset": "allenai/Dolci-Think-SFT-7B",
+  "revision": "83f618e2fe0aed29ee3440a3658a0326c175d09d",
+  "seed": 20261027,
+  "sources": 16,
+  "per_source": 200,
+  "total_samples": 3200,
+  "sampling": "uniform without replacement within exact dataset_source labels",
+  "unit": "physical conversation; all original messages retained; all assistant turns reviewed in context",
+  "reviewer_model": "gpt-6.1-sol",
+  "reasoning_effort": "high",
+  "reviewers_per_record": 1,
+  "dimensions": [
+    "prompt_quality",
+    "answer_correctness",
+    "reasoning_quality",
+    "instruction_following",
+    "parsing_integrity",
+    "training_suitability"
+  ],
+  "source_labels_hidden_from_reviewer": true,
+  "external_tools_allowed_for_reviewer": false,
+  "retention": "earliest technically valid whole review; retry only operational/schema/evidence failures",
+  "comparison_note": "Same dimensions and severity policy as prior SFT audit; conversation format adaptation is explicit. Aggregate comparisons must account for source mix and number of assistant turns.",
+  "baseline_rubric_sha256": "e89739e77e4d3498d695844f98b282adcc2a15c813f6129922467d9f7b8d1c4a",
+  "instructions": "OpenAI Docs non-interactive mode: https://learn.chatgpt.com/docs/non-interactive-mode"
+}

@@ -1,0 +1,18 @@
+{
+  "dataset": "allenai/Dolci-Think-SFT-7B",
+  "revision": "83f618e2fe0aed29ee3440a3658a0326c175d09d",
+  "split": "train",
+  "created_utc": "2026-10-27T09:44:18.122925+00:00",
+  "seed": 20261027,
+  "per_source_limit": 200,
+  "method": "Uniform source-relative ranks without replacement; independent source RNGs; sorted shard/row order",
+  "sampling_unit": "physical conversation record; all original messages retained; duplicate IDs not collapsed",
+  "population": 2268178,
+  "source_count": 16,
+  "sample_size": 3200,
+  "samples_sha256": "661594fa85b3e0635bf7e9ae137a8f4595c3a72452d4a470b6c9552b4921536a",
+  "plan_sha256": "9891d8c4c2bed73fa7763478241eb4a728d565ba5d23b4b18f78da5d6378e55b",
+  "sampler_sha256": "f470ebfa8dcb26764a70bd9abc4681ee999ebe2521bf89a0d9e0552fedfa5fab",
+  "source_inventory_sha256": "0343594be6f3a8038e1c7fe7f7ad7fe0a51a550050743f3e57c3b907768f9a90",
+  "range_bytes_requested": 15133701298
+}

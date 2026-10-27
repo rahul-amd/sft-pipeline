@@ -1,0 +1,158 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reviews"
+  ],
+  "properties": {
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "audit_id",
+          "overall",
+          "summary",
+          "uncertainty_reason",
+          "dimensions",
+          "issues"
+        ],
+        "properties": {
+          "audit_id": {
+            "type": "string"
+          },
+          "overall": {
+            "type": "string",
+            "enum": [
+              "no_defect_found",
+              "minor_defect",
+              "major_defect",
+              "uncertain"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "uncertainty_reason": {
+            "type": "string"
+          },
+          "dimensions": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "prompt_quality",
+              "answer_correctness",
+              "reasoning_quality",
+              "instruction_following",
+              "parsing_integrity",
+              "training_suitability"
+            ],
+            "properties": {
+              "prompt_quality": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "minor_issue",
+                  "major_issue",
+                  "uncertain",
+                  "not_applicable"
+                ]
+              },
+              "answer_correctness": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "minor_issue",
+                  "major_issue",
+                  "uncertain",
+                  "not_applicable"
+                ]
+              },
+              "reasoning_quality": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "minor_issue",
+                  "major_issue",
+                  "uncertain",
+                  "not_applicable"
+                ]
+              },
+              "instruction_following": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "minor_issue",
+                  "major_issue",
+                  "uncertain",
+                  "not_applicable"
+                ]
+              },
+              "parsing_integrity": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "minor_issue",
+                  "major_issue",
+                  "uncertain",
+                  "not_applicable"
+                ]
+              },
+              "training_suitability": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "minor_issue",
+                  "major_issue",
+                  "uncertain",
+                  "not_applicable"
+                ]
+              }
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "dimension",
+                "severity",
+                "evidence",
+                "explanation"
+              ],
+              "properties": {
+                "dimension": {
+                  "type": "string",
+                  "enum": [
+                    "prompt_quality",
+                    "answer_correctness",
+                    "reasoning_quality",
+                    "instruction_following",
+                    "parsing_integrity",
+                    "training_suitability"
+                  ]
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "major",
+                    "minor",
+                    "uncertain"
+                  ]
+                },
+                "evidence": {
+                  "type": "string"
+                },
+                "explanation": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

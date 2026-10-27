@@ -1,0 +1,17 @@
+{
+  "path": "data/train-00057-of-00156.parquet",
+  "revision": "83f618e2fe0aed29ee3440a3658a0326c175d09d",
+  "rows": 14540,
+  "null_count": 0,
+  "sources": [
+    {
+      "source": "saumyamalik/OpenThoughts3-full-filtered-math-decontam-v2",
+      "population": 7271
+    },
+    {
+      "source": "saumyamalik/OpenThoughts3-full-filtered-science-decontam-v2",
+      "population": 7269
+    }
+  ],
+  "range_bytes_requested": 1020588
+}

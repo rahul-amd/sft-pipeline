@@ -1,0 +1,17 @@
+{
+  "path": "data/train-00101-of-00156.parquet",
+  "revision": "83f618e2fe0aed29ee3440a3658a0326c175d09d",
+  "rows": 14539,
+  "null_count": 0,
+  "sources": [
+    {
+      "source": "allenai/wildjailbreak-r1-v2-format-filtered-keyword-filtered-filter-datecutoff-final-content-filtered",
+      "population": 11044
+    },
+    {
+      "source": "allenai/SYNTHETIC-2-SFT-cn-fltrd-final-ngram-filtered-chinese-filtered",
+      "population": 3495
+    }
+  ],
+  "range_bytes_requested": 1037537
+}

@@ -1,0 +1,17 @@
+{
+  "path": "data/train-00123-of-00156.parquet",
+  "revision": "83f618e2fe0aed29ee3440a3658a0326c175d09d",
+  "rows": 14539,
+  "null_count": 0,
+  "sources": [
+    {
+      "source": "allenai/nemotron-post-training-dataset-subset-ngram-filtered-no-tool-calls",
+      "population": 13110
+    },
+    {
+      "source": "saumyamalik/correct-python-sft-187k-x16-thoughts-filtered-decontam-v2",
+      "population": 1429
+    }
+  ],
+  "range_bytes_requested": 1052886
+}

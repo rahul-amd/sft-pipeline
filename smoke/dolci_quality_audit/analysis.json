@@ -1,0 +1,319 @@
+{
+  "dataset": "allenai/Dolci-Think-SFT-7B",
+  "model": "gpt-6.1-sol",
+  "population": 2268178,
+  "sample_size": 3200,
+  "source_count": 16,
+  "samples_sha256": "661594fa85b3e0635bf7e9ae137a8f4595c3a72452d4a470b6c9552b4921536a",
+  "verdicts_sha256": "8f0c9a6842eeb2f78d8e33a48948ea6fe74b963dea4f0314fd7f31acacd7d38a",
+  "counts": {
+    "minor_defect": 1044,
+    "no_defect_found": 662,
+    "major_defect": 1337,
+    "uncertain": 157
+  },
+  "population_weighted": {
+    "major_defect": {
+      "estimate": 0.5537257790173435,
+      "interval_95": [
+        0.5331344959804559,
+        0.5743170620542312
+      ]
+    },
+    "minor_defect": {
+      "estimate": 0.24010122882771984,
+      "interval_95": [
+        0.2202571610844639,
+        0.2599452965709758
+      ]
+    },
+    "uncertain": {
+      "estimate": 0.025581819416289193,
+      "interval_95": [
+        0.0192205525773227,
+        0.03194308625525569
+      ]
+    },
+    "no_defect_found": {
+      "estimate": 0.1805911727386475,
+      "interval_95": [
+        0.16376711706773725,
+        0.19741522840955775
+      ]
+    }
+  },
+  "sources": [
+    {
+      "source": "saumyamalik/OpenThoughts3-full-filtered-math-decontam-v2",
+      "population": 752997,
+      "sampled": 200,
+      "major_defect": 184,
+      "minor_defect": 14,
+      "uncertain": 1,
+      "no_defect_found": 1,
+      "major_rate": 0.92,
+      "major_wilson_lower": 0.874010511732856,
+      "major_wilson_upper": 0.9501594141102401,
+      "major_contribution_pp": 30.54245478088581
+    },
+    {
+      "source": "saumyamalik/correct-python-sft-187k-x16-thoughts-filtered-decontam-v2",
+      "population": 466677,
+      "sampled": 200,
+      "major_defect": 57,
+      "minor_defect": 49,
+      "uncertain": 2,
+      "no_defect_found": 92,
+      "major_rate": 0.285,
+      "major_wilson_lower": 0.22695003004617292,
+      "major_wilson_upper": 0.3511534602960517,
+      "major_contribution_pp": 5.863867165628093
+    },
+    {
+      "source": "allenai/persona-precise-if-r1-final-content-filtered-chinese-filtered",
+      "population": 223123,
+      "sampled": 200,
+      "major_defect": 74,
+      "minor_defect": 71,
+      "uncertain": 16,
+      "no_defect_found": 39,
+      "major_rate": 0.37,
+      "major_wilson_lower": 0.30612608409859116,
+      "major_wilson_upper": 0.4387737007594981,
+      "major_contribution_pp": 3.6397280107645873
+    },
+    {
+      "source": "saumyamalik/OpenThoughts3-full-filtered-code-subsampled-decontam-v2",
+      "population": 88900,
+      "sampled": 200,
+      "major_defect": 169,
+      "minor_defect": 26,
+      "uncertain": 1,
+      "no_defect_found": 4,
+      "major_rate": 0.845,
+      "major_wilson_lower": 0.7883930940765792,
+      "major_wilson_upper": 0.8886036307231068,
+      "major_contribution_pp": 3.311931426898594
+    },
+    {
+      "source": "saumyamalik/OpenThoughts3-full-filtered-science-decontam-v2",
+      "population": 99269,
+      "sampled": 200,
+      "major_defect": 143,
+      "minor_defect": 46,
+      "uncertain": 2,
+      "no_defect_found": 9,
+      "major_rate": 0.715,
+      "major_wilson_lower": 0.6488465397039482,
+      "major_wilson_upper": 0.7730499699538271,
+      "major_contribution_pp": 3.1292665302282274
+    },
+    {
+      "source": "saumyamalik/if_qwq_reasoning_verified_filtered_decontam_v2",
+      "population": 135792,
+      "sampled": 200,
+      "major_defect": 77,
+      "minor_defect": 67,
+      "uncertain": 4,
+      "no_defect_found": 52,
+      "major_rate": 0.385,
+      "major_wilson_lower": 0.32033309726923215,
+      "major_wilson_upper": 0.45400132779753916,
+      "major_contribution_pp": 2.3049302127081734
+    },
+    {
+      "source": "allenai/nemotron-post-training-dataset-subset-ngram-filtered-no-tool-calls",
+      "population": 113777,
+      "sampled": 200,
+      "major_defect": 58,
+      "minor_defect": 102,
+      "uncertain": 3,
+      "no_defect_found": 37,
+      "major_rate": 0.29,
+      "major_wilson_lower": 0.23154025607067882,
+      "major_wilson_upper": 0.3563747810077731,
+      "major_contribution_pp": 1.4547063766600328
+    },
+    {
+      "source": "allenai/aya-100k-r1-format-filtered-keyword-filtered-filter-datecutoff-ngram-filtered",
+      "population": 98597,
+      "sampled": 200,
+      "major_defect": 62,
+      "minor_defect": 73,
+      "uncertain": 20,
+      "no_defect_found": 45,
+      "major_rate": 0.31,
+      "major_wilson_lower": 0.2499894483607809,
+      "major_wilson_upper": 0.37717177566258037,
+      "major_contribution_pp": 1.3475604648312434
+    },
+    {
+      "source": "allenai/SYNTHETIC-2-SFT-cn-fltrd-final-ngram-filtered-chinese-filtered",
+      "population": 104569,
+      "sampled": 200,
+      "major_defect": 38,
+      "minor_defect": 117,
+      "uncertain": 1,
+      "no_defect_found": 44,
+      "major_rate": 0.19,
+      "major_wilson_lower": 0.14167171527790676,
+      "major_wilson_upper": 0.25001238707599854,
+      "major_contribution_pp": 0.8759502120203969
+    },
+    {
+      "source": "allenai/tulu_v3.9_wildchat_100k_english-r1-final-content-filtered",
+      "population": 46312,
+      "sampled": 200,
+      "major_defect": 84,
+      "minor_defect": 66,
+      "uncertain": 17,
+      "no_defect_found": 33,
+      "major_rate": 0.42,
+      "major_wilson_lower": 0.35373599161616726,
+      "major_wilson_upper": 0.4892792606041954,
+      "major_contribution_pp": 0.8575623253554174
+    },
+    {
+      "source": "allenai/wildchat-r1-p2-repetition-filter",
+      "population": 36742,
+      "sampled": 200,
+      "major_defect": 94,
+      "minor_defect": 67,
+      "uncertain": 12,
+      "no_defect_found": 27,
+      "major_rate": 0.47,
+      "major_wilson_lower": 0.40204754873265425,
+      "major_wilson_upper": 0.5390831708499817,
+      "major_contribution_pp": 0.7613485361378163
+    },
+    {
+      "source": "allenai/wildguardmix-r1-v2-all-filtered-ngram-filtered-chinese-filtered",
+      "population": 38315,
+      "sampled": 200,
+      "major_defect": 64,
+      "minor_defect": 75,
+      "uncertain": 15,
+      "no_defect_found": 46,
+      "major_rate": 0.32,
+      "major_wilson_lower": 0.25926533315468053,
+      "major_wilson_upper": 0.38751898434113546,
+      "major_contribution_pp": 0.5405572225812966
+    },
+    {
+      "source": "allenai/wildjailbreak-r1-v2-format-filtered-keyword-filtered-filter-datecutoff-final-content-filtered",
+      "population": 41100,
+      "sampled": 200,
+      "major_defect": 47,
+      "minor_defect": 67,
+      "uncertain": 24,
+      "no_defect_found": 62,
+      "major_rate": 0.235,
+      "major_wilson_lower": 0.18157433415232588,
+      "major_wilson_upper": 0.29841368882762537,
+      "major_contribution_pp": 0.4258263681245475
+    },
+    {
+      "source": "allenai/coconot-r1-format-domain-filtered-keyword-filtered-filter-datecutoff-chinese-filtered",
+      "population": 10227,
+      "sampled": 200,
+      "major_defect": 78,
+      "minor_defect": 62,
+      "uncertain": 17,
+      "no_defect_found": 43,
+      "major_rate": 0.39,
+      "major_wilson_lower": 0.3250834313746962,
+      "major_wilson_upper": 0.4590625404283025,
+      "major_contribution_pp": 0.17584731004356802
+    },
+    {
+      "source": "allenai/oasst1-r1-format-filtered-keyword-filtered-filter-datecutoff-chinese-filtered",
+      "population": 6800,
+      "sampled": 200,
+      "major_defect": 56,
+      "minor_defect": 92,
+      "uncertain": 15,
+      "no_defect_found": 37,
+      "major_rate": 0.28,
+      "major_wilson_lower": 0.22236889773949026,
+      "major_wilson_upper": 0.3459230458665071,
+      "major_contribution_pp": 0.08394402908413715
+    },
+    {
+      "source": "allenai/tablegpt_r1-format-filtered-keyword-filtered-filter-datecutoff",
+      "population": 4981,
+      "sampled": 200,
+      "major_defect": 52,
+      "minor_defect": 50,
+      "uncertain": 7,
+      "no_defect_found": 91,
+      "major_rate": 0.26,
+      "major_wilson_lower": 0.20413830063574687,
+      "major_wilson_upper": 0.32490745602534116,
+      "major_contribution_pp": 0.05709692978240685
+    }
+  ],
+  "assistant_turn_count_distribution": {
+    "1": 2958,
+    "2": 140,
+    "3": 29,
+    "4": 25,
+    "5": 11,
+    "6": 7,
+    "7": 5,
+    "8": 4,
+    "9": 6,
+    "10": 4,
+    "11": 2,
+    "12": 2,
+    "13": 2,
+    "15": 1,
+    "18": 1,
+    "19": 2,
+    "20": 1
+  },
+  "dimensions": {
+    "prompt_quality": {
+      "pass": 2749,
+      "minor_issue": 145,
+      "major_issue": 299,
+      "uncertain": 7
+    },
+    "answer_correctness": {
+      "pass": 1376,
+      "major_issue": 983,
+      "uncertain": 230,
+      "minor_issue": 602,
+      "not_applicable": 9
+    },
+    "reasoning_quality": {
+      "minor_issue": 549,
+      "pass": 1828,
+      "major_issue": 770,
+      "uncertain": 30,
+      "not_applicable": 23
+    },
+    "instruction_following": {
+      "pass": 2698,
+      "minor_issue": 220,
+      "major_issue": 281,
+      "not_applicable": 1
+    },
+    "parsing_integrity": {
+      "pass": 3055,
+      "minor_issue": 35,
+      "major_issue": 110
+    },
+    "training_suitability": {
+      "pass": 2469,
+      "minor_issue": 490,
+      "major_issue": 236,
+      "uncertain": 5
+    }
+  },
+  "limitations": [
+    "Single-model judgments; no human adjudication, code execution, or external fact verification",
+    "Sampling intervals condition on reviewer labels and omit model judgment uncertainty",
+    "Conversation-level labels cover every assistant turn; longer conversations have more opportunities for defects",
+    "Cross-dataset aggregate differences can reflect source, topic, language, and conversation-length mixtures"
+  ]
+}

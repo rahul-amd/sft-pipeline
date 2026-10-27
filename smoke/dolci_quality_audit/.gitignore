@@ -1,0 +1,16 @@
+*.log
+__pycache__/
+/model-check*
+/sampled_shards/
+/requests/
+/attempts/
+/completed/
+/review_cache/
+*.lock
+*.tmp
+*.pid
+/sampling-progress.json
+/progress.json
+/audit.tmux
+!/verdicts.jsonl
+/run-status.json

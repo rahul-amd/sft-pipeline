@@ -1,0 +1,6 @@
+{
+  "synthetic_only": true,
+  "identical_methods_have_zero_paired_difference": true,
+  "single_class_AUROC_is_undefined": true,
+  "scripts_parse": true
+}

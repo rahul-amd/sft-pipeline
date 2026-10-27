@@ -1,0 +1,19 @@
+{
+  "complete": true,
+  "pilot": true,
+  "completed": 6,
+  "target": 6,
+  "cached": 0,
+  "errors": [],
+  "wall_seconds": 11.619195142993703,
+  "new_input_tokens": 129360,
+  "new_records": 6,
+  "records_per_second": 0.5163868861964988,
+  "input_tokens_per_second": 11133.301266396513,
+  "latency_seconds": {
+    "median": 7.184690193971619,
+    "p95": 7.409784110961482
+  },
+  "concurrency": 4,
+  "updated_utc": "2026-10-27T20:02:13.982808+00:00"
+}

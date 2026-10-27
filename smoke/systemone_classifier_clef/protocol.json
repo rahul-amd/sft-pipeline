@@ -1,0 +1,25 @@
+{
+  "created_utc": "2026-10-27T22:13:58.838926+00:00",
+  "model": "Cloudflare/clef",
+  "revision": "a30162b99d68a481d8bd75d38df069a0cf83df40",
+  "rubric_sha256": "e68e8b9c20b825930191f3df540030094c554df6eb04e6057a0c88a132be48d6",
+  "samples": 6600,
+  "reference": "same frozen Sol reviews; not ground truth",
+  "comparison": "raw Clef-27B and Flash on all 6600; raw and calibrated scores on the identical 3300-record heldout half",
+  "split": "50/50 within each dataset/source; deterministic source-specific SHA256 seed 20261028; no probability or label-based split selection",
+  "split_sha256": "5673a3b78d8e2837c31e4e093e5c1005953665e4adf9e216383f4418f1fd0ad7",
+  "calibrator": "one pooled four-class L2-regularized multinomial logistic regression on clipped log probabilities; C=1.0; max_iter=2000; no class weights or source/dataset features",
+  "gate": "fit on calibration half only; use 5-fold stratified CV, shuffled seed 20261028; adopt calibration only if out-of-fold multiclass log loss improves by at least 1% relative to raw scores",
+  "evaluation": "heldout labels never used for fitting, gate, prompt or hyperparameter selection; paired within-source bootstrap with 1000 replicates for MCC/macro-F1/accuracy/log-loss differences",
+  "flash_control": "apply exactly the same split, calibrator and gate to existing Flash scores without new inference",
+  "context": "full inputs; independently compare reference encoder tokens with native vLLM encoding; no truncation",
+  "gpu_partitions_allowed": [
+    "amd-tw-backlog",
+    "amd-tw-verification"
+  ],
+  "gpu_partitions_forbidden": [
+    "hissu"
+  ],
+  "limitations": "the heldout half is held out from calibration fitting, not a newly collected benchmark; original Flash aggregate outcomes have already been examined",
+  "probability_clip": 1e-12
+}

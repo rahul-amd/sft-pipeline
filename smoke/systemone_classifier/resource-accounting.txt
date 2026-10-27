@@ -1,0 +1,70 @@
+56619|hissu|CANCELLED by 300100|00:15:58|billing=16,cpu=16,gres/gpu=1,mem=96G,node=1
+56619.batch||CANCELLED|00:15:59|cpu=16,gres/gpu=1,mem=96G,node=1
+56619.extern||COMPLETED|00:16:00|billing=16,cpu=16,gres/gpu=1,mem=96G,node=1
+56619.0||COMPLETED|00:00:02|cpu=16,gres/gpu=1,mem=96G,node=1
+56619.1||COMPLETED|00:00:04|cpu=8,gres/gpu=1,mem=96G,node=1
+56619.2||COMPLETED|00:00:03|cpu=8,gres/gpu=1,mem=96G,node=1
+56619.3||COMPLETED|00:00:00|cpu=8,gres/gpu=1,mem=96G,node=1
+56619.4||COMPLETED|00:00:01|cpu=8,gres/gpu=1,mem=96G,node=1
+56619.5||FAILED|00:00:05|cpu=8,gres/gpu=1,mem=96G,node=1
+56619.6||COMPLETED|00:00:19|cpu=8,gres/gpu=1,mem=96G,node=1
+56619.7||FAILED|00:00:00|cpu=4,gres/gpu=1,mem=96G,node=1
+56619.8||COMPLETED|00:00:59|cpu=8,gres/gpu=1,mem=96G,node=1
+56619.9||FAILED|00:00:30|cpu=16,gres/gpu=1,mem=96G,node=1
+56619.10||COMPLETED|00:00:00|cpu=4,gres/gpu=1,mem=96G,node=1
+56619.11||FAILED|00:00:42|cpu=16,gres/gpu=1,mem=96G,node=1
+56619.12||COMPLETED|00:00:00|cpu=4,gres/gpu=1,mem=96G,node=1
+56619.13||FAILED|00:00:25|cpu=16,gres/gpu=1,mem=96G,node=1
+56619.14||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56620|hissu|CANCELLED by 300100|00:51:28|billing=16,cpu=16,gres/gpu=1,mem=96G,node=1
+56620.batch||CANCELLED|00:51:29|cpu=16,gres/gpu=1,mem=96G,node=1
+56620.extern||COMPLETED|00:51:30|billing=16,cpu=16,gres/gpu=1,mem=96G,node=1
+56620.0||COMPLETED|00:00:01|cpu=4,gres/gpu=1,mem=96G,node=1
+56620.1||COMPLETED|00:00:01|cpu=4,gres/gpu=1,mem=96G,node=1
+56620.2||FAILED|00:00:01|cpu=4,gres/gpu=1,mem=96G,node=1
+56620.3||COMPLETED|00:00:42|cpu=4,gres/gpu=1,mem=96G,node=1
+56620.4||FAILED|00:44:14|cpu=16,gres/gpu=1,mem=96G,node=1
+56620.5||COMPLETED|00:00:01|cpu=2,gres/gpu=1,mem=96G,node=1
+56620.6||COMPLETED|00:00:01|cpu=2,gres/gpu=1,mem=96G,node=1
+56620.7||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56620.8||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56620.9||COMPLETED|00:00:01|cpu=16,gres/gpu=1,mem=96G,node=1
+56620.10||COMPLETED|00:00:01|cpu=2,gres/gpu=1,mem=96G,node=1
+56620.11||FAILED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56628|hissu|CANCELLED by 300100|00:00:32|billing=16,cpu=16,gres/gpu=1,mem=96G,node=1
+56628.batch||CANCELLED|00:00:33|cpu=16,gres/gpu=1,mem=96G,node=1
+56628.extern||COMPLETED|00:00:34|billing=16,cpu=16,gres/gpu=1,mem=96G,node=1
+56628.0||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56629|hissu|CANCELLED by 300100|00:00:00|
+56630|hissu|CANCELLED by 300100|00:00:28|billing=16,cpu=16,gres/gpu=8,mem=96G,node=1
+56630.batch||CANCELLED|00:00:29|cpu=16,gres/gpu=8,mem=96G,node=1
+56630.extern||COMPLETED|00:00:30|billing=16,cpu=16,gres/gpu=8,mem=96G,node=1
+56630.0||COMPLETED|00:00:00|cpu=2,gres/gpu=8,mem=96G,node=1
+56631|hissu|CANCELLED by 300100|00:01:22|billing=2,cpu=2,gres/gpu=1,mem=8G,node=1
+56631.batch||CANCELLED|00:01:23|cpu=2,gres/gpu=1,mem=8G,node=1
+56631.extern||COMPLETED|00:01:24|billing=2,cpu=2,gres/gpu=1,mem=8G,node=1
+56632|hissu|CANCELLED by 300100|00:28:25|billing=16,cpu=16,gres/gpu=1,mem=96G,node=1
+56632.batch||CANCELLED|00:28:26|cpu=16,gres/gpu=1,mem=96G,node=1
+56632.extern||COMPLETED|00:28:27|billing=16,cpu=16,gres/gpu=1,mem=96G,node=1
+56632.0||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.1||COMPLETED|00:00:01|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.2||COMPLETED|00:00:00|cpu=16,gres/gpu=1,mem=96G,node=1
+56632.3||FAILED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.4||COMPLETED|00:00:01|cpu=16,gres/gpu=1,mem=96G,node=1
+56632.5||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.6||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.7||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.8||COMPLETED|00:00:02|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.9||COMPLETED|00:00:02|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.10||COMPLETED|00:00:01|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.11||COMPLETED|00:00:02|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.12||COMPLETED|00:00:02|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.13||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.14||COMPLETED|00:00:01|cpu=16,gres/gpu=1,mem=96G,node=1
+56632.15||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.16||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.17||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.18||COMPLETED|00:00:01|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.19||COMPLETED|00:00:01|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.20||COMPLETED|00:00:04|cpu=2,gres/gpu=1,mem=96G,node=1
+56632.21||COMPLETED|00:00:00|cpu=2,gres/gpu=1,mem=96G,node=1

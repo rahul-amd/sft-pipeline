@@ -1,0 +1,10 @@
+cache/
+tmp/
+logs/
+docs/
+predictions/
+report/.mplconfig/
+__pycache__/
+*.jsonl
+progress*.json
+runner-ready

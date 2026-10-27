@@ -1,0 +1,12 @@
+cache/
+tmp/
+logs/
+venv/
+model/
+*.sif
+*.jsonl
+predictions/
+report/.mplconfig/
+__pycache__/
+docs/
+progress.json

@@ -1,0 +1,6 @@
+{
+  "random_weighted_and_unweighted_cases": 20,
+  "MCC_matches_sklearn": true,
+  "kappa_matches_sklearn": true,
+  "macro_F1_matches_sklearn": true
+}

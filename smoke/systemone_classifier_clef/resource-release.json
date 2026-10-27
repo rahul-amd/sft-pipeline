@@ -1,0 +1,12 @@
+{
+  "verified_utc": "2026-10-27T23:08:02.118450+00:00",
+  "hissu_deadline_utc": "2026-10-28T00:30:00+00:00",
+  "before_deadline": true,
+  "job_id": 56641,
+  "node": "tus1-p15-g61",
+  "experiment_containers_remaining": [],
+  "active_experiment_or_fallback_jobs": [],
+  "fallback_job_canceled": 56638,
+  "slurm_accounting": "JobID|Partition|State|Start|End|Elapsed|AllocTRES\n56638|amd-tw-backlog|CANCELLED by 300100|None|2026-10-27T23:06:54|00:00:00|\n56640|hissu|CANCELLED by 300100|2026-10-27T22:34:35|2026-10-27T22:35:42|00:01:07|billing=32,cpu=32,gres/gpu=8,mem=384G,node=1\n56641|hissu|FAILED|2026-10-27T22:35:42|2026-10-27T23:06:12|00:30:30|billing=32,cpu=32,gres/gpu=8,mem=384G,node=1\n",
+  "note": "Inference and cleanup succeeded; the first CPU analysis stopped at a baseline-consistency assertion and was repaired without GPU use."
+}

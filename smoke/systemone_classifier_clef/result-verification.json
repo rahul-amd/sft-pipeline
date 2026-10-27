@@ -1,0 +1,24 @@
+{
+  "complete": true,
+  "identical_record_evidence_and_questions": 6600,
+  "full_input_checks": 6600,
+  "calibration_rows": 3300,
+  "heldout_rows": 3300,
+  "disjoint_split": true,
+  "metrics_independently_verified": [
+    "flash/sft/raw",
+    "flash/sft/selected",
+    "flash/dolci/raw",
+    "flash/dolci/selected",
+    "flash/pooled/raw",
+    "flash/pooled/selected",
+    "clef/sft/raw",
+    "clef/sft/selected",
+    "clef/dolci/raw",
+    "clef/dolci/selected",
+    "clef/pooled/raw",
+    "clef/pooled/selected"
+  ],
+  "report_links_valid": true,
+  "metrics_sha256": "ed521c00a1b22d5835e4580a0a6cf8283f625b1fd7eba2105de8cdf61098918e"
+}

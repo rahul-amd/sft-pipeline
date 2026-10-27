@@ -1,0 +1,817 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clef 27B vs Flash — raw and calibrated SFT review</title><style>body{margin:0;background:#f5f4ef;color:#20383f;font:16px/1.65 system-ui,sans-serif}main{max-width:1200px;margin:auto;padding:45px 30px}h1,h2{font-family:Georgia,serif;font-weight:400;line-height:1.15}h1{font-size:clamp(34px,5vw,62px)}h2{font-size:30px}.eyebrow{font-size:12px;letter-spacing:.16em;color:#287568}header p{font-size:20px;color:#536b70;max-width:960px}section{padding:28px 0;border-bottom:1px solid #d4ded7}.scroll{overflow:auto;background:white;border:1px solid #d4ded7;border-radius:10px;padding:12px}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:11px;text-align:left;border-bottom:1px solid #e3e8e2;white-space:nowrap}th{font-size:12px;color:#58716a}figure{margin:0;background:white;padding:16px;border-radius:12px}svg{width:100%;height:auto}a{color:#287568}code{overflow-wrap:anywhere}@media(max-width:700px){main{padding:22px 16px}}@media print{body{background:white}section{break-inside:avoid}}</style></head><body><main><header><div class="eyebrow">CLEF 27B / FLASH / SOL</div><h1>Does a larger decision model<br>make a better SFT reviewer?</h1><p>The same 6,600 frozen records, four labels, full inputs, and a separate calibration experiment. Sol is the reference reviewer, not independently verified truth.</p></header><section><h2>A stronger reviewer signal, with important gaps</h2><p><strong>SFT:</strong> calibrated Clef reaches MCC 0.398 versus 0.324 for calibrated Flash. Calibration raises Clef’s major-defect recall from 24.6% to 63.5%. Among its 791 no-defect decisions, 5.8% are Sol-major; only 70.3% match Sol’s no-defect label.</p><p><strong>DOLCI:</strong> calibrated Clef reaches MCC 0.422 versus 0.297 for calibrated Flash. Calibration raises Clef’s major-defect recall from 36.0% to 79.2%. Among its 401 no-defect decisions, 8.0% are Sol-major; only 55.4% match Sol’s no-defect label.</p><p>The larger model improves agreement both before and after applying the same calibration procedure to Flash. Both paired 95% intervals for the calibrated MCC gain exclude zero. However, calibration reduces minor-defect recall and misses every Sol-uncertain case in the held-out set. It is useful evidence for a review-routing experiment, not validation of an automatic acceptance filter.</p></section><section><h2>Raw decisions on every record</h2><div class="scroll"><table><thead><tr><th>Audit</th><th>Model</th><th>N</th><th>MCC</th><th>Macro-F1</th><th>Accuracy</th><th>Major-defect recall</th></tr></thead><tbody><tr><td>sft</td><td>flash</td><td>3400</td><td>0.120</td><td>0.208</td><td>47.3%</td><td>7.9%</td></tr><tr><td>sft</td><td>clef</td><td>3400</td><td>0.315</td><td>0.399</td><td>51.3%</td><td>25.7%</td></tr><tr><td>dolci</td><td>flash</td><td>3200</td><td>0.102</td><td>0.167</td><td>25.9%</td><td>9.6%</td></tr><tr><td>dolci</td><td>clef</td><td>3200</td><td>0.323</td><td>0.433</td><td>50.0%</td><td>35.6%</td></tr></tbody></table></div><p>This directly repeats the original experiment. No calibration is applied to these full-audit scores. MCC measures categorical correlation; uncertainty remains a fourth class rather than an ordinal severity. Raw decisions preserve the API’s returned choice, including exact probability ties. A label-order argmax would differ on 4 Flash and 39 Clef records; these are audited in the metrics file. Calibrated decisions use the largest calibrated probability.</p></section><section><h2>Was calibration warranted?</h2><div class="scroll"><table><thead><tr><th>Model</th><th>Fitting N</th><th>Raw log loss</th><th>Out-of-fold log loss</th><th>Relative reduction</th><th>Gate decision</th></tr></thead><tbody><tr><td>flash</td><td>3300</td><td>1.338</td><td>1.030</td><td>23.0%</td><td>adopted</td></tr><tr><td>clef</td><td>3300</td><td>1.139</td><td>0.903</td><td>20.7%</td><td>adopted</td></tr></tbody></table></div><p>The predeclared gate requires at least a 1% relative improvement in five-fold out-of-fold log loss on the calibration half. The calibrator is one pooled, regularized multinomial logistic regression over four log probabilities, with fixed C=1 and no source or dataset features. It can correct class bias; it is more than temperature scaling. Held-out labels were not used to fit, choose hyperparameters, or decide whether to adopt calibration.</p></section><section><h2>The fair comparison: identical held-out records</h2><div class="scroll"><table><thead><tr><th>Audit</th><th>Method</th><th>N</th><th>MCC</th><th>MCC 95% CI</th><th>Macro-F1</th><th>Accuracy</th><th>Log loss</th><th>Brier</th><th>ECE</th></tr></thead><tbody><tr><td>sft</td><td>Flash · raw</td><td>1700</td><td>0.120</td><td>0.094 – 0.144</td><td>0.205</td><td>46.4%</td><td>1.209</td><td>0.656</td><td>0.061</td></tr><tr><td>sft</td><td>Flash · selected calibration</td><td>1700</td><td>0.324</td><td>0.291 – 0.356</td><td>0.378</td><td>57.0%</td><td>0.984</td><td>0.554</td><td>0.063</td></tr><tr><td>sft</td><td>Clef 27B · raw</td><td>1700</td><td>0.287</td><td>0.256 – 0.320</td><td>0.388</td><td>49.3%</td><td>1.125</td><td>0.620</td><td>0.070</td></tr><tr><td>sft</td><td>Clef 27B · selected calibration</td><td>1700</td><td>0.398</td><td>0.365 – 0.431</td><td>0.445</td><td>60.9%</td><td>0.883</td><td>0.495</td><td>0.037</td></tr><tr><td>dolci</td><td>Flash · raw</td><td>1600</td><td>0.106</td><td>0.086 – 0.126</td><td>0.169</td><td>26.8%</td><td>1.454</td><td>0.794</td><td>0.224</td></tr><tr><td>dolci</td><td>Flash · selected calibration</td><td>1600</td><td>0.297</td><td>0.265 – 0.330</td><td>0.369</td><td>51.6%</td><td>1.032</td><td>0.574</td><td>0.039</td></tr><tr><td>dolci</td><td>Clef 27B · raw</td><td>1600</td><td>0.334</td><td>0.304 – 0.367</td><td>0.434</td><td>50.6%</td><td>1.133</td><td>0.621</td><td>0.088</td></tr><tr><td>dolci</td><td>Clef 27B · selected calibration</td><td>1600</td><td>0.422</td><td>0.390 – 0.455</td><td>0.458</td><td>61.6%</td><td>0.888</td><td>0.495</td><td>0.046</td></tr></tbody></table></div><p>The held-out half contains 1,700 SFT records and 1,600 Dolci records, selected 50/50 within every source before new inference. Both models receive the same calibration procedure and split. This separates improvements due to model size from improvements due to post-processing. Lower log loss, Brier score, and 15-bin top-label ECE are better. These are held out from calibration fitting, not a newly collected benchmark: the previous Flash aggregate results were already known.</p></section><section><h2>Paired changes in agreement</h2><div class="scroll"><table><thead><tr><th>Audit</th><th>Comparison</th><th>MCC difference</th><th>Paired 95% CI</th></tr></thead><tbody><tr><td>sft</td><td>Larger model, raw</td><td>0.167</td><td>0.135 – 0.205</td></tr><tr><td>sft</td><td>Larger model, after selected calibration</td><td>0.074</td><td>0.040 – 0.110</td></tr><tr><td>sft</td><td>Calibration gain, Clef</td><td>0.111</td><td>0.079 – 0.142</td></tr><tr><td>sft</td><td>Calibration gain, Flash</td><td>0.204</td><td>0.170 – 0.240</td></tr><tr><td>dolci</td><td>Larger model, raw</td><td>0.227</td><td>0.192 – 0.263</td></tr><tr><td>dolci</td><td>Larger model, after selected calibration</td><td>0.125</td><td>0.091 – 0.160</td></tr><tr><td>dolci</td><td>Calibration gain, Clef</td><td>0.088</td><td>0.057 – 0.119</td></tr><tr><td>dolci</td><td>Calibration gain, Flash</td><td>0.191</td><td>0.152 – 0.227</td></tr></tbody></table></div><p>Intervals use 1,000 paired bootstrap replicates within dataset/source strata. Models are evaluated on the same resampled records. Intervals condition on the fitted calibrators and Sol labels; they do not include label uncertainty or uncertainty from refitting calibration.</p></section><section><h2>What would a quality filter miss?</h2><div class="scroll"><table><thead><tr><th>Audit</th><th>Method</th><th>Major-defect recall</th><th>No-defect decisions</th><th>Sol-major among no-defect</th><th>Major-defect AUROC</th></tr></thead><tbody><tr><td>sft</td><td>Flash · raw</td><td>9.2%</td><td>1556</td><td>21.4%</td><td>0.730</td></tr><tr><td>sft</td><td>Clef 27B · raw</td><td>24.6%</td><td>573</td><td>4.7%</td><td>0.845</td></tr><tr><td>sft</td><td>Flash · selected calibration</td><td>60.7%</td><td>1074</td><td>11.7%</td><td>0.819</td></tr><tr><td>sft</td><td>Clef 27B · selected calibration</td><td>63.5%</td><td>791</td><td>5.8%</td><td>0.871</td></tr><tr><td>dolci</td><td>Flash · raw</td><td>8.2%</td><td>1310</td><td>32.2%</td><td>0.779</td></tr><tr><td>dolci</td><td>Clef 27B · raw</td><td>36.0%</td><td>306</td><td>8.8%</td><td>0.856</td></tr><tr><td>dolci</td><td>Flash · selected calibration</td><td>71.5%</td><td>608</td><td>17.1%</td><td>0.809</td></tr><tr><td>dolci</td><td>Clef 27B · selected calibration</td><td>79.2%</td><td>401</td><td>8.0%</td><td>0.882</td></tr></tbody></table></div><p>These use the four-class argmax, without a separately tuned acceptance threshold. The AUROC supplement excludes Sol-uncertain records only for that binary ranking calculation. A stronger correlation alone does not establish a safe automatic filter; missed material defects and review workload matter.</p></section><section><h2>Check every class, including uncertainty</h2><details><summary>Held-out precision, recall, and F1 by class</summary><div class="scroll"><table><thead><tr><th>Audit</th><th>Method</th><th>Class</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody><tr><td>sft</td><td>Flash · selected calibration</td><td>No defect</td><td>58.3%</td><td>82.8%</td><td>0.684</td></tr><tr><td>sft</td><td>Flash · selected calibration</td><td>Minor defect</td><td>34.2%</td><td>14.7%</td><td>0.206</td></tr><tr><td>sft</td><td>Flash · selected calibration</td><td>Major defect</td><td>64.2%</td><td>60.7%</td><td>0.624</td></tr><tr><td>sft</td><td>Flash · selected calibration</td><td>Uncertain</td><td>0.0%</td><td>0.0%</td><td>0.000</td></tr><tr><td>sft</td><td>Clef 27B · raw</td><td>No defect</td><td>73.1%</td><td>55.4%</td><td>0.631</td></tr><tr><td>sft</td><td>Clef 27B · raw</td><td>Minor defect</td><td>33.2%</td><td>66.0%</td><td>0.442</td></tr><tr><td>sft</td><td>Clef 27B · raw</td><td>Major defect</td><td>91.8%</td><td>24.6%</td><td>0.388</td></tr><tr><td>sft</td><td>Clef 27B · raw</td><td>Uncertain</td><td>6.1%</td><td>18.2%</td><td>0.092</td></tr><tr><td>sft</td><td>Clef 27B · selected calibration</td><td>No defect</td><td>70.3%</td><td>73.5%</td><td>0.719</td></tr><tr><td>sft</td><td>Clef 27B · selected calibration</td><td>Minor defect</td><td>39.7%</td><td>41.7%</td><td>0.406</td></tr><tr><td>sft</td><td>Clef 27B · selected calibration</td><td>Major defect</td><td>67.2%</td><td>63.5%</td><td>0.653</td></tr><tr><td>sft</td><td>Clef 27B · selected calibration</td><td>Uncertain</td><td>0.0%</td><td>0.0%</td><td>0.000</td></tr><tr><td>dolci</td><td>Flash · selected calibration</td><td>No defect</td><td>39.0%</td><td>68.1%</td><td>0.496</td></tr><tr><td>dolci</td><td>Flash · selected calibration</td><td>Minor defect</td><td>41.3%</td><td>22.5%</td><td>0.291</td></tr><tr><td>dolci</td><td>Flash · selected calibration</td><td>Major defect</td><td>66.5%</td><td>71.5%</td><td>0.689</td></tr><tr><td>dolci</td><td>Flash · selected calibration</td><td>Uncertain</td><td>0.0%</td><td>0.0%</td><td>0.000</td></tr><tr><td>dolci</td><td>Clef 27B · raw</td><td>No defect</td><td>56.9%</td><td>50.0%</td><td>0.532</td></tr><tr><td>dolci</td><td>Clef 27B · raw</td><td>Minor defect</td><td>43.5%</td><td>74.2%</td><td>0.548</td></tr><tr><td>dolci</td><td>Clef 27B · raw</td><td>Major defect</td><td>93.0%</td><td>36.0%</td><td>0.519</td></tr><tr><td>dolci</td><td>Clef 27B · raw</td><td>Uncertain</td><td>10.0%</td><td>21.3%</td><td>0.136</td></tr><tr><td>dolci</td><td>Clef 27B · selected calibration</td><td>No defect</td><td>55.4%</td><td>63.8%</td><td>0.593</td></tr><tr><td>dolci</td><td>Clef 27B · selected calibration</td><td>Minor defect</td><td>52.1%</td><td>46.4%</td><td>0.491</td></tr><tr><td>dolci</td><td>Clef 27B · selected calibration</td><td>Major defect</td><td>70.9%</td><td>79.2%</td><td>0.748</td></tr><tr><td>dolci</td><td>Clef 27B · selected calibration</td><td>Uncertain</td><td>0.0%</td><td>0.0%</td><td>0.000</td></tr></tbody></table></div></details><p>Overall agreement can improve while a rare class becomes less useful. Minor defects and uncertainty remain separate targets; uncertainty is not treated as an intermediate severity. A zero score is used when a class has no predictions.</p></section><section><h2>How calibration changes the decisions</h2><figure><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="792pt" height="648pt" viewBox="0 0 792 648" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.0, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 648
+L 792 648
+L 792 0
+L 0 0
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 117.125584 265.661175
+L 356.626759 265.661175
+L 356.626759 26.16
+L 117.125584 26.16
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g clip-path="url(#pd8d01e6654)">
+    <image xlink:href="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAUwAAAFNCAYAAABrMlb6AAAE1klEQVR4nO3WvS0FUByHYR83OiqVMAKF6GxgIiPYwR6W0BG1BFFproLE17XCW0hOnDzPBL/i5D3/9eX792qNP3F0fjV6wjRuLs5GT5jGw8vb6AnT2Bg9AOC/EEyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBo8fH1M3rDNE5P9kdPmMbd0+voCdPY3d4aPWEaLkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAGixe3TcvSGadw/v46eMI3Dg53RE6bx+b0aPWEaLkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIFpfXj6M3TOPseG/0hGksNv3lf2VzYzV6wjS8SoBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwAaJf1XcfM8LuaA4AAAAASUVORK5CYII=" id="image1f85419418" transform="scale(1 -1) translate(0 -239.76)" x="117.36" y="-25.92" width="239.04" height="239.76"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1">
+      <defs>
+       <path id="m9b5ae57e70" d="M 0 0
+L 0 3.5
+" style="stroke: #000000; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="147.063231" y="265.661175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_1">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(100.786887 296.345526) rotate(-20)">No defect</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_2">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="206.938525" y="265.661175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_2">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(147.155568 301.261532) rotate(-20)">Minor defect</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_3">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="266.813819" y="265.661175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_3">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(207.22761 301.189921) rotate(-20)">Major defect</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_4">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="326.689113" y="265.661175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_4">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(280.214552 296.417671) rotate(-20)">Uncertain</text>
+     </g>
+    </g>
+    <g id="text_5">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="236.876172" y="315.117434" transform="rotate(-0 236.876172 315.117434)">Clef prediction</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_5">
+      <defs>
+       <path id="mb4816feada" d="M 0 0
+L -3.5 0
+" style="stroke: #000000; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#mb4816feada" x="117.125584" y="56.097647" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_6">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="110.125584" y="59.896866" transform="rotate(-0 110.125584 59.896866)">No defect</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_6">
+      <g>
+       <use xlink:href="#mb4816feada" x="117.125584" y="115.972941" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_7">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="110.125584" y="119.772159" transform="rotate(-0 110.125584 119.772159)">Minor defect</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_7">
+      <g>
+       <use xlink:href="#mb4816feada" x="117.125584" y="175.848235" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_8">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="110.125584" y="179.647453" transform="rotate(-0 110.125584 179.647453)">Major defect</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_8">
+      <g>
+       <use xlink:href="#mb4816feada" x="117.125584" y="235.723528" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_9">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="110.125584" y="239.522747" transform="rotate(-0 110.125584 239.522747)">Uncertain</text>
+     </g>
+    </g>
+    <g id="text_10">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="40.977928" y="145.910588" transform="rotate(-90 40.977928 145.910588)">Sol reference</text>
+    </g>
+   </g>
+   <g id="patch_3">
+    <path d="M 117.125584 265.661175
+L 117.125584 26.16
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 356.626759 265.661175
+L 356.626759 26.16
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 117.125584 265.661175
+L 356.626759 265.661175
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 117.125584 26.16
+L 356.626759 26.16
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="text_11">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(137.519481 52.694327)">419</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(131.179637 64.69628)">55.4%</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(197.394775 52.694327)">331</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(191.054931 64.69628)">43.8%</text>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(263.632569 52.694327)">1</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(254.111475 64.69628)">0.1%</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(323.507863 52.694327)">5</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(313.986769 64.69628)">0.7%</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(137.519481 112.56962)">126</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(131.179637 124.571574)">27.6%</text>
+   </g>
+   <g id="text_16">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(197.394775 112.56962)">301</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(191.054931 124.571574)">66.0%</text>
+   </g>
+   <g id="text_17">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(263.632569 112.56962)">8</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(254.111475 124.571574)">1.8%</text>
+   </g>
+   <g id="text_18">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(320.326613 112.56962)">21</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(313.986769 124.571574)">4.6%</text>
+   </g>
+   <g id="text_19">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(140.700731 172.444914)">27</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(134.360887 184.446867)">5.9%</text>
+   </g>
+   <g id="text_20">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(197.394775 172.444914)">250</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(191.054931 184.446867)">54.9%</text>
+   </g>
+   <g id="text_21">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(257.270069 172.444914)">112</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(250.930225 184.446867)">24.6%</text>
+   </g>
+   <g id="text_22">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(320.326613 172.444914)">66</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(310.805519 184.446867)">14.5%</text>
+   </g>
+   <g id="text_23">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(143.881981 232.320208)">1</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(134.360887 244.322161)">3.0%</text>
+   </g>
+   <g id="text_24">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(200.576025 232.320208)">25</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(191.054931 244.322161)">75.8%</text>
+   </g>
+   <g id="text_25">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(263.632569 232.320208)">1</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(254.111475 244.322161)">3.0%</text>
+   </g>
+   <g id="text_26">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(323.507863 232.320208)">6</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(310.805519 244.322161)">18.2%</text>
+   </g>
+   <g id="text_27">
+    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="236.876172" y="20.16" transform="rotate(-0 236.876172 20.16)">SFT · raw</text>
+   </g>
+  </g>
+  <g id="axes_2">
+   <g id="patch_7">
+    <path d="M 494.675584 265.661175
+L 734.176759 265.661175
+L 734.176759 26.16
+L 494.675584 26.16
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g clip-path="url(#pf4169a20f2)">
+    <image xlink:href="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAU0AAAFNCAYAAACE8D3EAAAEzklEQVR4nO3WMSrHcQCHYfQvgzIqZXADGWyuYbL8L+AKBmfgFLIYLK6hKKusZgM/F7C8pb759jwn+Exvn823j89lgz9x9fg6esI0jg92Rk+YyvrkcPSEaWyNHgDwn4gmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAsFqWZfSGaZwf7Y+eMI3Lh+fRE6ayPjkcPWEaniZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgDB6u7pffSGaXx9L6MnTOPm7Gj0BPiVpwkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgDB6vr+ZfSGadxenI6eMI293e3RE+BXniZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgDBD3ojGgfqY+UwAAAAAElFTkSuQmCC" id="imagef7f433d323" transform="scale(1 -1) translate(0 -239.76)" x="494.64" y="-25.92" width="239.76" height="239.76"/>
+   </g>
+   <g id="matplotlib.axis_3">
+    <g id="xtick_5">
+     <g id="line2d_9">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="524.613231" y="265.661175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_28">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(478.336887 296.345526) rotate(-20)">No defect</text>
+     </g>
+    </g>
+    <g id="xtick_6">
+     <g id="line2d_10">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="584.488525" y="265.661175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_29">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(524.705568 301.261532) rotate(-20)">Minor defect</text>
+     </g>
+    </g>
+    <g id="xtick_7">
+     <g id="line2d_11">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="644.363819" y="265.661175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_30">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(584.77761 301.189921) rotate(-20)">Major defect</text>
+     </g>
+    </g>
+    <g id="xtick_8">
+     <g id="line2d_12">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="704.239113" y="265.661175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_31">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(657.764552 296.417671) rotate(-20)">Uncertain</text>
+     </g>
+    </g>
+    <g id="text_32">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="614.426172" y="315.117434" transform="rotate(-0 614.426172 315.117434)">Clef prediction</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_4">
+    <g id="ytick_5">
+     <g id="line2d_13">
+      <g>
+       <use xlink:href="#mb4816feada" x="494.675584" y="56.097647" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_33">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="487.675584" y="59.896866" transform="rotate(-0 487.675584 59.896866)">No defect</text>
+     </g>
+    </g>
+    <g id="ytick_6">
+     <g id="line2d_14">
+      <g>
+       <use xlink:href="#mb4816feada" x="494.675584" y="115.972941" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_34">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="487.675584" y="119.772159" transform="rotate(-0 487.675584 119.772159)">Minor defect</text>
+     </g>
+    </g>
+    <g id="ytick_7">
+     <g id="line2d_15">
+      <g>
+       <use xlink:href="#mb4816feada" x="494.675584" y="175.848235" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_35">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="487.675584" y="179.647453" transform="rotate(-0 487.675584 179.647453)">Major defect</text>
+     </g>
+    </g>
+    <g id="ytick_8">
+     <g id="line2d_16">
+      <g>
+       <use xlink:href="#mb4816feada" x="494.675584" y="235.723528" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_36">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="487.675584" y="239.522747" transform="rotate(-0 487.675584 239.522747)">Uncertain</text>
+     </g>
+    </g>
+    <g id="text_37">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="418.527928" y="145.910588" transform="rotate(-90 418.527928 145.910588)">Sol reference</text>
+    </g>
+   </g>
+   <g id="patch_8">
+    <path d="M 494.675584 265.661175
+L 494.675584 26.16
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 734.176759 265.661175
+L 734.176759 26.16
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 494.675584 265.661175
+L 734.176759 265.661175
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 494.675584 26.16
+L 734.176759 26.16
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="text_38">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(515.069481 52.694327)">556</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(508.729637 64.69628)">73.5%</text>
+   </g>
+   <g id="text_39">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(574.944775 52.694327)">152</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(568.604931 64.69628)">20.1%</text>
+   </g>
+   <g id="text_40">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(638.001319 52.694327)">48</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(631.661475 64.69628)">6.3%</text>
+   </g>
+   <g id="text_41">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(701.057863 52.694327)">0</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(691.536769 64.69628)">0.0%</text>
+   </g>
+   <g id="text_42">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(515.069481 112.56962)">186</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(508.729637 124.571574)">40.8%</text>
+   </g>
+   <g id="text_43">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(574.944775 112.56962)">190</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(568.604931 124.571574)">41.7%</text>
+   </g>
+   <g id="text_44">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(638.001319 112.56962)">80</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(628.480225 124.571574)">17.5%</text>
+   </g>
+   <g id="text_45">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(701.057863 112.56962)">0</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(691.536769 124.571574)">0.0%</text>
+   </g>
+   <g id="text_46">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(518.250731 172.444914)">46</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(508.729637 184.446867)">10.1%</text>
+   </g>
+   <g id="text_47">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(574.944775 172.444914)">120</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(568.604931 184.446867)">26.4%</text>
+   </g>
+   <g id="text_48">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(634.820069 172.444914)">289</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(628.480225 184.446867)">63.5%</text>
+   </g>
+   <g id="text_49">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(701.057863 172.444914)">0</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(691.536769 184.446867)">0.0%</text>
+   </g>
+   <g id="text_50">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(521.431981 232.320208)">3</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(511.910887 244.322161)">9.1%</text>
+   </g>
+   <g id="text_51">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(578.126025 232.320208)">17</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(568.604931 244.322161)">51.5%</text>
+   </g>
+   <g id="text_52">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(638.001319 232.320208)">13</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(628.480225 244.322161)">39.4%</text>
+   </g>
+   <g id="text_53">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(701.057863 232.320208)">0</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(691.536769 244.322161)">0.0%</text>
+   </g>
+   <g id="text_54">
+    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="614.426172" y="20.16" transform="rotate(-0 614.426172 20.16)">SFT · selected calibration</text>
+   </g>
+  </g>
+  <g id="axes_3">
+   <g id="patch_12">
+    <path d="M 117.125584 584.261175
+L 356.626759 584.261175
+L 356.626759 344.76
+L 117.125584 344.76
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g clip-path="url(#p2c010e2cbf)">
+    <image xlink:href="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAUwAAAFMCAYAAACgboVfAAAE2klEQVR4nO3WPS4tUBiGUUdOdAolnSm4vVZlCCaiNgaJaE2BOWhuJZHQiJDoFIjG3xSeQrJjZ60RvMXOs7/F1cPL9wq/4vDievSEaZwd/Bs9YRq3T6+jJ0xjdfQAgL9CMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwAaLF89vH9+gRszi5vBs9YRpb62ujJ0xjZ3Nj9IRpuDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIlo/P76M3TOP0/Gb0hGn8P9obPWEaH59foydMw4UJEAkmQCSYAJFgAkSCCRAJJkAkmACRYAJEggkQCSZAJJgAkWACRIIJEAkmQCSYAJFgAkSCCRAJJkAkmACRYAJEggkQCSZAJJgAkWACRIIJEAkmQCSYAJFgAkSCCRAJJkAkmACRYAJEggkQCSZAJJgAkWACRIIJEAkmQCSYAJFgAkSCCRAJJkAkmACRYAJEggkQCSZAJJgAkWACRIIJEAkmQCSYAJFgAkSCCRAJJkAkmACRYAJEggkQCSZAJJgAkWACRIIJEAkmQCSYAJFgAkSCCRAJJkAkmACRYAJEggkQCSZAJJgAkWACRIIJEAkmQCSYAJFgAkSCCRAJJkAkmACRYAJEggkQCSZAtDy+vB+9YRr7u9ujJ0xjbekv/y3L1cXoCdPwKgEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIgEEyASTIBIMAEiwQSIBBMgEkyASDABIsEEiAQTIBJMgEgwASLBBIh+AHHkH2bjU1DtAAAAAElFTkSuQmCC" id="imagec068036868" transform="scale(1 -1) translate(0 -239.04)" x="117.36" y="-344.88" width="239.04" height="239.04"/>
+   </g>
+   <g id="matplotlib.axis_5">
+    <g id="xtick_9">
+     <g id="line2d_17">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="147.063231" y="584.261175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_55">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(100.786887 614.945526) rotate(-20)">No defect</text>
+     </g>
+    </g>
+    <g id="xtick_10">
+     <g id="line2d_18">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="206.938525" y="584.261175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_56">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(147.155568 619.861532) rotate(-20)">Minor defect</text>
+     </g>
+    </g>
+    <g id="xtick_11">
+     <g id="line2d_19">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="266.813819" y="584.261175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_57">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(207.22761 619.789921) rotate(-20)">Major defect</text>
+     </g>
+    </g>
+    <g id="xtick_12">
+     <g id="line2d_20">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="326.689113" y="584.261175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_58">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(280.214552 615.017671) rotate(-20)">Uncertain</text>
+     </g>
+    </g>
+    <g id="text_59">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="236.876172" y="633.717434" transform="rotate(-0 236.876172 633.717434)">Clef prediction</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_6">
+    <g id="ytick_9">
+     <g id="line2d_21">
+      <g>
+       <use xlink:href="#mb4816feada" x="117.125584" y="374.697647" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_60">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="110.125584" y="378.496866" transform="rotate(-0 110.125584 378.496866)">No defect</text>
+     </g>
+    </g>
+    <g id="ytick_10">
+     <g id="line2d_22">
+      <g>
+       <use xlink:href="#mb4816feada" x="117.125584" y="434.572941" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_61">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="110.125584" y="438.372159" transform="rotate(-0 110.125584 438.372159)">Minor defect</text>
+     </g>
+    </g>
+    <g id="ytick_11">
+     <g id="line2d_23">
+      <g>
+       <use xlink:href="#mb4816feada" x="117.125584" y="494.448235" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_62">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="110.125584" y="498.247453" transform="rotate(-0 110.125584 498.247453)">Major defect</text>
+     </g>
+    </g>
+    <g id="ytick_12">
+     <g id="line2d_24">
+      <g>
+       <use xlink:href="#mb4816feada" x="117.125584" y="554.323528" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_63">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="110.125584" y="558.122747" transform="rotate(-0 110.125584 558.122747)">Uncertain</text>
+     </g>
+    </g>
+    <g id="text_64">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="40.977928" y="464.510588" transform="rotate(-90 40.977928 464.510588)">Sol reference</text>
+    </g>
+   </g>
+   <g id="patch_13">
+    <path d="M 117.125584 584.261175
+L 117.125584 344.76
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 356.626759 584.261175
+L 356.626759 344.76
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_15">
+    <path d="M 117.125584 584.261175
+L 356.626759 584.261175
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_16">
+    <path d="M 117.125584 344.76
+L 356.626759 344.76
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="text_65">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(137.519481 371.294327)">174</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(131.179637 383.29628)">50.0%</text>
+   </g>
+   <g id="text_66">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(197.394775 371.294327)">169</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(191.054931 383.29628)">48.6%</text>
+   </g>
+   <g id="text_67">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(263.632569 371.294327)">1</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(254.111475 383.29628)">0.3%</text>
+   </g>
+   <g id="text_68">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(323.507863 371.294327)">4</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(313.986769 383.29628)">1.1%</text>
+   </g>
+   <g id="text_69">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(140.700731 431.16962)">92</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(131.179637 443.171574)">17.9%</text>
+   </g>
+   <g id="text_70">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(197.394775 431.16962)">382</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(191.054931 443.171574)">74.2%</text>
+   </g>
+   <g id="text_71">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(260.451319 431.16962)">15</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(254.111475 443.171574)">2.9%</text>
+   </g>
+   <g id="text_72">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(320.326613 431.16962)">26</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(313.986769 443.171574)">5.0%</text>
+   </g>
+   <g id="text_73">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(140.700731 491.044914)">27</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(134.360887 503.046867)">4.1%</text>
+   </g>
+   <g id="text_74">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(197.394775 491.044914)">283</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(191.054931 503.046867)">42.7%</text>
+   </g>
+   <g id="text_75">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(257.270069 491.044914)">238</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(250.930225 503.046867)">36.0%</text>
+   </g>
+   <g id="text_76">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(317.145363 491.044914)">114</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(310.805519 503.046867)">17.2%</text>
+   </g>
+   <g id="text_77">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(140.700731 550.920208)">13</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(131.179637 562.922161)">17.3%</text>
+   </g>
+   <g id="text_78">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(200.576025 550.920208)">44</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(191.054931 562.922161)">58.7%</text>
+   </g>
+   <g id="text_79">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(263.632569 550.920208)">2</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(254.111475 562.922161)">2.7%</text>
+   </g>
+   <g id="text_80">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(320.326613 550.920208)">16</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(310.805519 562.922161)">21.3%</text>
+   </g>
+   <g id="text_81">
+    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="236.876172" y="338.76" transform="rotate(-0 236.876172 338.76)">DOLCI · raw</text>
+   </g>
+  </g>
+  <g id="axes_4">
+   <g id="patch_17">
+    <path d="M 494.675584 584.261175
+L 734.176759 584.261175
+L 734.176759 344.76
+L 494.675584 344.76
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g clip-path="url(#pa6a2244f30)">
+    <image xlink:href="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAU0AAAFMCAYAAABPrO5hAAAEyklEQVR4nO3WIUoEUABFUR0nCBaLwWoTXITdNjsxG92Ca7CaxGRzCTJNMGiaYBjMuoEpF4SPn3NW8NLl7b9+bH/2+BPvX9+jJ0zjYb0ZPWEqd6uL0ROmsRg9AOA/EU2AQDQBAtEECEQTIBBNgEA0AQLRBAhEEyAQTYBANAEC0QQIRBMgEE2AQDQBAtEECEQTIBBNgEA0AQLRBAhEEyAQTYBANAEC0QQIRBMgEE2AQDQBAtEECEQTIBBNgEA0AQLRBAhEEyAQTYBANAEC0QQIRBMgEE2AQDQBAtEECEQTIBBNgEA0AQLRBAhEEyAQTYBANAEC0QQIRBMgEE2AQDQBAtEECEQTIBBNgEA0AQLRBAhEEyAQTYBANAEC0QQIRBMgEE2AQDQBAtEECEQTIBBNgEA0AQLRBAhEEyAQTYBANAEC0QQIRBMgEE2AQDQBAtEECEQTIBBNgEA0AQLRBAhEEyAQTYBgeXp8OHrDNA4W+6MnTOPx+WX0hKncrS5GT5iGpwkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkCwXH9uR2+YxtPbZvSEadxfX46eADt5mgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgTLm8f16A3TuL06Hz1hGmcnR6MnwE6eJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAIFoAgSiCRCIJkAgmgCBaAIEogkQiCZAIJoAgWgCBKIJEIgmQCCaAMEvKfMZ0NBnzfwAAAAASUVORK5CYII=" id="image7fcf1f189c" transform="scale(1 -1) translate(0 -239.04)" x="494.64" y="-344.88" width="239.76" height="239.04"/>
+   </g>
+   <g id="matplotlib.axis_7">
+    <g id="xtick_13">
+     <g id="line2d_25">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="524.613231" y="584.261175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_82">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(478.336887 614.945526) rotate(-20)">No defect</text>
+     </g>
+    </g>
+    <g id="xtick_14">
+     <g id="line2d_26">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="584.488525" y="584.261175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_83">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(524.705568 619.861532) rotate(-20)">Minor defect</text>
+     </g>
+    </g>
+    <g id="xtick_15">
+     <g id="line2d_27">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="644.363819" y="584.261175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_84">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(584.77761 619.789921) rotate(-20)">Major defect</text>
+     </g>
+    </g>
+    <g id="xtick_16">
+     <g id="line2d_28">
+      <g>
+       <use xlink:href="#m9b5ae57e70" x="704.239113" y="584.261175" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_85">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'" transform="translate(657.764552 615.017671) rotate(-20)">Uncertain</text>
+     </g>
+    </g>
+    <g id="text_86">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="614.426172" y="633.717434" transform="rotate(-0 614.426172 633.717434)">Clef prediction</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_8">
+    <g id="ytick_13">
+     <g id="line2d_29">
+      <g>
+       <use xlink:href="#mb4816feada" x="494.675584" y="374.697647" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_87">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="487.675584" y="378.496866" transform="rotate(-0 487.675584 378.496866)">No defect</text>
+     </g>
+    </g>
+    <g id="ytick_14">
+     <g id="line2d_30">
+      <g>
+       <use xlink:href="#mb4816feada" x="494.675584" y="434.572941" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_88">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="487.675584" y="438.372159" transform="rotate(-0 487.675584 438.372159)">Minor defect</text>
+     </g>
+    </g>
+    <g id="ytick_15">
+     <g id="line2d_31">
+      <g>
+       <use xlink:href="#mb4816feada" x="494.675584" y="494.448235" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_89">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="487.675584" y="498.247453" transform="rotate(-0 487.675584 498.247453)">Major defect</text>
+     </g>
+    </g>
+    <g id="ytick_16">
+     <g id="line2d_32">
+      <g>
+       <use xlink:href="#mb4816feada" x="494.675584" y="554.323528" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_90">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="487.675584" y="558.122747" transform="rotate(-0 487.675584 558.122747)">Uncertain</text>
+     </g>
+    </g>
+    <g id="text_91">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="418.527928" y="464.510588" transform="rotate(-90 418.527928 464.510588)">Sol reference</text>
+    </g>
+   </g>
+   <g id="patch_18">
+    <path d="M 494.675584 584.261175
+L 494.675584 344.76
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_19">
+    <path d="M 734.176759 584.261175
+L 734.176759 344.76
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_20">
+    <path d="M 494.675584 584.261175
+L 734.176759 584.261175
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_21">
+    <path d="M 494.675584 344.76
+L 734.176759 344.76
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="text_92">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(515.069481 371.294327)">222</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(508.729637 383.29628)">63.8%</text>
+   </g>
+   <g id="text_93">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(578.126025 371.294327)">92</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(568.604931 383.29628)">26.4%</text>
+   </g>
+   <g id="text_94">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(638.001319 371.294327)">34</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(631.661475 383.29628)">9.8%</text>
+   </g>
+   <g id="text_95">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(701.057863 371.294327)">0</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(691.536769 383.29628)">0.0%</text>
+   </g>
+   <g id="text_96">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(515.069481 431.16962)">134</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(508.729637 443.171574)">26.0%</text>
+   </g>
+   <g id="text_97">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(574.944775 431.16962)">239</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(568.604931 443.171574)">46.4%</text>
+   </g>
+   <g id="text_98">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(634.820069 431.16962)">142</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(628.480225 443.171574)">27.6%</text>
+   </g>
+   <g id="text_99">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(701.057863 431.16962)">0</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(691.536769 443.171574)">0.0%</text>
+   </g>
+   <g id="text_100">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(518.250731 491.044914)">32</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(511.910887 503.046867)">4.8%</text>
+   </g>
+   <g id="text_101">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(574.944775 491.044914)">105</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(568.604931 503.046867)">15.9%</text>
+   </g>
+   <g id="text_102">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(634.820069 491.044914)">524</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(628.480225 503.046867)">79.2%</text>
+   </g>
+   <g id="text_103">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(701.057863 491.044914)">1</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(691.536769 503.046867)">0.2%</text>
+   </g>
+   <g id="text_104">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(518.250731 550.920208)">13</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(508.729637 562.922161)">17.3%</text>
+   </g>
+   <g id="text_105">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(578.126025 550.920208)">23</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(568.604931 562.922161)">30.7%</text>
+   </g>
+   <g id="text_106">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(638.001319 550.920208)">39</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(628.480225 562.922161)">52.0%</text>
+   </g>
+   <g id="text_107">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(701.057863 550.920208)">0</text>
+    <text style="font-size: 10px; font-family: 'DejaVu Sans'; fill: #203b43" transform="translate(691.536769 562.922161)">0.0%</text>
+   </g>
+   <g id="text_108">
+    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="614.426172" y="338.76" transform="rotate(-0 614.426172 338.76)">DOLCI · selected calibration</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="pd8d01e6654">
+   <rect x="117.125584" y="26.16" width="239.501175" height="239.501175"/>
+  </clipPath>
+  <clipPath id="pf4169a20f2">
+   <rect x="494.675584" y="26.16" width="239.501175" height="239.501175"/>
+  </clipPath>
+  <clipPath id="p2c010e2cbf">
+   <rect x="117.125584" y="344.76" width="239.501175" height="239.501175"/>
+  </clipPath>
+  <clipPath id="pa6a2244f30">
+   <rect x="494.675584" y="344.76" width="239.501175" height="239.501175"/>
+  </clipPath>
+ </defs>
+</svg>
+</figure><p>Only held-out records appear here. Rows are Sol labels; columns are Clef predictions. Cells show counts and row percentages. A selected method retains raw probabilities if its calibration gate did not pass.</p></section><section><h2>Does agreement vary by source?</h2><details><summary>All 50 source-level comparisons</summary><div class="scroll"><table><thead><tr><th>Audit</th><th>Source</th><th>Held-out N</th><th>Clef raw MCC</th><th>Clef selected MCC</th><th>Flash selected MCC</th><th>Clef major recall</th><th>Sol-major among Clef no-defect</th></tr></thead><tbody><tr><td>dolci</td><td>allenai/SYNTHETIC-2-SFT-cn-fltrd-final-ngram-filtered-chinese-filtered</td><td>100</td><td>0.124</td><td>0.164</td><td>0.258</td><td>58.8%</td><td>4.7%</td></tr><tr><td>dolci</td><td>allenai/aya-100k-r1-format-filtered-keyword-filtered-filter-datecutoff-ngram-filtered</td><td>100</td><td>0.326</td><td>0.515</td><td>0.303</td><td>90.6%</td><td>0.0%</td></tr><tr><td>dolci</td><td>allenai/coconot-r1-format-domain-filtered-keyword-filtered-filter-datecutoff-chinese-filtered</td><td>100</td><td>0.238</td><td>0.307</td><td>0.261</td><td>62.2%</td><td>10.5%</td></tr><tr><td>dolci</td><td>allenai/nemotron-post-training-dataset-subset-ngram-filtered-no-tool-calls</td><td>100</td><td>0.217</td><td>0.326</td><td>0.267</td><td>100.0%</td><td>0.0%</td></tr><tr><td>dolci</td><td>allenai/oasst1-r1-format-filtered-keyword-filtered-filter-datecutoff-chinese-filtered</td><td>100</td><td>0.354</td><td>0.441</td><td>0.058</td><td>68.0%</td><td>0.0%</td></tr><tr><td>dolci</td><td>allenai/persona-precise-if-r1-final-content-filtered-chinese-filtered</td><td>100</td><td>0.155</td><td>0.293</td><td>0.155</td><td>62.9%</td><td>0.0%</td></tr><tr><td>dolci</td><td>allenai/tablegpt_r1-format-filtered-keyword-filtered-filter-datecutoff</td><td>100</td><td>0.328</td><td>0.385</td><td>0.345</td><td>70.8%</td><td>4.9%</td></tr><tr><td>dolci</td><td>allenai/tulu_v3.9_wildchat_100k_english-r1-final-content-filtered</td><td>100</td><td>0.363</td><td>0.471</td><td>0.236</td><td>68.9%</td><td>0.0%</td></tr><tr><td>dolci</td><td>allenai/wildchat-r1-p2-repetition-filter</td><td>100</td><td>0.304</td><td>0.445</td><td>0.148</td><td>72.5%</td><td>0.0%</td></tr><tr><td>dolci</td><td>allenai/wildguardmix-r1-v2-all-filtered-ngram-filtered-chinese-filtered</td><td>100</td><td>0.213</td><td>0.217</td><td>0.231</td><td>33.3%</td><td>20.0%</td></tr><tr><td>dolci</td><td>allenai/wildjailbreak-r1-v2-format-filtered-keyword-filtered-filter-datecutoff-final-content-filtered</td><td>100</td><td>0.252</td><td>0.300</td><td>0.125</td><td>39.1%</td><td>12.9%</td></tr><tr><td>dolci</td><td>saumyamalik/OpenThoughts3-full-filtered-code-subsampled-decontam-v2</td><td>100</td><td>0.402</td><td>0.235</td><td>0.000</td><td>98.8%</td><td>—</td></tr><tr><td>dolci</td><td>saumyamalik/OpenThoughts3-full-filtered-math-decontam-v2</td><td>100</td><td>0.365</td><td>0.429</td><td>0.384</td><td>100.0%</td><td>—</td></tr><tr><td>dolci</td><td>saumyamalik/OpenThoughts3-full-filtered-science-decontam-v2</td><td>100</td><td>0.281</td><td>0.533</td><td>0.218</td><td>97.2%</td><td>0.0%</td></tr><tr><td>dolci</td><td>saumyamalik/correct-python-sft-187k-x16-thoughts-filtered-decontam-v2</td><td>100</td><td>0.225</td><td>0.383</td><td>0.298</td><td>52.4%</td><td>5.2%</td></tr><tr><td>dolci</td><td>saumyamalik/if_qwq_reasoning_verified_filtered_decontam_v2</td><td>100</td><td>0.253</td><td>0.321</td><td>0.295</td><td>84.1%</td><td>11.8%</td></tr><tr><td>sft</td><td>AI-MO/NuminaMath-CoT</td><td>50</td><td>0.540</td><td>0.752</td><td>0.612</td><td>80.0%</td><td>0.0%</td></tr><tr><td>sft</td><td>HuggingFaceTB/smoltalk</td><td>50</td><td>0.067</td><td>0.022</td><td>0.193</td><td>28.6%</td><td>3.2%</td></tr><tr><td>sft</td><td>OpenCoder-LLM/opc-sft-stage2</td><td>50</td><td>0.232</td><td>0.289</td><td>0.308</td><td>43.8%</td><td>15.0%</td></tr><tr><td>sft</td><td>PrimeIntellect/SYNTHETIC-1-SFT-Data</td><td>50</td><td>-0.031</td><td>0.436</td><td>0.251</td><td>66.7%</td><td>3.1%</td></tr><tr><td>sft</td><td>PrimeIntellect/SYNTHETIC-2-SFT-verified</td><td>50</td><td>0.319</td><td>0.331</td><td>0.159</td><td>57.1%</td><td>4.5%</td></tr><tr><td>sft</td><td>Salesforce/APIGen-MT-5k</td><td>50</td><td>-0.119</td><td>0.299</td><td>0.120</td><td>50.0%</td><td>10.5%</td></tr><tr><td>sft</td><td>alibaba-pai/OmniThought-0528</td><td>50</td><td>0.488</td><td>0.293</td><td>0.277</td><td>62.5%</td><td>0.0%</td></tr><tr><td>sft</td><td>allenai/WildChat-4.8M</td><td>50</td><td>0.103</td><td>0.264</td><td>0.166</td><td>40.0%</td><td>0.0%</td></tr><tr><td>sft</td><td>allenai/coconot</td><td>50</td><td>0.222</td><td>0.315</td><td>0.324</td><td>28.6%</td><td>11.1%</td></tr><tr><td>sft</td><td>allenai/tulu-3-sft-mixture</td><td>50</td><td>0.067</td><td>0.201</td><td>0.236</td><td>80.0%</td><td>0.0%</td></tr><tr><td>sft</td><td>argilla/magpie-ultra-v1.0</td><td>50</td><td>-0.047</td><td>0.287</td><td>0.124</td><td>14.3%</td><td>9.4%</td></tr><tr><td>sft</td><td>bespokelabs/Bespoke-Stratos-17k</td><td>50</td><td>0.285</td><td>0.358</td><td>0.238</td><td>66.7%</td><td>0.0%</td></tr><tr><td>sft</td><td>lmsys/lmsys-chat-1m</td><td>50</td><td>0.107</td><td>0.167</td><td>-0.006</td><td>42.9%</td><td>13.6%</td></tr><tr><td>sft</td><td>m-a-p/CodeFeedback-Filtered-Instruction</td><td>50</td><td>0.277</td><td>0.402</td><td>0.256</td><td>52.9%</td><td>6.2%</td></tr><tr><td>sft</td><td>meta-math/MetaMathQA</td><td>50</td><td>0.188</td><td>0.531</td><td>0.508</td><td>66.7%</td><td>0.0%</td></tr><tr><td>sft</td><td>microsoft/orca-math-word-problems-200k</td><td>50</td><td>0.387</td><td>0.577</td><td>0.550</td><td>50.0%</td><td>12.5%</td></tr><tr><td>sft</td><td>microsoft/rStar-Coder</td><td>50</td><td>-0.003</td><td>0.273</td><td>0.156</td><td>81.8%</td><td>0.0%</td></tr><tr><td>sft</td><td>mlabonne/open-perfectblend</td><td>50</td><td>0.125</td><td>0.044</td><td>-0.006</td><td>0.0%</td><td>6.7%</td></tr><tr><td>sft</td><td>nvidia/AceReason-1.1-SFT</td><td>50</td><td>0.211</td><td>0.355</td><td>0.354</td><td>60.0%</td><td>13.0%</td></tr><tr><td>sft</td><td>nvidia/AceReason-Math</td><td>50</td><td>0.272</td><td>0.335</td><td>0.089</td><td>25.0%</td><td>0.0%</td></tr><tr><td>sft</td><td>nvidia/Nemotron-Agentic-v1</td><td>50</td><td>0.209</td><td>0.263</td><td>0.111</td><td>30.0%</td><td>14.3%</td></tr><tr><td>sft</td><td>nvidia/Nemotron-Competitive-Programming-v1</td><td>50</td><td>0.142</td><td>0.321</td><td>0.275</td><td>100.0%</td><td>0.0%</td></tr><tr><td>sft</td><td>nvidia/Nemotron-Instruction-Following-Chat-v1</td><td>50</td><td>0.139</td><td>0.102</td><td>0.106</td><td>18.8%</td><td>17.2%</td></tr><tr><td>sft</td><td>nvidia/Nemotron-Math-Proofs-v1</td><td>50</td><td>0.456</td><td>0.392</td><td>0.505</td><td>69.2%</td><td>6.5%</td></tr><tr><td>sft</td><td>nvidia/Nemotron-Math-v2</td><td>50</td><td>0.339</td><td>0.233</td><td>0.267</td><td>82.4%</td><td>0.0%</td></tr><tr><td>sft</td><td>nvidia/Nemotron-SFT-SWE-v2</td><td>50</td><td>0.162</td><td>0.280</td><td>0.145</td><td>53.3%</td><td>11.1%</td></tr><tr><td>sft</td><td>nvidia/Nemotron-SFT-Safety-v1</td><td>50</td><td>0.075</td><td>0.280</td><td>0.274</td><td>23.1%</td><td>6.7%</td></tr><tr><td>sft</td><td>nvidia/Nemotron-SWE-v1</td><td>50</td><td>0.000</td><td>0.000</td><td>0.000</td><td>100.0%</td><td>—</td></tr><tr><td>sft</td><td>nvidia/Nemotron-Science-v1</td><td>50</td><td>0.412</td><td>0.513</td><td>0.345</td><td>73.7%</td><td>10.0%</td></tr><tr><td>sft</td><td>nvidia/OpenCodeInstruct</td><td>50</td><td>0.347</td><td>0.598</td><td>0.461</td><td>81.5%</td><td>7.1%</td></tr><tr><td>sft</td><td>nvidia/OpenMathInstruct-2</td><td>50</td><td>0.517</td><td>0.727</td><td>0.623</td><td>88.0%</td><td>4.5%</td></tr><tr><td>sft</td><td>open-r1/OpenR1-Math-220k</td><td>50</td><td>0.383</td><td>0.459</td><td>0.477</td><td>85.7%</td><td>3.3%</td></tr><tr><td>sft</td><td>open-thoughts/OpenThoughts-114k</td><td>50</td><td>0.213</td><td>0.573</td><td>0.278</td><td>83.3%</td><td>3.3%</td></tr><tr><td>sft</td><td>open-thoughts/OpenThoughts3-1.2M</td><td>50</td><td>0.202</td><td>0.399</td><td>0.302</td><td>72.4%</td><td>0.0%</td></tr></tbody></table></div></details><p>Each source contributes only 50 SFT or 100 Dolci held-out records. These descriptive estimates can be noisy and are not a source-ranking benchmark. No source-specific calibrators or thresholds were fitted.</p></section><section><h2>Execution and full-context checks</h2><p>Cloudflare/clef at revision <code>a30162b99d68a481d8bd75d38df069a0cf83df40</code>, BF16 eager mode, 8 independent replicas on 8 MI325X GPUs. The native runtime class is named ClefFlashForJointSchema, but it is the shared Qwen3.5/Qwen3.8 joint-head implementation: this run loads the requested 27B checkpoint and its head configuration.</p><p>All 6,600 records were validated against prepared payload hashes and exact encoded input-token counts. The largest input was 77,065 tokens; 1,265 exceeded the reference encoder’s 16k default. The experiment-local adapter lifts that cap and rejects truncation. Native token IDs matched the checkpoint reference encoder on 9 deterministic checks, including the longest inputs.</p><p>The parallel bulk interval took 19.2 minutes, processing 66,746,801 new accepted input tokens at 57,890 tokens/s; 6 cached predictions were reused. Startup, model download, and the pilot are excluded. This hardware arrangement differs from the Flash run, so wall time is not a like-for-like compute comparison.</p><p>The user’s temporary hissu authorization expires at 00:30 UTC on 28 October 2026; Slurm limits and an independent container-cleanup watchdog enforce an earlier stop. This supersedes the initial non-hissu resource plan, without changing the statistical protocol.</p></section><section><h2>Resources released</h2><p>Cleanup verified at 2026-10-27T23:08:02.118450+00:00. No experiment containers remained on the allocated node, and the experiment allocation had ended before the hissu deadline. The unused fallback allocation was canceled.</p><p><a href="../resource-release.json">Resource release evidence</a></p></section><section><h2>Limits and next decision</h2><p>All results describe agreement with one frozen model reviewer. Human adjudication of a blinded disagreement sample is still needed to distinguish reviewer errors from classifier errors. The calibrator targets the balanced audit mixture; probabilities may need adjustment when deployed on a different source mixture. No new threshold should be chosen from this held-out set and then reported as independently validated. The backbone’s position limit and successful full-input processing do not establish decision-head accuracy at long lengths; lifting the encoder’s 16k default is an explicit experimental intervention.</p><p>Use these results to decide whether a new calibration-and-routing study is justified. Choose its missed-defect target and review budget in advance, then evaluate the selected policy on fresh records. No pipeline filter or production behavior was changed in this experiment.</p><p><a href="metrics.json">All metrics and source results</a> · <a href="heldout_predictions.csv">Paired held-out probabilities</a> · <a href="../protocol.json">Frozen statistical protocol</a> · <a href="../calibration-split.json">Split membership</a> · <a href="../resource-authorization.json">Resource authorization</a> · <a href="https://huggingface.co/Cloudflare/clef">Model card</a></p></section></main></body></html>

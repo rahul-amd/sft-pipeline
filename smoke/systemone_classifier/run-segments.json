@@ -1,0 +1,12 @@
+{
+  "bulk_start_utc": "2026-10-27T20:02:47.292548+00:00",
+  "interruption": {
+    "trigger": "Docker stop signal 15 followed by signal 9; initiator unknown; no preceding model/OOM error",
+    "server_signal_utc": "2026-10-27T20:43:58+00:00",
+    "saved_predictions": 4067,
+    "last_success_utc": "2026-10-27T20:44:05.188885+00:00",
+    "failed_record_attempts_in_interrupted_client": 80,
+    "error_log": "logs/classify.log"
+  },
+  "timing_policy": "Use first bulk start through final successful completion, including interruption and restart; exclude initial server startup and six-record pilot."
+}

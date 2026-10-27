@@ -1,0 +1,17 @@
+{
+  "complete": true,
+  "unique_predictions": 6600,
+  "full_context_matches": 6600,
+  "frozen_question_and_audit_hashes_match": true,
+  "metrics_match_sklearn": [
+    "sft/equal_record",
+    "sft/population_weighted",
+    "dolci/equal_record",
+    "dolci/population_weighted",
+    "pooled/equal_record"
+  ],
+  "numpy_version": "2.4.4",
+  "sklearn_version": "1.9.0",
+  "predictions_sha256": "697e7f2519deac4de0a20c7986445df56fa46b17b42ea956fffd8f9c3faa6c80",
+  "metrics_sha256": "197f88079b90ce51cf307bd31baab3b979d5297d0ac6cd4ce043529adee6c2d5"
+}

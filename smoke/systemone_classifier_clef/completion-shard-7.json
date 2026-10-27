@@ -1,0 +1,21 @@
+{
+  "complete": true,
+  "pilot": false,
+  "completed": 825,
+  "target": 825,
+  "cached": 0,
+  "errors": [],
+  "wall_seconds": 1149.2865747855976,
+  "new_input_tokens": 8359531,
+  "new_records": 825,
+  "records_per_second": 0.7178366284787637,
+  "input_tokens_per_second": 7273.669756004495,
+  "latency_seconds": {
+    "median": 1.4616547599434853,
+    "p95": 9.71788068395108
+  },
+  "concurrency": 2,
+  "shard_index": 7,
+  "shard_count": 8,
+  "updated_utc": "2026-10-27T23:05:58.976307+00:00"
+}

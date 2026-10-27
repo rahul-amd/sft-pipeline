@@ -1,0 +1,42 @@
+{
+  "model": "Cloudflare/clef",
+  "model_revision": "a30162b99d68a481d8bd75d38df069a0cf83df40",
+  "samples": 6600,
+  "input_hashes": {
+    "sft": {
+      "samples_sha256": "54f650a0d9c9610a150d678b5d070d7ad0db0216c57fdda120511bd00ba21dc8",
+      "verdicts_sha256": "809ffd63da417379ce92c15a11eeb59be5fa1dcb42e254ef4b523454d0f77ebe"
+    },
+    "dolci": {
+      "samples_sha256": "661594fa85b3e0635bf7e9ae137a8f4595c3a72452d4a470b6c9552b4921536a",
+      "verdicts_sha256": "8f0c9a6842eeb2f78d8e33a48948ea6fe74b963dea4f0314fd7f31acacd7d38a"
+    }
+  },
+  "questions_sha256": "e68e8b9c20b825930191f3df540030094c554df6eb04e6057a0c88a132be48d6",
+  "schema_overhead_tokens": 964,
+  "max_input_tokens": 77065,
+  "median_input_tokens": 4615,
+  "over_16384": 1265,
+  "total_input_tokens": 66876161,
+  "labels": [
+    "major_defect",
+    "minor_defect",
+    "uncertain",
+    "no_defect_found"
+  ],
+  "primary_metrics": [
+    "multiclass_MCC",
+    "Cohen_kappa",
+    "accuracy",
+    "macro_F1",
+    "confusion_matrix"
+  ],
+  "prompt_policy": "Frozen before inference; identical class definitions and original audit evidence; no source names or Sol labels in requests",
+  "context_policy": "Full inputs; local adapter lifts reference 16k cap to model position limit; no truncation",
+  "threshold_policy": "raw four-class argmax; separately gated calibration on frozen split per protocol.json",
+  "gpu_partition": "see runtime-manifest.json and resource-authorization.json",
+  "order_seed": 20261027,
+  "calibration_protocol_sha256": "2d7111438a8fbafc39a5d956a03c4c30d3db311a07c6f6c6b49e72af7e109c81",
+  "native_runtime_class": "ClefFlashForJointSchema (generic Qwen3.5/Qwen3.8 joint-head implementation; checkpoint is Clef-27B)",
+  "reference_encoder_parity_records": 9
+}

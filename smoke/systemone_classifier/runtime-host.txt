@@ -1,0 +1,6 @@
+["vllm/vllm-openai-rocm@sha256:a1799026344dce3d3a41f38a85ee861fee46b07fe81b3df3c3a0e54b91868390"]
+device,Card Series,Card Model,Card Vendor,Card SKU,Subsystem ID,Device Rev,Node ID,GUID,GFX Version
+card0,AMD Instinct MI325X,0x74a5,Advanced Micro Devices Inc. [AMD/ATI],M3250101,0x74a5,0x00,3,51110,gfx942
+
+tus1-p15-g56
+2026-10-27T19:59:57Z

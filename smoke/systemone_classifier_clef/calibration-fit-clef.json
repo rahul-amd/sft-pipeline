@@ -1,0 +1,53 @@
+{
+  "model": "clef",
+  "fit_fingerprint": "496adc8c1d38628e44a66109960a4088d0205855e9daafece8b6a8a82afc5cab",
+  "fit_records": 3300,
+  "classes": [
+    "no_defect_found",
+    "minor_defect",
+    "major_defect",
+    "uncertain"
+  ],
+  "method": "multinomial logistic regression on clipped log probabilities, L2 C=1.0",
+  "probability_clip": 1e-12,
+  "cv_folds": 5,
+  "seed": 20261028,
+  "raw_calibration_log_loss": 1.139034308481128,
+  "out_of_fold_log_loss": 0.902859130423694,
+  "relative_oof_log_loss_improvement": 0.2073468518892705,
+  "calibration_adopted": true,
+  "gate": "at least 1% relative out-of-fold log-loss improvement",
+  "heldout_used_for_fitting_or_gate": false,
+  "coefficients": [
+    [
+      1.3437986955612815,
+      -0.8566118603969639,
+      0.2997831186894761,
+      -1.685492183813428
+    ],
+    [
+      0.5292168342852397,
+      1.1678105426440966,
+      0.6392366486325513,
+      -0.3348823784598249
+    ],
+    [
+      -0.8496883651397049,
+      -0.5434799563627987,
+      0.8707924038476028,
+      0.38363532485009383
+    ],
+    [
+      -1.0233271647068356,
+      0.23228127411569904,
+      -1.80981217116951,
+      1.6367392374230239
+    ]
+  ],
+  "intercepts": [
+    -1.0681630920461263,
+    3.3151040804021195,
+    1.1168933771215495,
+    -3.363834365477744
+  ]
+}

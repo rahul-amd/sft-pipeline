@@ -1,0 +1,51 @@
+{
+  "complete": true,
+  "pilot": false,
+  "completed": 6600,
+  "target": 6600,
+  "cached": 6,
+  "errors": [],
+  "wall_seconds": 4437.220905,
+  "new_input_tokens": 66746801,
+  "new_records": 6594,
+  "records_per_second": 1.486065296539479,
+  "input_tokens_per_second": 15042.478711120199,
+  "latency_seconds": {
+    "median": 1.6015925062820315,
+    "p95": 6.31773329526186
+  },
+  "concurrency": 4,
+  "updated_utc": "2026-10-27T21:16:44.513453+00:00",
+  "timing_scope": "end_to_end_including_interruption",
+  "bulk_start_utc": "2026-10-27T20:02:47.292548+00:00",
+  "operational_interruptions": [
+    {
+      "trigger": "Docker stop signal 15 followed by signal 9; initiator unknown; no preceding model/OOM error",
+      "server_signal_utc": "2026-10-27T20:43:58+00:00",
+      "saved_predictions": 4067,
+      "last_success_utc": "2026-10-27T20:44:05.188885+00:00",
+      "failed_record_attempts_in_interrupted_client": 80,
+      "error_log": "logs/classify.log"
+    }
+  ],
+  "resumed_segment": {
+    "complete": true,
+    "pilot": false,
+    "completed": 6600,
+    "target": 6600,
+    "cached": 4067,
+    "errors": [],
+    "wall_seconds": 1301.1729418821633,
+    "new_input_tokens": 25613914,
+    "new_records": 2533,
+    "records_per_second": 1.946705098505955,
+    "input_tokens_per_second": 19685.24949723374,
+    "latency_seconds": {
+      "median": 1.5202913917601109,
+      "p95": 5.440939273685217
+    },
+    "concurrency": 4,
+    "updated_utc": "2026-10-27T21:16:44.513453+00:00"
+  },
+  "latency_note": "Successful request latency only; aggregate wall time includes the interruption, restart, and failed requests."
+}

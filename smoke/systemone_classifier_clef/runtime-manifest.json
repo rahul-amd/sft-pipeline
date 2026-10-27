@@ -1,0 +1,61 @@
+{
+  "model": "Cloudflare/clef",
+  "revision": "a30162b99d68a481d8bd75d38df069a0cf83df40",
+  "job_id": "56641",
+  "partition": "hissu",
+  "node": "tus1-p15-g61",
+  "gpu_count": 8,
+  "replicas": 8,
+  "tensor_parallel_size": 1,
+  "dtype": "bfloat16",
+  "enforce_eager": true,
+  "max_model_len": 98304,
+  "max_num_batched_tokens": 98304,
+  "max_num_seqs_per_replica": 2,
+  "image": "vllm/vllm-openai-rocm:nightly-rocm72-5d35ce3934a7804b298559d2d99eec33792e1eb9",
+  "image_digest": "sha256:a1799026344dce3d3a41f38a85ee861fee46b07fe81b3df3c3a0e54b91868390",
+  "gpu_mapping": [
+    {
+      "slurm_index": 0,
+      "render_device": 128,
+      "uuid": "GPU-f778bc7ea20e3549"
+    },
+    {
+      "slurm_index": 1,
+      "render_device": 136,
+      "uuid": "GPU-94f1163d893b8390"
+    },
+    {
+      "slurm_index": 2,
+      "render_device": 144,
+      "uuid": "GPU-709fdd8fdcfa2c88"
+    },
+    {
+      "slurm_index": 3,
+      "render_device": 152,
+      "uuid": "GPU-abd6e00329a20d6a"
+    },
+    {
+      "slurm_index": 4,
+      "render_device": 160,
+      "uuid": "GPU-0baf29192c3a9259"
+    },
+    {
+      "slurm_index": 5,
+      "render_device": 168,
+      "uuid": "GPU-dd573d3139a7cae5"
+    },
+    {
+      "slurm_index": 6,
+      "render_device": 176,
+      "uuid": "GPU-888654f68a1f9551"
+    },
+    {
+      "slurm_index": 7,
+      "render_device": 184,
+      "uuid": "GPU-540e45215e60b610"
+    }
+  ],
+  "healthy_utc": "2026-10-27T22:46:19.154672+00:00",
+  "classification_started_utc": "2026-10-27T22:46:48.214460+00:00"
+}

@@ -1,0 +1,10 @@
+{
+  "offline_load_3200_records_16_sources": true,
+  "source_outcome_dimension_filters": true,
+  "search_exact_original_messages_and_keyboard_close": true,
+  "pagination": true,
+  "source_sort_and_csv_totals": true,
+  "mobile_layout_and_full_20_assistant_turn_conversation": true,
+  "javascript_errors": [],
+  "external_network_requests": []
+}

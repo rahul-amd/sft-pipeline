@@ -1,0 +1,6 @@
+{
+  "verbatim_reasoning_answer_whitespace": true,
+  "absent_unclosed_and_nonleading_tags": true,
+  "full_conversation_order_and_content": true,
+  "cross_message_evidence_rejected": true
+}

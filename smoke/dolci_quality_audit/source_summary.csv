@@ -1,0 +1,17 @@
+source,population,sampled,major_defect,minor_defect,uncertain,no_defect_found,major_rate,major_wilson_lower,major_wilson_upper,major_contribution_pp
+saumyamalik/OpenThoughts3-full-filtered-math-decontam-v2,752997,200,184,14,1,1,0.92,0.874010511732856,0.9501594141102401,30.54245478088581
+saumyamalik/correct-python-sft-187k-x16-thoughts-filtered-decontam-v2,466677,200,57,49,2,92,0.285,0.22695003004617292,0.3511534602960517,5.863867165628093
+allenai/persona-precise-if-r1-final-content-filtered-chinese-filtered,223123,200,74,71,16,39,0.37,0.30612608409859116,0.4387737007594981,3.6397280107645873
+saumyamalik/OpenThoughts3-full-filtered-code-subsampled-decontam-v2,88900,200,169,26,1,4,0.845,0.7883930940765792,0.8886036307231068,3.311931426898594
+saumyamalik/OpenThoughts3-full-filtered-science-decontam-v2,99269,200,143,46,2,9,0.715,0.6488465397039482,0.7730499699538271,3.1292665302282274
+saumyamalik/if_qwq_reasoning_verified_filtered_decontam_v2,135792,200,77,67,4,52,0.385,0.32033309726923215,0.45400132779753916,2.3049302127081734
+allenai/nemotron-post-training-dataset-subset-ngram-filtered-no-tool-calls,113777,200,58,102,3,37,0.29,0.23154025607067882,0.3563747810077731,1.4547063766600328
+allenai/aya-100k-r1-format-filtered-keyword-filtered-filter-datecutoff-ngram-filtered,98597,200,62,73,20,45,0.31,0.2499894483607809,0.37717177566258037,1.3475604648312434
+allenai/SYNTHETIC-2-SFT-cn-fltrd-final-ngram-filtered-chinese-filtered,104569,200,38,117,1,44,0.19,0.14167171527790676,0.25001238707599854,0.8759502120203969
+allenai/tulu_v3.9_wildchat_100k_english-r1-final-content-filtered,46312,200,84,66,17,33,0.42,0.35373599161616726,0.4892792606041954,0.8575623253554174
+allenai/wildchat-r1-p2-repetition-filter,36742,200,94,67,12,27,0.47,0.40204754873265425,0.5390831708499817,0.7613485361378163
+allenai/wildguardmix-r1-v2-all-filtered-ngram-filtered-chinese-filtered,38315,200,64,75,15,46,0.32,0.25926533315468053,0.38751898434113546,0.5405572225812966
+allenai/wildjailbreak-r1-v2-format-filtered-keyword-filtered-filter-datecutoff-final-content-filtered,41100,200,47,67,24,62,0.235,0.18157433415232588,0.29841368882762537,0.4258263681245475
+allenai/coconot-r1-format-domain-filtered-keyword-filtered-filter-datecutoff-chinese-filtered,10227,200,78,62,17,43,0.39,0.3250834313746962,0.4590625404283025,0.17584731004356802
+allenai/oasst1-r1-format-filtered-keyword-filtered-filter-datecutoff-chinese-filtered,6800,200,56,92,15,37,0.28,0.22236889773949026,0.3459230458665071,0.08394402908413715
+allenai/tablegpt_r1-format-filtered-keyword-filtered-filter-datecutoff,4981,200,52,50,7,91,0.26,0.20413830063574687,0.32490745602534116,0.05709692978240685

@@ -1,0 +1,82 @@
+[
+  {
+    "source": "saumyamalik/OpenThoughts3-full-filtered-math-decontam-v2",
+    "population": 752997,
+    "percentage": 33.19832041400631
+  },
+  {
+    "source": "saumyamalik/correct-python-sft-187k-x16-thoughts-filtered-decontam-v2",
+    "population": 466677,
+    "percentage": 20.57497251097577
+  },
+  {
+    "source": "allenai/persona-precise-if-r1-final-content-filtered-chinese-filtered",
+    "population": 223123,
+    "percentage": 9.837102731796183
+  },
+  {
+    "source": "saumyamalik/if_qwq_reasoning_verified_filtered_decontam_v2",
+    "population": 135792,
+    "percentage": 5.986831721319931
+  },
+  {
+    "source": "allenai/nemotron-post-training-dataset-subset-ngram-filtered-no-tool-calls",
+    "population": 113777,
+    "percentage": 5.016228885034596
+  },
+  {
+    "source": "allenai/SYNTHETIC-2-SFT-cn-fltrd-final-ngram-filtered-chinese-filtered",
+    "population": 104569,
+    "percentage": 4.610264273791563
+  },
+  {
+    "source": "saumyamalik/OpenThoughts3-full-filtered-science-decontam-v2",
+    "population": 99269,
+    "percentage": 4.376596545773745
+  },
+  {
+    "source": "allenai/aya-100k-r1-format-filtered-keyword-filtered-filter-datecutoff-ngram-filtered",
+    "population": 98597,
+    "percentage": 4.346969241391108
+  },
+  {
+    "source": "saumyamalik/OpenThoughts3-full-filtered-code-subsampled-decontam-v2",
+    "population": 88900,
+    "percentage": 3.9194454756196384
+  },
+  {
+    "source": "allenai/tulu_v3.9_wildchat_100k_english-r1-final-content-filtered",
+    "population": 46312,
+    "percentage": 2.0418150603700416
+  },
+  {
+    "source": "allenai/wildjailbreak-r1-v2-format-filtered-keyword-filtered-filter-datecutoff-final-content-filtered",
+    "population": 41100,
+    "percentage": 1.81202709840233
+  },
+  {
+    "source": "allenai/wildguardmix-r1-v2-all-filtered-ngram-filtered-chinese-filtered",
+    "population": 38315,
+    "percentage": 1.6892413205665517
+  },
+  {
+    "source": "allenai/wildchat-r1-p2-repetition-filter",
+    "population": 36742,
+    "percentage": 1.6198905024208858
+  },
+  {
+    "source": "allenai/coconot-r1-format-domain-filtered-keyword-filtered-filter-datecutoff-chinese-filtered",
+    "population": 10227,
+    "percentage": 0.4508905385732513
+  },
+  {
+    "source": "allenai/oasst1-r1-format-filtered-keyword-filtered-filter-datecutoff-chinese-filtered",
+    "population": 6800,
+    "percentage": 0.29980010387191836
+  },
+  {
+    "source": "allenai/tablegpt_r1-format-filtered-keyword-filtered-filter-datecutoff",
+    "population": 4981,
+    "percentage": 0.2196035760861802
+  }
+]

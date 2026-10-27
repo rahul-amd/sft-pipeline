@@ -1,0 +1,15 @@
+{
+  "dataset": "allenai/Dolci-Think-SFT-7B",
+  "revision": "83f618e2fe0aed29ee3440a3658a0326c175d09d",
+  "split": "train",
+  "completed_utc": "2026-10-27T09:02:42.499196+00:00",
+  "method": "Exact value_counts of dataset_source over every original Parquet shard using HTTP range reads",
+  "shards": 156,
+  "total_records": 2268178,
+  "distinct_non_null_sources": 16,
+  "null_source_records": 0,
+  "empty_source_records": 0,
+  "range_bytes_requested": 159597878,
+  "sampling_started": false,
+  "reviews_started": false
+}

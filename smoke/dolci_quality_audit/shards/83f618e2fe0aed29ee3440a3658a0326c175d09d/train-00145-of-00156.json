@@ -1,0 +1,13 @@
+{
+  "path": "data/train-00145-of-00156.parquet",
+  "revision": "83f618e2fe0aed29ee3440a3658a0326c175d09d",
+  "rows": 14539,
+  "null_count": 0,
+  "sources": [
+    {
+      "source": "saumyamalik/correct-python-sft-187k-x16-thoughts-filtered-decontam-v2",
+      "population": 14539
+    }
+  ],
+  "range_bytes_requested": 1031856
+}

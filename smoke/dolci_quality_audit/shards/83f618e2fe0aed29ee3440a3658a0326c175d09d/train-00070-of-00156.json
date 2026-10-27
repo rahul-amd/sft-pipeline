@@ -1,0 +1,21 @@
+{
+  "path": "data/train-00070-of-00156.parquet",
+  "revision": "83f618e2fe0aed29ee3440a3658a0326c175d09d",
+  "rows": 14540,
+  "null_count": 0,
+  "sources": [
+    {
+      "source": "saumyamalik/OpenThoughts3-full-filtered-code-subsampled-decontam-v2",
+      "population": 6420
+    },
+    {
+      "source": "allenai/oasst1-r1-format-filtered-keyword-filtered-filter-datecutoff-chinese-filtered",
+      "population": 6800
+    },
+    {
+      "source": "allenai/coconot-r1-format-domain-filtered-keyword-filtered-filter-datecutoff-chinese-filtered",
+      "population": 1320
+    }
+  ],
+  "range_bytes_requested": 1033554
+}

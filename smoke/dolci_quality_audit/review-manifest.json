@@ -1,0 +1,14 @@
+{
+  "model": "gpt-6.1-sol",
+  "reasoning_effort": "high",
+  "samples_sha256": "661594fa85b3e0635bf7e9ae137a8f4595c3a72452d4a470b6c9552b4921536a",
+  "prompt_sha256": "e3922df552cd126eca041ae26751e137893ab81096e33052fa18eb17b181c9ed",
+  "base_prompt_sha256": "e89739e77e4d3498d695844f98b282adcc2a15c813f6129922467d9f7b8d1c4a",
+  "schema_sha256": "ce5a54b4f083c07da8c5a834d240dd120a1c27fb96ef943abac21f1bd8fc8d9f",
+  "runner_sha256": "1ddcd1da0e4e72b6953d25e3fbeb83de75cecd2ec70369010d5bf8873c56fe73",
+  "base_validator_sha256": "18f1bdb5a3d883278320aaea514f91701f89f6e3e39a3aec7090890764d4930a",
+  "sample_count": 3200,
+  "batch_count": 1226,
+  "review_unit": "one full conversation; all assistant turns assessed with their available prefix",
+  "policy": "one reviewer model; earliest technically valid whole review retained; only operational/schema/evidence failures retried; no second reviewer or adjudication"
+}
